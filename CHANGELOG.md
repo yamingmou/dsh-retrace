@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.2.2] — 2026-08-20 · declare webServer in inject so the HTTP route registers
+
+- declare webServer in inject so the HTTP route registers
+
 ## [0.2.1] — 2026-08-20 · ship built module-loader client bundle
 
 - ship built module-loader client bundle
