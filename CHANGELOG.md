@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.3.0] — 2026-08-20 · rebrand to dsh-retrace — new package name, plugin id, routes, brand
+
+- rebrand to dsh-retrace — new package name, plugin id, routes, brand
+
 ## [0.2.2] — 2026-08-20 · declare webServer in inject so the HTTP route registers
 
 - declare webServer in inject so the HTTP route registers
