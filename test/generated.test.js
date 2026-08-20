@@ -49,12 +49,12 @@ describe('generated dynamic-host', () => {
     plugin.apply(ctx)
 
     expect(Object.keys(handled).sort()).toEqual([
-      'messageEditor.editAndResend',
-      'messageEditor.recall',
-      'messageEditor.regenerate',
+      'retrace.editAndResend',
+      'retrace.recall',
+      'retrace.regenerate',
     ])
 
-    const result = await handled['messageEditor.recall']({ sessionId: 's1', messageId: 'u1' })
+    const result = await handled['retrace.recall']({ sessionId: 's1', messageId: 'u1' })
     expect(result.ok).toBe(true)
     expect(result.value).toMatchObject({ op: 'recall', seq: 1, shadowed: 2, text: 'hello world' })
     // Marker is the new surface tail; the recalled round is shadowed away.

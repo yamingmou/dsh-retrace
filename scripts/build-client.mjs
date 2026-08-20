@@ -1,5 +1,5 @@
 /**
- * Build the published client bundle for dsh-message-editor.
+ * Build the published client bundle for dsh-retrace.
  *
  * The client-modules runtime serves `exports["./client"]` directly as a classic
  * script and requires it to self-register via `window.__ModuleLoader__.load`.
@@ -22,7 +22,7 @@ const outfile = join(root, 'lib', 'client.bundle.js')
 
 const banner = [
   'window.__ModuleLoader__.load({',
-  '\tid: "dsh-message-editor",',
+  '\tid: "dsh-retrace",',
   '\tfactory: (require) => {',
   '\t\tvar module = { exports: {} };',
   '\t\tvar exports = module.exports;',

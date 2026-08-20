@@ -1,5 +1,5 @@
 /**
- * dsh-message-editor type surface.
+ * dsh-retrace type surface.
  * The runtime implementation is dependency-free plain ESM; these types describe
  * the public entry points for TypeScript consumers.
  */

@@ -77,7 +77,7 @@ describe('recall', () => {
       content: [],
       source: { kind: 'model', provider: 'test-provider', model: 'test-model' },
     })
-    expect(marker.data.message.id).toMatch(/^message-editor-recall-/)
+    expect(marker.data.message.id).toMatch(/^retrace-recall-/)
     expect(marker.data.editor).toEqual({ targetSeq: 4, text: 'second question' })
   })
 
@@ -239,7 +239,7 @@ describe('editAndResend', () => {
       content: [{ type: 'text', text: 'second question, edited' }],
       source: { kind: 'user' },
     })
-    expect(sent.id).toMatch(/^message-editor-resend-/)
+    expect(sent.id).toMatch(/^retrace-resend-/)
   })
 
   it('with fromScratch rewinds the whole surface (new-conversation semantics)', async () => {

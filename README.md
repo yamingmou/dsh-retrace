@@ -1,30 +1,40 @@
 <div align="center">
 
-# ↩️ dsh-message-editor
+# 🧭 dsh-retrace
 
-**Recall · Edit-and-resend · Regenerate** for
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) conversations —
-works on the **Web GUI** and the **Desktop app** (both share the same Web frontend).
+**Retrace · 回溯** — Recall · Edit-and-resend · Regenerate, plus **in-conversation
+versioning**: a timeline of every rewind, artifact rollback, and a fork map of the
+paths your conversation explored. A Harness enhancement plugin for the
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI and
+Desktop app (both share the same Web frontend).
 
-[![npm version](https://img.shields.io/npm/v/dsh-message-editor)](https://www.npmjs.com/package/dsh-message-editor)
-[![License: MIT](https://img.shields.io/npm/l/dsh-message-editor)](https://github.com/azmavethy/dsh-message-editor/blob/main/LICENSE)
+[![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
+[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/azmavethy/dsh-retrace/blob/main/LICENSE)
 [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4A90D9)](https://github.com/topics/dsh-plugin)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/azmavethy/dsh-message-editor/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/azmavethy/dsh-retrace/pulls)
 
 **English** · [简体中文](./README.zh.md)
 
 </div>
 
 DeepSeek Harness stores every conversation as an **append-only event log**, so there is
-no built-in "undo". `dsh-message-editor` brings back the three moves every chat deserves —
-**撤回 (recall)**, **编辑重发 (edit-and-resend)** and **重新生成 (regenerate)**.
+no built-in "undo". `dsh-retrace` brings back the three moves every chat deserves —
+**撤回 (recall)**, **编辑重发 (edit-and-resend)**, **重新生成 (regenerate)** — and then
+goes further: because a recall only rewinds the **context**, while files the agent
+already changed stay changed, retrace versions your conversation **and its artifacts**
+in one place.
 
 Recall / edit **remove the target messages from the conversation view and the model
 context** — that is exactly the effect you see. What stays untouched is the underlying
 **durable transcript**: it remains append-only, old events are never rewritten or deleted,
 and the plugin merely appends one valid replacement event (the same `replace` primitive
 the built-in compaction uses) to rewind the surface — so the log keeps a full audit trail
-of every rewind.
+of every rewind. On top of that trail, retrace records version boundaries, touched files
+and (optionally) git state, and lets you roll back artifacts or jump back to any point
+in the conversation — all **inside the same session**, no session-switching.
+
+> 🚧 **Roadmap in progress** — timeline & artifact rollback (P1) and the fork map (P2)
+> are being built per [PLAN.md](./PLAN.md). Recall / edit / regenerate are live today.
 
 ---
 
@@ -53,10 +63,10 @@ of every rewind.
 
 ```sh
 # DSH Desktop (desktop profile)
-dsh plugin --profile desktop add dsh-message-editor
+dsh plugin --profile desktop add dsh-retrace
 
 # standalone Web (`dsh web` / web profile)
-dsh plugin --profile web add dsh-message-editor
+dsh plugin --profile web add dsh-retrace
 ```
 
 > ⚠️ **Restart after install.** A running app keeps the previously loaded bundle
@@ -76,14 +86,14 @@ The package declares a `dsh.bundle` manifest, so it installs through the officia
 plugin path into any profile:
 
 ```sh
-dsh plugin --profile <name> add dsh-message-editor
+dsh plugin --profile <name> add dsh-retrace
 ```
 
 > ⚠️ **Restart required.** The install writes the new files and re-renders the
 > profile composition, but a running app does **not** hot-reload bundles — quit
 > and reopen **DSH Desktop** (or restart the `dsh` process for a standalone Web
 > deployment) to load the plugin. To uninstall:
-> `dsh plugin --profile <name> remove dsh-message-editor` (then restart again).
+> `dsh plugin --profile <name> remove dsh-retrace` (then restart again).
 
 It also shows up in [dsh-market](https://github.com/dsh-market/dsh-market) for
 one-click install from inside Settings (same restart applies).
@@ -100,14 +110,14 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-message-editor": "^0.2.0"
+       "dsh-retrace": "^0.2.0"
      },
      "dsh": {
        "profile": {
          "bundles": [
            "@deepseek-ai/dsh-base",
            "@deepseek-ai/dsh-web-app",
-           "dsh-message-editor"
+           "dsh-retrace"
          ]
        }
      }
@@ -115,7 +125,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```
 
    (Keep whatever entries your profile already has; only add the two
-   `dsh-message-editor` lines.)
+   `dsh-retrace` lines.)
 
 2. Install inside the profile directory:
 
@@ -126,25 +136,25 @@ The same result with plain file edits and `pnpm` — exactly the steps
 3. Restart DSH Desktop / the `dsh` process (see above).
 
 For local development, point the dependency at a checkout instead of the
-registry: `"dsh-message-editor": "file:/path/to/dsh-message-editor"` — or let
-`dsh` do it: `dsh plugin --profile <name> add /path/to/dsh-message-editor`.
+registry: `"dsh-retrace": "file:/path/to/dsh-retrace"` — or let
+`dsh` do it: `dsh plugin --profile <name> add /path/to/dsh-retrace`.
 
 ### 3. npm package + composition (classic)
 
 ```sh
-npm i dsh-message-editor
+npm i dsh-retrace
 ```
 
 Add the package to the harness composition (`cordis.yml` of the app/deployment you use):
 
 ```yaml
-- name: 'dsh-message-editor'
+- name: 'dsh-retrace'
 ```
 
 The client half is picked up automatically from the package's `dsh.client` metadata and
 bundled into the Web client (a client-module rebuild happens automatically when the
 composition changes). The Host half registers the same-origin HTTP route
-`/api/plugins/message-editor/*` for the browser UI.
+`/api/plugins/retrace/*` for the browser UI.
 
 ### 4. Dynamic plugin (current session — no install, no rebuild)
 
@@ -157,8 +167,8 @@ feature:
 3. Done — hover any assistant reply, or any user message, and use ↩ / ✎ / ↻.
 
 The dynamic host registers the same operations behind the package-private
-`harness.handle` RPC (`messageEditor.recall` / `messageEditor.editAndResend` /
-`messageEditor.regenerate`).
+`harness.handle` RPC (`retrace.recall` / `retrace.editAndResend` /
+`retrace.regenerate`).
 
 ---
 
@@ -200,7 +210,7 @@ The dynamic host registers the same operations behind the package-private
    - the `recall-marker` node renderer: a notice row that injects CSS hiding
      every shadowed message row from the flow (view and model context stay in
      sync), plus the optional original-input comparison block,
-   - the `message-editor` entry in the `conversation.chat.assistant-actions`
+   - the `retrace` entry in the `conversation.chat.assistant-actions`
      strip (撤回 / 重新生成),
    - two preference toggles under Settings → General.
 
@@ -232,9 +242,14 @@ The dynamic host registers the same operations behind the package-private
 
 ## 🗺️ Roadmap
 
-- [ ] Version timeline / reroll — browse and jump between past rewinds of a message
-- [ ] Forked-session edit — edit a past message and continue in a branched session
-- [ ] More locales beyond 简体中文 / English
+Built per [PLAN.md](./PLAN.md):
+
+- **P1 — Timeline & artifact rollback**: an in-session version timeline (messages,
+  thinking, touched files), artifact snapshots (git-first, snapshot-fallback, opt-in),
+  rollback with dry-run preview, and jump-to-conversation navigation.
+- **P2 — Fork map**: a flow graph of the conversation's turns with fork points at every
+  rewind, thinking flow per turn, branch-intent cards, and version comparison.
+- More locales beyond 简体中文 / English.
 
 ---
 
@@ -274,7 +289,7 @@ npm pack --dry-run    # verify the published file list
 > `__setMessageEditorWire`.
 
 PRs and issues are welcome — see [CONTRIBUTING](./CONTRIBUTING.md) (coming soon)
-and the [issue tracker](https://github.com/azmavethy/dsh-message-editor/issues).
+and the [issue tracker](https://github.com/azmavethy/dsh-retrace/issues).
 
 ---
 

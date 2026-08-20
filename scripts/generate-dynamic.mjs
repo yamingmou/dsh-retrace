@@ -42,17 +42,17 @@ return {
   inject: ['sessions', 'agents'],
   apply(ctx) {
     const { sessions, agents } = ctx
-    const log = (line) => console.error(\`message-editor: \${line}\`)
+    const log = (line) => console.error(\`retrace: \${line}\`)
 ${indent(inline, 4)}
     const api = createEditorApi(ctx, sessions, agents, log)
     const disposers = [
-      harness.handle('messageEditor.recall', (args) => api.recall(args)),
-      harness.handle('messageEditor.editAndResend', (args) => api.editAndResend(args)),
-      harness.handle('messageEditor.regenerate', (args) => api.regenerate(args)),
+      harness.handle('retrace.recall', (args) => api.recall(args)),
+      harness.handle('retrace.editAndResend', (args) => api.editAndResend(args)),
+      harness.handle('retrace.regenerate', (args) => api.regenerate(args)),
     ]
     ctx.effect(() => () => {
       for (const dispose of disposers) dispose()
-    }, 'message-editor: handlers')
+    }, 'retrace: handlers')
   },
 }
 `
@@ -94,12 +94,12 @@ return {
       var module = { exports: {} }
       var exports = module.exports
       const require = (name) =>
-        name === 'react' ? React : (() => { throw new Error('dsh-message-editor: unknown module "' + name + '" in dynamic client') })()
+        name === 'react' ? React : (() => { throw new Error('dsh-retrace: unknown module "' + name + '" in dynamic client') })()
 ${indent(bundle, 6)}
       return module.exports
     })()
     if (typeof mod.__setMessageEditorWire === 'function') {
-      mod.__setMessageEditorWire((op, payload) => host.call(\`messageEditor.\${op}\`, payload))
+      mod.__setMessageEditorWire((op, payload) => host.call(\`retrace.\${op}\`, payload))
     }
     return mod.apply(ctx)
   },

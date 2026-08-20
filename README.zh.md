@@ -1,28 +1,35 @@
 <div align="center">
 
-# ↩️ dsh-message-editor
+# 🧭 dsh-retrace
 
-为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 对话消息带来
-**撤回 · 编辑重发 · 重新生成** —— 同时支持 **Web 端** 与 **桌面客户端**
-（两者共用同一套 Web 前端）。
+**Retrace · 回溯** —— 在 **撤回 · 编辑重发 · 重新生成** 之上,更进一步:
+为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 对话提供
+**单会话内的版本化**——每一次回退的时间线、产物回退、以及对话走过的分叉路径图。
+同时支持 **Web 端** 与 **桌面客户端**(两者共用同一套 Web 前端)。
 
-[![npm version](https://img.shields.io/npm/v/dsh-message-editor)](https://www.npmjs.com/package/dsh-message-editor)
-[![License: MIT](https://img.shields.io/npm/l/dsh-message-editor)](https://github.com/azmavethy/dsh-message-editor/blob/main/LICENSE)
+[![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
+[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/azmavethy/dsh-retrace/blob/main/LICENSE)
 [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4A90D9)](https://github.com/topics/dsh-plugin)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/azmavethy/dsh-message-editor/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/azmavethy/dsh-retrace/pulls)
 
 **简体中文** · [English](./README.md)
 
 </div>
 
 DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，本身没有撤销能力。
-`dsh-message-editor` 为对话补上聊天本该有的三个操作 —— **撤回**、**编辑重发**、
-**重新生成**。
+`dsh-retrace` 先为对话补上聊天本该有的三个操作 —— **撤回**、**编辑重发**、
+**重新生成**;再往前一步:撤回只回退了**上下文**,而智能体已经改过的**产物文件**
+不会自动还原——retrace 把对话**和它的产物**放在一起做版本化。
 
 撤回/编辑后，目标消息会**从对话视图和模型上下文中移除**——你看到的"删除"正是这个
 效果。但底层的**持久化日志不会被改写或删除**：它始终保持只追加，旧事件原样保留，
 插件只是在日志末尾追加一条合法的替换事件（与内置压缩使用的 `replace` 原语一致）来
-回退对话表面，因此日志保留每一次回退的完整审计痕迹。
+回退对话表面，因此日志保留每一次回退的完整审计痕迹。在这条痕迹之上，retrace 记录
+版本边界、触碰文件与（可选的）git 状态，支持产物回退与跳转到对话任意位置——全部
+发生在**同一会话内**，不换会话。
+
+> 🚧 **路线图进行中** —— 时间线与产物回退（P1）、分叉图（P2）正在按
+> [PLAN.md](./PLAN.md) 开发;撤回/编辑/重新生成当前已可用。
 
 ---
 
@@ -52,10 +59,10 @@ DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，�
 
 ```sh
 # DSH Desktop（desktop profile）
-dsh plugin --profile desktop add dsh-message-editor
+dsh plugin --profile desktop add dsh-retrace
 
 # 独立 Web 部署（`dsh web` / web profile）
-dsh plugin --profile web add dsh-message-editor
+dsh plugin --profile web add dsh-retrace
 ```
 
 > ⚠️ **安装后需要重启。** 运行中的应用仍在内存中保留之前加载的 bundle，请**退出并
@@ -72,13 +79,13 @@ dsh plugin --profile web add dsh-message-editor
 包声明了 `dsh.bundle` 清单，可通过官方插件路径安装到任意 profile：
 
 ```sh
-dsh plugin --profile <name> add dsh-message-editor
+dsh plugin --profile <name> add dsh-retrace
 ```
 
 > ⚠️ **安装后需要重启。** 安装会写入新文件并重新生成 profile 组合，但运行中的应用
 > **不会**热加载 bundle —— 请**退出并重新打开 DSH Desktop**（独立 Web 部署则重启
 > `dsh` 进程）来加载插件。卸载：`dsh plugin --profile <name> remove
-> dsh-message-editor`（卸载后同样需要重启）。
+> dsh-retrace`（卸载后同样需要重启）。
 
 同时可在 [dsh-market](https://github.com/dsh-market/dsh-market) 里一键安装
 （安装后同样需要重启）。
@@ -93,21 +100,21 @@ dsh plugin --profile <name> add dsh-message-editor
    ```json
    {
      "dependencies": {
-       "dsh-message-editor": "^0.2.0"
+       "dsh-retrace": "^0.2.0"
      },
      "dsh": {
        "profile": {
          "bundles": [
            "@deepseek-ai/dsh-base",
            "@deepseek-ai/dsh-web-app",
-           "dsh-message-editor"
+           "dsh-retrace"
          ]
        }
      }
    }
    ```
 
-   （保留 profile 原有条目，只需新增 `dsh-message-editor` 这两处。）
+   （保留 profile 原有条目，只需新增 `dsh-retrace` 这两处。）
 
 2. 在 profile 目录里安装：
 
@@ -118,23 +125,23 @@ dsh plugin --profile <name> add dsh-message-editor
 3. 重启 DSH Desktop / `dsh` 进程（见上文）。
 
 本地开发时，可以把依赖指向本地检出目录而不是注册表：
-`"dsh-message-editor": "file:/路径/to/dsh-message-editor"` —— 或者交给 `dsh`：
-`dsh plugin --profile <name> add /路径/to/dsh-message-editor`。
+`"dsh-retrace": "file:/路径/to/dsh-retrace"` —— 或者交给 `dsh`：
+`dsh plugin --profile <name> add /路径/to/dsh-retrace`。
 
 ### 3. npm 包 + 组合文件（经典方式）
 
 ```sh
-npm i dsh-message-editor
+npm i dsh-retrace
 ```
 
 在所使用的应用/部署的 `cordis.yml` 组合文件中加入一行普通插件条目：
 
 ```yaml
-- name: 'dsh-message-editor'
+- name: 'dsh-retrace'
 ```
 
 Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户端（组合变化时会自动
-重建客户端模块）；Host 半区为浏览器 UI 注册同源 HTTP 路由 `/api/plugins/message-editor/*`。
+重建客户端模块）；Host 半区为浏览器 UI 注册同源 HTTP 路由 `/api/plugins/retrace/*`。
 
 ### 4. 动态插件（当前会话，免安装、免重建）
 
@@ -146,7 +153,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 3. 完成 —— 悬停任意助手回复或用户消息，即可使用 ↩ / ✎ / ↻。
 
 动态 Host 通过 `harness.handle` 注册同一组操作
-（`messageEditor.recall` / `messageEditor.editAndResend` / `messageEditor.regenerate`）。
+（`retrace.recall` / `retrace.editAndResend` / `retrace.regenerate`）。
 
 ---
 
@@ -184,7 +191,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
      撤回后把原文回显到输入框，
    - `recall-marker` 节点渲染器：提示行 + 注入 CSS 把被阴影化的消息行从对话流中
      隐藏（视图与模型上下文保持同步），并可显示「原提问」对照块，
-   - `conversation.chat.assistant-actions` 中的 `message-editor` 入口
+   - `conversation.chat.assistant-actions` 中的 `retrace` 入口
      （撤回/重新生成），
    - 设置 → 通用 中的两个偏好开关。
 
@@ -209,9 +216,13 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 
 ## 🗺️ 路线图
 
-- [ ] 版本时间线 / 重掷 —— 浏览并跳转到一条消息的历次回退
-- [ ] 分支会话编辑 —— 编辑历史消息并在新分支会话中继续
-- [ ] 支持更多语言（当前：简体中文 / English）
+按 [PLAN.md](./PLAN.md) 推进:
+
+- **P1 — 时间线与产物回退**:单会话内的版本时间线(消息、思考、触碰文件),产物快照
+  (git 优先 + 快照兜底,可开关),带干跑预览的回退,以及跳转到对话位置。
+- **P2 — 分叉图**:对话回合的流程分叉图,每次回退都是分叉点,逐回合思考流,
+  分支意图卡,版本对比。
+- 支持更多语言（当前：简体中文 / English）。
 
 ---
 
@@ -250,7 +261,7 @@ npm pack --dry-run    # 校验发布文件清单
 > （`host.call` vs HTTP 路由）。
 
 欢迎提交 PR 与 issue —— 见 [CONTRIBUTING](./CONTRIBUTING.md)（筹备中）与
-[问题追踪](https://github.com/azmavethy/dsh-message-editor/issues)。
+[问题追踪](https://github.com/azmavethy/dsh-retrace/issues)。
 
 ---
 
