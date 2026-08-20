@@ -1,7 +1,7 @@
 {
   "name": "dsh-message-editor",
   "description": "Recall (撤回), edit-and-resend (编辑重发) and regenerate (重新生成) for DeepSeek Harness conversation messages — Web and Desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -26,12 +26,15 @@
   "files": [
     "lib/**/*.js",
     "lib/**/*.d.ts",
+    "cordis.patch.yml",
     "README.md",
     "README.zh.md",
+    "HUMANS.txt",
     "LICENSE"
   ],
   "keywords": [
     "dsh",
+    "dsh-plugin",
     "deepseek-harness",
     "deepseek",
     "plugin",
@@ -39,10 +42,16 @@
     "recall",
     "edit",
     "resend",
-    "regenerate"
+    "regenerate",
+    "conversation",
+    "undo"
   ],
+  "author": "OfferKuai <contact@offerkuai.com> (https://www.offerkuai.com)",
   "license": "MIT",
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
@@ -63,6 +72,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-name/dsh-message-editor.git"
-  }
+    "url": "git+https://github.com/azmavethy/dsh-message-editor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/azmavethy/dsh-message-editor/issues"
+  },
+  "homepage": "https://github.com/azmavethy/dsh-message-editor#readme"
 }

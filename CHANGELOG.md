@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.2.0] — 2026-08-20 · migrate to bundle manifest, add plugin tag, polish README
+
+- migrate to bundle manifest, add plugin tag, polish README
+
 ## [0.1.0] — 2026-08-19 · recall / edit-and-resend / regenerate for DeepSeek Harness
 
 - recall / edit-and-resend / regenerate for DeepSeek Harness
