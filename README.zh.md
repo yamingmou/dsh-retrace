@@ -17,7 +17,12 @@
 
 DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，本身没有撤销能力。
 `dsh-message-editor` 为对话补上聊天本该有的三个操作 —— **撤回**、**编辑重发**、
-**重新生成** —— 且**从不改写或删除**持久化记录。
+**重新生成**。
+
+撤回/编辑后，目标消息会**从对话视图和模型上下文中移除**——你看到的"删除"正是这个
+效果。但底层的**持久化日志不会被改写或删除**：它始终保持只追加，旧事件原样保留，
+插件只是在日志末尾追加一条合法的替换事件（与内置压缩使用的 `replace` 原语一致）来
+回退对话表面，因此日志保留每一次回退的完整审计痕迹。
 
 ---
 
@@ -33,8 +38,9 @@ DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，�
 
 - 🎯 **整轮撤回** —— 一键移除输入 *和* 它的输出（含工具行），而不只是单条气泡。
 - 🖥️ **Web + Desktop 双端** —— 同一插件覆盖 DeepSeek Harness 两种界面。
-- 🔒 **始终只追加** —— 持久化日志永不改写或删除，插件只追加合法、带类型的会话事件
-  （与内置压缩使用的 `replace` 原语一致）。
+- 🔒 **删除的是视图与上下文，不是日志** —— 被撤回/编辑的消息从对话视图和模型上下文中
+  消失，但持久化日志从不被改写或删除；插件只追加合法、带类型的会话事件（与内置压缩
+  使用的 `replace` 原语一致），日志保留完整审计痕迹。
 - 🧠 **视图 ⇄ 上下文同步** —— 对话视图永远反映智能体真正看到的内容。
 - ⚡ **30 秒上手** —— 动态插件形式无需重建即可在当前会话试用。
 
@@ -45,10 +51,17 @@ DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，�
 > 需要带 `dsh` CLI 的 DeepSeek Harness。以 profile bundle 方式安装，并自动重建 Web 客户端：
 
 ```sh
+# DSH Desktop（desktop profile）
+dsh plugin --profile desktop add dsh-message-editor
+
+# 独立 Web 部署（`dsh web` / web profile）
 dsh plugin --profile web add dsh-message-editor
 ```
 
-完成 —— 悬停任意助手回复或用户消息，即可使用 ↩ / ✎ / ↻。
+> ⚠️ **安装后需要重启。** 运行中的应用仍在内存中保留之前加载的 bundle，请**退出并
+> 重新打开 DSH Desktop**（独立 Web 部署则重启 `dsh` 进程）后插件才会生效。
+
+重启后，悬停任意助手回复或用户消息，即可使用 ↩ / ✎ / ↻。
 
 ---
 
@@ -62,9 +75,53 @@ dsh plugin --profile web add dsh-message-editor
 dsh plugin --profile <name> add dsh-message-editor
 ```
 
-同时可在 [dsh-market](https://github.com/dsh-market/dsh-market) 里一键安装。
+> ⚠️ **安装后需要重启。** 安装会写入新文件并重新生成 profile 组合，但运行中的应用
+> **不会**热加载 bundle —— 请**退出并重新打开 DSH Desktop**（独立 Web 部署则重启
+> `dsh` 进程）来加载插件。卸载：`dsh plugin --profile <name> remove
+> dsh-message-editor`（卸载后同样需要重启）。
 
-### 2. npm 包 + 组合文件（经典方式）
+同时可在 [dsh-market](https://github.com/dsh-market/dsh-market) 里一键安装
+（安装后同样需要重启）。
+
+### 2. 手动安装（不依赖 `dsh` CLI）
+
+用纯文件编辑 + `pnpm` 装进同一个 profile —— 也就是 `dsh plugin add` 帮你做的那些步骤：
+
+1. 打开 profile 清单（默认位置：DSH Desktop 为 `~/.dsh/profiles/desktop`，
+   独立 Web 为 `~/.dsh/profiles/web`），同时加入依赖**和** bundle 层条目：
+
+   ```json
+   {
+     "dependencies": {
+       "dsh-message-editor": "^0.2.0"
+     },
+     "dsh": {
+       "profile": {
+         "bundles": [
+           "@deepseek-ai/dsh-base",
+           "@deepseek-ai/dsh-web-app",
+           "dsh-message-editor"
+         ]
+       }
+     }
+   }
+   ```
+
+   （保留 profile 原有条目，只需新增 `dsh-message-editor` 这两处。）
+
+2. 在 profile 目录里安装：
+
+   ```sh
+   cd ~/.dsh/profiles/<name> && pnpm install
+   ```
+
+3. 重启 DSH Desktop / `dsh` 进程（见上文）。
+
+本地开发时，可以把依赖指向本地检出目录而不是注册表：
+`"dsh-message-editor": "file:/路径/to/dsh-message-editor"` —— 或者交给 `dsh`：
+`dsh plugin --profile <name> add /路径/to/dsh-message-editor`。
+
+### 3. npm 包 + 组合文件（经典方式）
 
 ```sh
 npm i dsh-message-editor
@@ -79,7 +136,7 @@ npm i dsh-message-editor
 Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户端（组合变化时会自动
 重建客户端模块）；Host 半区为浏览器 UI 注册同源 HTTP 路由 `/api/plugins/message-editor/*`。
 
-### 3. 动态插件（当前会话，免安装、免重建）
+### 4. 动态插件（当前会话，免安装、免重建）
 
 包内提供了两个自包含的动态入口：
 
@@ -131,8 +188,9 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
      （撤回/重新生成），
    - 设置 → 通用 中的两个偏好开关。
 
-> 由于 DeepSeek Harness 的对话是「只追加」日志，旧事件不会被物理删除——但会被
-> **同步地从模型上下文和可见对话中清除**，界面始终反映智能体真正看到的内容。
+> 这里有两个不同层面：**持久化日志**（只追加；旧事件从不被改写或删除）与
+> **模型可见表面**（由追加的替换事件回退）。因此旧事件作为审计痕迹留在记录中——
+> 但它们会被**同步地从模型上下文和可见对话中清除**，界面始终反映智能体真正看到的内容。
 > 因为插件只追加合法、带类型的会话事件，持久化、投影与记录保持一致。
 
 ---
@@ -163,13 +221,16 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 # 目录结构
 lib/host-core.js       # 传输无关的 Host 逻辑（无 import）
 lib/index.js           # 发布版 Host：harness RPC + HTTP 路由
-lib/client.js          # 发布版 Client（import React，fetch 传输）
+lib/client.js          # Client 源码（import React，fetch 传输）
+lib/client.bundle.js   # 构建产物 —— 自注册 loader entry
+                       # （`window.__ModuleLoader__.load`），由 client-modules 提供
 lib/dynamic-host.js    # 动态 Host 半区（自包含）
 lib/dynamic-client.js  # 动态 Client 半区（自包含）
 cordis.patch.yml       # dsh.bundle profile patch 层
 ```
 
 ```sh
+pnpm build             # 从 lib/client.js 重建 lib/client.bundle.js（发布前执行）
 npm pack --dry-run     # 校验发布文件清单
 node --check lib/*.js  # 语法检查
 ```

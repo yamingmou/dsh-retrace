@@ -17,8 +17,14 @@ works on the **Web GUI** and the **Desktop app** (both share the same Web fronte
 
 DeepSeek Harness stores every conversation as an **append-only event log**, so there is
 no built-in "undo". `dsh-message-editor` brings back the three moves every chat deserves —
-**撤回 (recall)**, **编辑重发 (edit-and-resend)** and **重新生成 (regenerate)** — without
-ever rewriting or deleting the durable transcript.
+**撤回 (recall)**, **编辑重发 (edit-and-resend)** and **重新生成 (regenerate)**.
+
+Recall / edit **remove the target messages from the conversation view and the model
+context** — that is exactly the effect you see. What stays untouched is the underlying
+**durable transcript**: it remains append-only, old events are never rewritten or deleted,
+and the plugin merely appends one valid replacement event (the same `replace` primitive
+the built-in compaction uses) to rewind the surface — so the log keeps a full audit trail
+of every rewind.
 
 ---
 
@@ -34,7 +40,7 @@ ever rewriting or deleting the durable transcript.
 
 - 🎯 **Whole-round recall** — one click removes the input *and* its output (including tool rows), not just a single bubble.
 - 🖥️ **Web + Desktop** — the same plugin covers both surfaces of DeepSeek Harness.
-- 🔒 **Append-only, always** — the durable log is never rewritten or deleted; the plugin only appends valid, typed session events (the same `replace` primitive the built-in compaction uses).
+- 🔒 **Removed from view & context, not from the log** — recalled/edited messages disappear from the conversation view and the model context, while the durable transcript is never rewritten or deleted; the plugin only appends valid, typed session events (the same `replace` primitive the built-in compaction uses), so the log keeps a full audit trail.
 - 🧠 **View ⇄ context in sync** — the conversation view always reflects exactly what the agent sees.
 - ⚡ **Try in 30 seconds** — the dynamic form installs in your current session with no rebuild.
 
@@ -46,10 +52,19 @@ ever rewriting or deleting the durable transcript.
 > bundle and automatically rebuilds the Web client:
 
 ```sh
+# DSH Desktop (desktop profile)
+dsh plugin --profile desktop add dsh-message-editor
+
+# standalone Web (`dsh web` / web profile)
 dsh plugin --profile web add dsh-message-editor
 ```
 
-That's it — hover any assistant reply, or any user message, and use ↩ / ✎ / ↻.
+> ⚠️ **Restart after install.** A running app keeps the previously loaded bundle
+> in memory, so **quit and reopen DSH Desktop** (or restart the `dsh` process for
+> a standalone Web deployment) before the plugin activates.
+
+That's it — after the restart, hover any assistant reply, or any user message,
+and use ↩ / ✎ / ↻.
 
 ---
 
@@ -64,10 +79,57 @@ plugin path into any profile:
 dsh plugin --profile <name> add dsh-message-editor
 ```
 
-It also shows up in [dsh-market](https://github.com/dsh-market/dsh-market) for
-one-click install from inside Settings.
+> ⚠️ **Restart required.** The install writes the new files and re-renders the
+> profile composition, but a running app does **not** hot-reload bundles — quit
+> and reopen **DSH Desktop** (or restart the `dsh` process for a standalone Web
+> deployment) to load the plugin. To uninstall:
+> `dsh plugin --profile <name> remove dsh-message-editor` (then restart again).
 
-### 2. npm package + composition (classic)
+It also shows up in [dsh-market](https://github.com/dsh-market/dsh-market) for
+one-click install from inside Settings (same restart applies).
+
+### 2. Manual install (no `dsh` CLI)
+
+The same result with plain file edits and `pnpm` — exactly the steps
+`dsh plugin add` performs for you:
+
+1. Open the profile manifest (defaults: `~/.dsh/profiles/desktop` on DSH
+   Desktop, `~/.dsh/profiles/web` for standalone Web) and add **both** the
+   dependency and the bundle-layer entry:
+
+   ```json
+   {
+     "dependencies": {
+       "dsh-message-editor": "^0.2.0"
+     },
+     "dsh": {
+       "profile": {
+         "bundles": [
+           "@deepseek-ai/dsh-base",
+           "@deepseek-ai/dsh-web-app",
+           "dsh-message-editor"
+         ]
+       }
+     }
+   }
+   ```
+
+   (Keep whatever entries your profile already has; only add the two
+   `dsh-message-editor` lines.)
+
+2. Install inside the profile directory:
+
+   ```sh
+   cd ~/.dsh/profiles/<name> && pnpm install
+   ```
+
+3. Restart DSH Desktop / the `dsh` process (see above).
+
+For local development, point the dependency at a checkout instead of the
+registry: `"dsh-message-editor": "file:/path/to/dsh-message-editor"` — or let
+`dsh` do it: `dsh plugin --profile <name> add /path/to/dsh-message-editor`.
+
+### 3. npm package + composition (classic)
 
 ```sh
 npm i dsh-message-editor
@@ -84,7 +146,7 @@ bundled into the Web client (a client-module rebuild happens automatically when 
 composition changes). The Host half registers the same-origin HTTP route
 `/api/plugins/message-editor/*` for the browser UI.
 
-### 3. Dynamic plugin (current session — no install, no rebuild)
+### 4. Dynamic plugin (current session — no install, no rebuild)
 
 Use the **dynamic** entries shipped in the package. In the session where you want the
 feature:
@@ -142,11 +204,13 @@ The dynamic host registers the same operations behind the package-private
      strip (撤回 / 重新生成),
    - two preference toggles under Settings → General.
 
-> Because DeepSeek Harness stores conversations as an append-only log, the old
-> events are never deleted — but they are **synchronized out of both the model
-> context and the visible conversation**, so the view always reflects what the
-> agent actually sees. Persistence, projections and the transcript remain
-> consistent because the plugin only appends valid, typed session events.
+> Two different layers are at play: the **durable transcript** (append-only; old
+> events are never rewritten or deleted) and the **model-visible surface** (rewound
+> by an appended replacement event). So the old events stay in the log as an audit
+> trail — but they are **synchronized out of both the model context and the visible
+> conversation**, and the view always reflects what the agent actually sees.
+> Persistence, projections and the transcript remain consistent because the plugin
+> only appends valid, typed session events.
 
 ---
 
@@ -180,13 +244,16 @@ The dynamic host registers the same operations behind the package-private
 # structure
 lib/host-core.js       # transport-neutral host logic (no imports)
 lib/index.js           # published Host: harness RPC + HTTP route
-lib/client.js          # published Client (React via import, fetch transport)
+lib/client.js          # client SOURCE (React via import, fetch transport)
+lib/client.bundle.js   # BUILT client bundle — the self-registering loader entry
+                       # (`window.__ModuleLoader__.load`) served by client-modules
 lib/dynamic-host.js    # dynamic Host half (self-contained)
 lib/dynamic-client.js  # dynamic Client half (self-contained)
 cordis.patch.yml       # dsh.bundle profile patch layer
 ```
 
 ```sh
+pnpm build             # rebuild lib/client.bundle.js from lib/client.js (run before publishing)
 npm pack --dry-run     # verify the published file list
 node --check lib/*.js  # syntax check
 ```

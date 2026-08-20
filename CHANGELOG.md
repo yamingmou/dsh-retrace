@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.2.1] — 2026-08-20 · ship built module-loader client bundle
+
+- ship built module-loader client bundle
+
 ## [0.2.0] — 2026-08-20 · migrate to bundle manifest, add plugin tag, polish README
 
 - migrate to bundle manifest, add plugin tag, polish README
