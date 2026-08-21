@@ -33,8 +33,11 @@ of every rewind. On top of that trail, retrace records version boundaries, touch
 and (optionally) git state, and lets you roll back artifacts or jump back to any point
 in the conversation — all **inside the same session**, no session-switching.
 
-> 🚧 **Roadmap in progress** — timeline & artifact rollback (P1) and the fork map (P2)
-> are being built per [PLAN.md](./PLAN.md). Recall / edit / regenerate are live today.
+> 🚧 **Roadmap in progress** — the **P0 version-data service is live** (version
+> boundaries, touched-file windows, content-addressed artifact snapshots,
+> `session/projection` push + HTTP query channels, config wiring). Timeline &
+> artifact rollback (P1) and the fork map (P2) are being built per [PLAN.md](./PLAN.md).
+> Recall / edit / regenerate are live today.
 
 ---
 

@@ -379,11 +379,11 @@ ctx.inject(['sessionProjections'], (ctx) => {
 - **验收**:`git status` 干净、README/CHANGELOG/PLAN 全部为 dsh-retrace 品牌;首个基建提交入库。
 
 ### P0 — 地基(版本数据服务,官方能力落地)
-- [ ] 0.1 `retrace/versions` 投影单元:边界检测(官方 `isReplacementSurfaceEvent` + `isCompactCheckpointSource` 分类)、surface 折叠、窗口归集、wire view、`stateVersion`
-- [ ] 0.2 storageDomain 领域 `retrace`(refCounts + global)+ ArtifactStore 内容寻址快照(attachment-local 模式)+ GC
-- [ ] 0.3 副作用接线:`onChanged` → 快照/git 记录;HTTP 面(versions/event/surface/rollback/git-init/snapshot)
-- [ ] 0.4 配置消费(Host 读 versioning/git/retentionLimit;关闭即退化 0.2.x 行为)
-- [ ] 0.5 spike:compaction 与 replace 标记共存行为验证(`isCompactCheckpointSource` 路径)
+- [x] 0.1 `retrace/versions` 投影单元:边界检测(官方 `isReplacementSurfaceEvent` + `isCompactCheckpointSource` 分类)、surface 折叠、窗口归集、wire view、`stateVersion`(2026-08-21,lib/version-index.js 纯折叠 + lib/projection/versions.js 单元定义)
+- [x] 0.2 storageDomain 领域 `retrace`(refcounts + global)+ ArtifactStore 内容寻址快照(attachment-local 模式)+ GC 机制(gcArtifacts;保留策略后台任务随 P1.5)
+- [x] 0.3 副作用接线:`onChanged` → 快照记录;HTTP 面(versions/event/surface;rollback/git-init/snapshot 属 P1)
+- [x] 0.4 配置消费(客户端 `x-retrace-config` 头随请求携带,Host 以请求为准;关闭 versioning 时副作用跳过 + HTTP 返回 disabled,行为退化 0.2.x)
+- [x] 0.5 spike:compaction 与 replace 标记共存行为验证(单测覆盖 `isCompactCheckpointSource` 分类与折叠;真机共存验证待装插件后冒烟)
 - **验收**:撤回/编辑后 Host 产出可查询版本记录(投影推送 + HTTP 双通道);重启后投影缓存恢复一致;开关关闭时行为与 0.2.x 一致;`pnpm check && pnpm test` 绿。
 
 ### P1 — 时间线 + 产物回退(差异化主体)

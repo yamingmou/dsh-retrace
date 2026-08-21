@@ -4,15 +4,18 @@
 
 ## [Unreleased]
 
+### 已实现(P0 — 版本数据服务,2026-08-21)
+
+- **`retrace/versions` 投影单元**(官方 `ctx.sessionProjections`):撤回/编辑/重生成/恢复、compaction 检查点与其它 replace 的版本边界检测;surface 折叠与 `foldSurface` 同语义;触碰文件窗口归集(created/modified/deleted);wire view 版本列表摘要;版本上限 200(完整历史可经日志重放)。
+- **内容寻址产物快照**(`$DSH_HOME/dsh-retrace/objects/<sha256[:2]>/<sha256>`,attachment-local 同款耐久写 + 完整性校验):版本边界自动快照触碰文件(工作区围栏 + 4MiB 上限 + 二进制跳过);`retrace` storageDomain 引用计数(`<versionId>:<path>` 共享去重)。
+- **双通道查询**:`session/projection` 推送帧(apiproxy 自动广播)+ HTTP `GET /api/plugins/retrace/versions`(投影快照降级);`GET /event` / `GET /surface`(sessionQuery 惰性读,时间线详情用)。
+- **配置生效**:设置三开关(版本与产物快照 / git 集成 / 保留上限)随请求携带(`x-retrace-config`),Host 以请求为准;关闭"版本与产物快照"时行为退化为纯 L1(仅上下文回退,不记录版本、不追踪产物)。
+- 设置 → 通用三个开关 UI 此前已落地,本次接入 Host 消费。
+
 ### 计划中(见 [PLAN.md](./PLAN.md))
 
-- **P0 — 版本数据服务**:`VersionIndex`(事件订阅 / 版本边界检测 / 触碰文件解析 / 启动重放对齐)、`ArtifactStore`(内容寻址快照 + 保留策略 GC)、配置消费(versioning / git / retentionLimit 开关生效)。
 - **P1 — 时间线与产物回退**:单会话版本时间线(浮层面板)、产物回退(git 优先 + 快照兜底,干跑预览 + 确认)、跳转对话位置 + 高亮、git 集成(commit-free / 一键 init)。
 - **P2 — 分叉图与增强**:回合分叉流程图、思考流对应、分支意图卡、版本对比 / 保存点 / 审计视图。
-
-### 已实现(设置 UI,待接逻辑)
-
-- 设置 → 通用新增三个开关(带说明文案):**版本与产物快照**(默认开)、**启用 git 集成**(默认开)、**版本保留上限**(默认 50)。
 
 ---
 
