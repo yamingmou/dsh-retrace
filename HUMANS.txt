@@ -1,5 +1,5 @@
 /* HUMANS.TXT */
-/* dsh-message-editor — an open-source plugin for DeepSeek Harness */
+/* dsh-retrace — an open-source plugin for DeepSeek Harness */
 
 /* Team */
 OfferKuai — AI Job Application Assistant
