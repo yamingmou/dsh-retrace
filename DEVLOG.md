@@ -53,6 +53,8 @@
 
 **验证方式**:`test/version-index.test.js`(纯折叠:边界分类/表面折叠/文件窗口/mode/上限/同引用契约)+ `test/projection.test.js`(单元定义 + schema + 合成事件日志的 apply/view);`pnpm check && pnpm test` 绿。
 
+**工程修复(同批)**:原 `pnpm check` 用 `node --check a.js b.js …` 多文件语法检查,但 Node 24 的 `--check` **只校验第一个参数**,后续文件全部被静默跳过(既有隐患,曾导致 `lib/client.js`/`lib/host-core.js` 从未被真正检查)。改为 `scripts/check-syntax.mjs`(esbuild 进程内解析每个 `lib/**.js`,不产生子进程,沙箱内外一致),坏文件立即失败。
+
 **遗留问题**:compaction 版本的 `markerText` 摘要(取 `compaction/summary` 前 N 字)待 P1;`kindFromMarkerId` 对非本插件标记的回退默认 'edit' 与官方 `isReplacementSurfaceEvent` 覆盖面一致性问题(非 replace 事件不构成版本,无影响)。
 
 ---
