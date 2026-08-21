@@ -61,21 +61,21 @@
 
 ## P0.2 — ArtifactStore 内容寻址快照 + storageDomain 领域(2026-08-21)
 
-**目标**:版本边界时对触碰文件做**内容寻址快照**(attachment-local 同款:tmp 暂存 + fsync + hardlink + 完整性校验),存储于 `$DSH_HOME/dsh-retrace/objects/<sha256[:2]>/<sha256>`;引用计数走 `ctx.storageDomain` 领域 `retrace`(refCounts 表 + global 配置),提供 GC。
+**目标**:版本边界时对触碰文件做**内容寻址快照**(attachment-local 同款:tmp 暂存 + fsync + hardlink + 完整性校验),存储于 `$DSH_HOME/dsh-retrace/objects/<sha256[:2]>/<sha256>`;引用计数走 `ctx.storageDomain` 领域 `retrace`(refcounts 表 + global 配置),提供 GC。
 
 **方案**:
 
 - `lib/artifact-store.js`(新增):
-  - `retraceDomainSpec = defineDomain({ name:'retrace', version:1, tables:{ refCounts: domainTable(zod) }, global:{ schema, initial } })`,引用域为 `@deepseek-ai/dsh-storage-domain`(peer)。
-  - `createArtifactStore(root)`:内容寻址 save/read;save 实现 tmp(随机 UUID)+ O_EXCL 写 + fsync + hardlink 发布,EEXIST 时校验已存在对象完整性(摘要不符即报错);read 做 sha 完整性校验。
-  - `gc(keepRefs)`:删除 refCounts 中无引用且不在保留集合的对象(基础版,完整保留策略随 P1.5)。
+  - `retraceDomainSpec = defineDomain({ name:'retrace', version:1, tables:{ refcounts: domainTable(zod) }, global:{ schema, initial } })`,引用域为 `@deepseek-ai/dsh-storage-domain`(peer)。⚠️ 表名必须全小写(`UNIT_NAME_RE` 只允许 `[a-z][a-z0-9_]*`),故用 `refcounts` 而非方案稿的 `refCounts`。
+  - `createArtifactStore(root)`:内容寻址 save/read;save 实现 tmp(随机 UUID)+ O_EXCL 写 + fsync + hardlink 发布,EEXIST 时校验已存在对象完整性(摘要不符即报错);read 做 sha 完整性校验;`list()` 扫描 `objects/<xx>/<sha>`。
+  - `gcArtifacts(store, keep)`:删除不在 keep(Set of sha256)内的对象(基础版,保留策略触发随 P1.5 后台任务)。
 - `$DSH_HOME` 解析用官方 `resolveDshHome()`(`@deepseek-ai/dsh-home-paths`,peer)。
 
 **涉及文件**:`lib/artifact-store.js`(新增)、`test/artifact-store.test.js`(新增)、`package.json`(peer 依赖 `@deepseek-ai/dsh-storage-domain`、`@deepseek-ai/dsh-home-paths`)。
 
 **关键决策**:快照只写插件自有目录 `$DSH_HOME/dsh-retrace/`(宿主 node:fs,与 attachment 一致,不绕过任何用户审批面);工作区内的读走 `ctx.fs`(沙箱);引用记法 `refs: ['<versionId>:<path>', …]`,同一 hash 跨版本共享,rollback(P1)可按 `v<seq>:path` 反查。
 
-**验证方式**:`test/artifact-store.test.js` 用临时目录验证 save/read 往返、去重(existed)、损坏对象完整性拒绝、gc。
+**验证方式**:`test/artifact-store.test.js` 用临时目录验证 save/read 往返、去重(existed)、损坏对象完整性拒绝、list/remove/gc、领域契约(global 拒绝 null)。
 
 **遗留问题**:二进制/超大文件判定在快照副作用处实现(P0.3 接线),折叠内不判;GC 的 retentionLimit 联动后台任务留 P1.5。
 
