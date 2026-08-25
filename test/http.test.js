@@ -12,7 +12,9 @@ describe('parseRetraceConfig', () => {
       versioning: false,
       git: false,
       retentionLimit: 10,
+      prewrite: true,
     })
+    expect(parseRetraceConfig(JSON.stringify({ prewrite: false }))).toEqual({ ...DEFAULT_CONFIG, prewrite: false })
   })
 
   it('merges partial configs onto defaults', () => {

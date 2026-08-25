@@ -22,6 +22,11 @@
 - 新增路由:`POST /rollback/preview`、`POST /rollback`、`GET /git/status`、`POST /git/init`、`GET /snapshot`。
 - 中英双语 UI 新增时间线/回退文案(键集一致,71=71);测试 84 → **110**。
 
+### 已实现(写前校验闭环,2026-08-26)
+
+- **marker 写前校验(prewrite guard)**:撤回/编辑/重新生成/恢复的 marker 落盘前,先经 `dsh-log-contract` 三层契约校验(S5 覆盖 / M1 引擎 / P1/P2 marker 语义 / S8 foldSurface 终验)——8-25 事故第 1 轮"违约写入没被拦"从此有系统解。任何 error 级违规 → `marker-rejected`,不落盘。依赖缺失自动降级(插件照常工作);可配置关闭(`prewrite`,默认开)。实测:20.4 万事件会话单次校验 ~220ms。
+- 新依赖:`dsh-log-contract@^0.1.0`(已发布 npm)。
+
 ### 修复(P0 遗留,真机冒烟实锤,2026-08-26)
 
 - **投影单元 wire 契约**:`retrace/versions` 单元补 `stateSchema` + `wire:{viewSchema, view}`——此前用顶层 `schema`/`view` 注册,框架将其视为"仅检查点"单元,**版本值自 0.3.0 起从未进入推送帧/快照**(时间线无数据、`/versions` 恒 `enabled:false`)。修复后真机复验:`插件新版本` 谱系 5 个 marker 正确产出 5 条版本记录(类型/摘要/文件计数/消息数全部正确)。
@@ -30,7 +35,7 @@
 ### 计划中(见 [PLAN.md](./PLAN.md))
 
 - **P2 — 分叉图与增强**:回合分叉流程图、思考流对应、分支意图卡、版本对比 / 保存点 / 审计视图、消息/思考节点时间线视图。
-- **待办**:真机 GUI 冒烟(profile 重装后验证时间线渲染/产物回退/跳转);dsh-log-contract 发布后接入写前校验(`lib/prewrite-guard.js` 已备)。
+- **待办**:真机 GUI 冒烟(profile 重装后验证时间线渲染/产物回退/跳转)。
 
 ---
 

@@ -221,3 +221,28 @@
 **P0 遗留 bug 的实锤(本轮最大收获)**:`lib/projection/versions.js` 的单元定义用了顶层 `schema`/`view` 字段,而框架 `dsh-session-projection` 的 `register()` 读的是 `definition.wire`(`{viewSchema, view}`)与 `definition.stateSchema`——**没有 wire 的单元注册为"仅检查点"类型,其键永不进入 `session/projection` 推送帧与 `snapshot()`,版本服务自 0.3.0 起在生产中从未可见**(`/versions` 恒返回 `enabled:false`,时间线无数据)。单测直接调用 definition.apply/view 绕过了框架契约,故未暴露;P1 真机冒烟(检查每个会话的 projections 块均缺 retrace/versions 键)抓到。修复:补 `stateSchema`(原始折叠状态 zod,供持久化 checkpoint 行校验)+ `wire`(客户端可见视图);保留顶层别名兼容单测(commit 8d20f3f)。**实机复验**:`插件新版本` 谱系会话的 projections 块现在含真实版本——e61d70da 5 个 marker → 5 条版本记录(kind/markerText/文件计数/messageCount 全部正确),当前会话 62c5b531 捕获到今天的真实编辑(v153124,3 文件变更)。
 
 **遗留问题**:P1.6(可选):seam.snapshot 对未 attach 会话做投影缓存冷读,补齐时间线 HTTP 降级;headless 浏览器 GUI 冒烟(时间线渲染/回退交互)待做;快照落盘/回退需在真实边界(下一次撤回/编辑)上验证(机制已单测覆盖,本实例无新边界故未触发)。
+
+---
+
+## 写前校验闭环(lib/prewrite-guard.js,2026-08-26)
+
+**目标**:8-25 事故第 1 轮"违约写入没被拦"的系统解——marker 落盘前过三层契约;`dsh-log-contract` 发布后接入(0.1.0 已上 npm)。
+
+**方案**:
+
+- `lib/prewrite-guard.js`(完成上次会话的 WIP 稿):
+  - `createMarkerGuard({log, prewriterFactory, enabled})` → `validateMarkerAppend(session, envelope)`;
+  - 依赖**运行时懒加载**(`await import('dsh-log-contract')`),包缺失/加载失败静默降级并记忆失败(不逐写重试),插件绝不被守护件拖垮;
+  - `prewriterFactory` 可注入(fake 测试);`enabled(sessionId)` 门控(默认开,配 `prewrite` 开关)。
+- `lib/host-core.js`:`appendEditorMarker` 增加可选 `validate` 钩子(validate first, commit later;可 async),`createEditorApi` 增加 `hooks.validateMarker` 参数;recall/edit/regenerate 三 op 接入。
+- `lib/rollback.js`:restore marker 同样过校验。
+- `lib/index.js`:创建守卫注入两处。
+- 配置:`prewrite`(默认 true)进 DEFAULT_RETRACE_CONFIG / DEFAULT_CONFIG / parseRetraceConfig / 客户端 CONFIG_DEFAULTS。
+
+**验证方式**:
+- 单测(prewrite-guard.test.js 9 用例 + http 配置 1):fake 校验器 pass/reject/throw/门控;真实 `createPreWriter` 集成(合法信封过、8-25 空 sourceEventSeqs 形状被拒);host-core 钩子(调用时序、拒绝即不落盘、无钩子不校验);120 全绿。
+- 真实化石(204,754 事件):合法 marker 信封 217ms 通过;手搓错误信封(尾事件非 surface 节点)被 S4/S8 正确拦截——守卫在真实规模下性能与正确性双达标。
+
+**关键认知**:20 万事件全量重放校验 ~220ms,可接受;M1 检查只对 append 的 assistant/message 要求 turn/step(插件 marker 是 replace 不受影响);真实日志每个 surface 事件都带 surfaceOp 标记,夹具必须对齐。
+
+**遗留问题**:设置 UI 未加 prewrite 开关行(可通过 localStorage 直接关);大会话(百万事件)的校验成本需随 P2 再评估。
