@@ -218,4 +218,6 @@
 
 **关键认知**:RPC 信封为 `POST /api/<method>` + `{type:'client-request', rpcId, method, payload}`;会话 id 带 `session-` 前缀;`session.list`/`session.history` 走磁盘读,可对未 attach 会话工作。
 
-**遗留问题**:P1.6(可选):seam.snapshot 对未 attach 会话做投影缓存冷读,补齐时间线 HTTP 降级;headless 浏览器 GUI 冒烟(时间线渲染/回退交互)待做。
+**P0 遗留 bug 的实锤(本轮最大收获)**:`lib/projection/versions.js` 的单元定义用了顶层 `schema`/`view` 字段,而框架 `dsh-session-projection` 的 `register()` 读的是 `definition.wire`(`{viewSchema, view}`)与 `definition.stateSchema`——**没有 wire 的单元注册为"仅检查点"类型,其键永不进入 `session/projection` 推送帧与 `snapshot()`,版本服务自 0.3.0 起在生产中从未可见**(`/versions` 恒返回 `enabled:false`,时间线无数据)。单测直接调用 definition.apply/view 绕过了框架契约,故未暴露;P1 真机冒烟(检查每个会话的 projections 块均缺 retrace/versions 键)抓到。修复:补 `stateSchema`(原始折叠状态 zod,供持久化 checkpoint 行校验)+ `wire`(客户端可见视图);保留顶层别名兼容单测(commit 8d20f3f)。**实机复验**:`插件新版本` 谱系会话的 projections 块现在含真实版本——e61d70da 5 个 marker → 5 条版本记录(kind/markerText/文件计数/messageCount 全部正确),当前会话 62c5b531 捕获到今天的真实编辑(v153124,3 文件变更)。
+
+**遗留问题**:P1.6(可选):seam.snapshot 对未 attach 会话做投影缓存冷读,补齐时间线 HTTP 降级;headless 浏览器 GUI 冒烟(时间线渲染/回退交互)待做;快照落盘/回退需在真实边界(下一次撤回/编辑)上验证(机制已单测覆盖,本实例无新边界故未触发)。
