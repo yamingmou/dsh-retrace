@@ -20,7 +20,12 @@
 - **GitAdapter**:自动检测仓库(含外层);版本边界记录 HEAD + 脏状态(commit-free,不动分支);非仓库工作区一键 `git init`(最小 .gitignore + 基线提交 + `refs/dsh/versions` 专用引用,可删除引用复原)。
 - **防膨胀 GC**:节流后台扫掠回收被截断版本(>200 版本上限)的快照对象与引用,长会话存储有界。
 - 新增路由:`POST /rollback/preview`、`POST /rollback`、`GET /git/status`、`POST /git/init`、`GET /snapshot`。
-- 中英双语 UI 新增时间线/回退文案(键集一致,71=71);测试 84 → **109**。
+- 中英双语 UI 新增时间线/回退文案(键集一致,71=71);测试 84 → **110**。
+
+### 修复(P0 遗留,真机冒烟实锤,2026-08-26)
+
+- **投影单元 wire 契约**:`retrace/versions` 单元补 `stateSchema` + `wire:{viewSchema, view}`——此前用顶层 `schema`/`view` 注册,框架将其视为"仅检查点"单元,**版本值自 0.3.0 起从未进入推送帧/快照**(时间线无数据、`/versions` 恒 `enabled:false`)。修复后真机复验:`插件新版本` 谱系 5 个 marker 正确产出 5 条版本记录(类型/摘要/文件计数/消息数全部正确)。
+- **git 适配器 subprocess 优雅获取**:`ctx.subprocess` 未注入时不再抛错,headless/最小组合降级为纯快照回退。
 
 ### 计划中(见 [PLAN.md](./PLAN.md))
 
