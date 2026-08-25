@@ -9,9 +9,9 @@ paths your conversation explored. A Harness enhancement plugin for the
 Desktop app (both share the same Web frontend).
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
-[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/azmavethy/dsh-retrace/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/yamingmou/dsh-retrace/blob/main/LICENSE)
 [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4A90D9)](https://github.com/topics/dsh-plugin)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/azmavethy/dsh-retrace/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/yamingmou/dsh-retrace/pulls)
 
 **English** · [简体中文](./README.zh.md)
 
@@ -33,8 +33,10 @@ of every rewind. On top of that trail, retrace records version boundaries, touch
 and (optionally) git state, and lets you roll back artifacts or jump back to any point
 in the conversation — all **inside the same session**, no session-switching.
 
-> 🚧 **Roadmap in progress** — timeline & artifact rollback (P1) and the fork map (P2)
-> are being built per [PLAN.md](./PLAN.md). Recall / edit / regenerate are live today.
+> ✅ **Timeline + artifact rollback are live (0.4.x)** — recall / edit /
+> regenerate, the version timeline, artifact rollback (git-first, snapshot
+> fallback), jump-to-conversation and marker pre-write validation (three-layer
+> contract guard) are all in. The fork map (P2) is in progress per [PLAN.md](./PLAN.md).
 
 ---
 
@@ -289,7 +291,7 @@ npm pack --dry-run    # verify the published file list
 > `__setMessageEditorWire`.
 
 PRs and issues are welcome — see [CONTRIBUTING](./CONTRIBUTING.md) (coming soon)
-and the [issue tracker](https://github.com/azmavethy/dsh-retrace/issues).
+and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 
 ---
 

@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.0] — 2026-08-26 · timeline + artifact rollback + pre-write guard
+
+- timeline + artifact rollback + pre-write guard
+
 ## [0.3.0] — 2026-08-20 · rebrand to dsh-retrace — new package name, plugin id, routes, brand
 
 - rebrand to dsh-retrace — new package name, plugin id, routes, brand

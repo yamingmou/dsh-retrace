@@ -17,6 +17,7 @@ export function userMessage(id, text, extra = {}) {
     type: 'user/message',
     data: {
       id,
+      role: 'user',
       content: [{ type: 'text', text }],
       source: { kind: 'user' },
       ...extra,
@@ -52,7 +53,22 @@ export function assistantMessage(id, text, source = {}) {
 export function toolRow(id, name = 'bash', extra = {}) {
   return {
     type: 'tool/result',
-    data: { id, name, content: [{ type: 'text', text: 'ok' }], ...extra },
+    data: {
+      message: {
+        id,
+        role: 'tool',
+        source: { kind: 'tool', callId: `call-${id}` },
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: `call-${id}`,
+            content: [{ type: 'text', text: 'ok' }],
+          },
+        ],
+      },
+      name,
+      ...extra,
+    },
   }
 }
 

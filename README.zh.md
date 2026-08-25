@@ -8,9 +8,9 @@
 同时支持 **Web 端** 与 **桌面客户端**(两者共用同一套 Web 前端)。
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
-[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/azmavethy/dsh-retrace/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/yamingmou/dsh-retrace/blob/main/LICENSE)
 [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4A90D9)](https://github.com/topics/dsh-plugin)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/azmavethy/dsh-retrace/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/yamingmou/dsh-retrace/pulls)
 
 **简体中文** · [English](./README.md)
 
@@ -28,8 +28,7 @@ DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，�
 版本边界、触碰文件与（可选的）git 状态，支持产物回退与跳转到对话任意位置——全部
 发生在**同一会话内**，不换会话。
 
-> 🚧 **路线图进行中** —— 时间线与产物回退（P1）、分叉图（P2）正在按
-> [PLAN.md](./PLAN.md) 开发;撤回/编辑/重新生成当前已可用。
+> ✅ **时间线 + 产物回退已上线（0.4.x）** —— 撤回/编辑/重新生成、版本时间线、产物回退（git 优先 + 快照兜底）、跳转对话、marker 写前校验均已可用;分叉图（P2）按 [PLAN.md](./PLAN.md) 推进中。
 
 ---
 
@@ -218,8 +217,8 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 
 按 [PLAN.md](./PLAN.md) 推进:
 
-- **P1 — 时间线与产物回退**:单会话内的版本时间线(消息、思考、触碰文件),产物快照
-  (git 优先 + 快照兜底,可开关),带干跑预览的回退,以及跳转到对话位置。
+- **P1 — 时间线与产物回退** ✅ 已上线:单会话内的版本时间线(版本/消息/思考/工具节点),产物快照
+  (git 优先 + 快照兜底,可开关),带干跑预览的回退,以及跳转到对话位置;marker 写前校验(三层契约)守护日志。
 - **P2 — 分叉图**:对话回合的流程分叉图,每次回退都是分叉点,逐回合思考流,
   分支意图卡,版本对比。
 - 支持更多语言（当前：简体中文 / English）。
@@ -261,7 +260,7 @@ npm pack --dry-run    # 校验发布文件清单
 > （`host.call` vs HTTP 路由）。
 
 欢迎提交 PR 与 issue —— 见 [CONTRIBUTING](./CONTRIBUTING.md)（筹备中）与
-[问题追踪](https://github.com/azmavethy/dsh-retrace/issues)。
+[问题追踪](https://github.com/yamingmou/dsh-retrace/issues)。
 
 ---
 
