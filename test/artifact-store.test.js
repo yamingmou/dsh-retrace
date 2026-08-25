@@ -81,7 +81,7 @@ describe('retraceDomainSpec', () => {
   it('declares the retrace domain (refcounts + global)', () => {
     expect(retraceDomainSpec.name).toBe('retrace')
     expect(retraceDomainSpec.version).toBe(1)
-    expect(Object.keys(retraceDomainSpec.tables)).toEqual(['refcounts'])
+    expect(Object.keys(retraceDomainSpec.tables)).toEqual(['refcounts', 'versiongit'])
     expect(retraceDomainSpec.global).toBeDefined()
     expect(retraceDomainSpec.global.initial).toEqual({ retentionLimit: 50, gitEnabled: true })
     // global must not accept null (storage sentinel), per the domain contract
