@@ -387,12 +387,12 @@ ctx.inject(['sessionProjections'], (ctx) => {
 - **验收**:撤回/编辑后 Host 产出可查询版本记录(投影推送 + HTTP 双通道);重启后投影缓存恢复一致;开关关闭时行为与 0.2.x 一致;`pnpm check && pnpm test` 绿。
 
 ### P1 — 时间线 + 产物回退(差异化主体)
-- [ ] 1.1 时间线浮层面板:版本/消息/思考/工具节点、虚拟列表、详情抽屉(投影推送 + readEvent)
-- [ ] 1.2 产物回退:context/artifacts/both;快照兜底 + git 优先;干跑预览 + 确认(§4.5)
-- [ ] 1.3 跳转对话 + 高亮(loadOlder 循环 + data-chat-anchor-key + CSS 高亮)
-- [ ] 1.4 GitAdapter:仓库检测(含外层)、commit-free 记录、非仓库一键 init(专用引用)
-- [ ] 1.5 防膨胀完善:GC 后台任务、快照上限、二进制/超大文件策略
-- **验收**:用户在时间线看到版本与产物变更;可回退产物并验证文件内容;可点击节点跳转对话;开关与说明生效。
+- [x] 1.1 时间线浮层面板:版本/消息/思考/工具节点、虚拟列表、详情抽屉(投影推送 + readEvent)（2026-08-25 实现：header.actions 入口 + 浮层面板；版本列表走 useProjection 推送帧、HTTP /versions 降级；详情 GET /event；列表为固定行高零依赖窗口化——react-virtual 评估后放弃打包，见 DEVLOG）
+- [x] 1.2 产物回退:context/artifacts/both;快照兜底 + git 优先;干跑预览 + 确认(§4.5)（2026-08-25 实现：lib/rollback.js + POST /rollback/preview + /rollback）
+- [x] 1.3 跳转对话 + 高亮(loadOlder 循环 + data-chat-anchor-key + CSS 高亮)（2026-08-25 实现：jump 经 sessions.binding().session.loadOlder 循环 + anchor 高亮动画）
+- [x] 1.4 GitAdapter:仓库检测(含外层)、commit-free 记录、非仓库一键 init(专用引用)（2026-08-25 实现：lib/git-adapter.js + versiongit 域表记录边界 HEAD + GET /git/status + POST /git/init）
+- [x] 1.5 防膨胀完善:GC 后台任务、快照上限、二进制/超大文件策略（2026-08-25 实现：节流 GC 扫掠（已知会话保留版本过滤 + 零引用对象清理 + versiongit 剪枝）；4MiB/二进制跳过在 P0.3 已实现；版本上限 200 在折叠内）
+- **验收**:代码实现 + 单测绿（109）；**真机 GUI 冒烟待做**（profile 重装 + 实际会话验证时间线渲染/产物回退/跳转）
 
 ### P2 — 分叉图 + 增强(旗舰)
 - [ ] 2.1 分叉流程图:turn/step 树 + 标记分叉点 + `traceEvent` 旧路径链接;SVG + 虚拟化

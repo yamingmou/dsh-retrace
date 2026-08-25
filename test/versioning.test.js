@@ -1,10 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createVersioningSeam, DEFAULT_RETRACE_CONFIG } from '../lib/versioning.js'
 import { versionsProjectionDefinition } from '../lib/projection/versions.js'
 import { MARKER_ID_PREFIX } from '../lib/version-index.js'
+import { objectPath } from '../lib/artifact-store.js'
 
 // ---------------------------------------------------------------------------
 // Fake host services (the seam only needs a thin slice of each)
@@ -18,17 +19,24 @@ function fakeKvTable() {
     put: async (key, value) => {
       records.set(key, value)
     },
+    delete: async (key) => {
+      records.delete(key)
+    },
+    entries: () => records.entries(),
+    keys: () => records.keys(),
     records,
   }
 }
 
 function fakeDomain() {
   const refcounts = fakeKvTable()
+  const versiongit = fakeKvTable()
   return {
-    table: (name) => (name === 'refcounts' ? refcounts : null),
+    table: (name) => (name === 'refcounts' ? refcounts : name === 'versiongit' ? versiongit : null),
     global: { get: () => null, set: async () => {} },
     close: async () => {},
     refcounts,
+    versiongit,
   }
 }
 
@@ -297,5 +305,57 @@ describe('seam snapshot and config', () => {
     expect(seam.configFor('s1')).toEqual(DEFAULT_RETRACE_CONFIG)
     seam.setConfig('s1', { versioning: false })
     expect(seam.configFor('s1')).toEqual({ ...DEFAULT_RETRACE_CONFIG, versioning: false })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// P1.5 — background GC sweep (retention-bounded artifact store)
+// ---------------------------------------------------------------------------
+
+describe('GC sweep', () => {
+  it('prunes refs to versions truncated out of the timeline window and removes their objects', async () => {
+    const ctx = fakeCtx()
+    const storeRoot = await freshRoot()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot, gcIntervalMs: 0 })
+    seam.register()
+    const seamCtx = ctx.inject.seam
+    await settle()
+
+    const session = { id: 's1', header: { cwd: '/ws' } }
+    const { mkdir, writeFile } = await import('node:fs/promises')
+
+    // A pre-truncation snapshot: version v2 referenced an object; the fold below
+    // keeps only the last 200 of 205 versions, so v2 leaves the window.
+    await seamCtx.domain.refcounts.put('deadbeef', { refs: ['v2:src/old.ts'], sizeBytes: 4, createdAt: 1 })
+    await mkdir(dirname(objectPath(storeRoot, 'deadbeef')), { recursive: true })
+    await writeFile(objectPath(storeRoot, 'deadbeef'), 'old!')
+
+    // Build a 205-version log: (user, tool-write, marker) per version.
+    const events = []
+    for (let i = 0; i < 205; i++) {
+      events.push(userMessage(3 * i))
+      events.push(toolWrite(3 * i + 1, `src/f${i}.ts`))
+      events.push(editorMarker(3 * i + 2, i === 0 ? { start: 0, end: 1 } : { start: 3 * i - 1, end: 3 * i + 1, op: 'edit' }))
+    }
+    const view = foldView(events)
+    expect(view.versions.length).toBe(200) // VERSION_LIMIT truncation
+
+    seamCtx.changeListener(session, 'retrace/versions', view, 3 * 204 + 2)
+    // The newest boundary's snapshot lands (v614:src/f204.ts survives).
+    await waitFor(() => {
+      const records = [...seamCtx.domain.refcounts.records.values()]
+      return records.some((r) => r.refs && r.refs.includes('v614:src/f204.ts'))
+    })
+    // The truncated version's ref is pruned…
+    await waitFor(() => {
+      const records = [...seamCtx.domain.refcounts.records.values()]
+      return records.every((r) => r.refs.every((ref) => !ref.startsWith('v2:')))
+    })
+    // …and its object file is GC'd, while the retained snapshot survives.
+    await waitFor(async () => {
+      try { await access(objectPath(storeRoot, 'deadbeef')); return false } catch { return true }
+    })
+    const shaNew = [...seamCtx.domain.refcounts.records.keys()].find((sha) => sha !== 'deadbeef')
+    await access(objectPath(storeRoot, shaNew))
   })
 })

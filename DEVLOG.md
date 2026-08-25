@@ -121,3 +121,85 @@
 **验证方式**:84 测试全过(新增 1 条遗留前缀回归);headless GUI 实测「插件新版本」会话 882 行全渲染、0 隐藏、5 个 marker 标注行正常、旧 marker 不再隐藏 121763、无客户端报错;bundle 已同步 desktop/web 两个 profile。
 
 **遗留问题**:Host 侧新代码需重启 DSH Desktop 生效(客户端 bundle 已即时生效,no-cache 直出)。
+
+---
+
+## P1.2 — 产物回退执行器(lib/rollback.js,2026-08-25)
+
+**目标**:按 PLAN §4.5 实现 context/artifacts/both 三种回退;干跑预览 + 确认;回退记录为新版本(kind=restore),可再回退。
+
+**方案**:
+
+- `lib/rollback.js`(新增):`createRollbackExecutor({ctx, sessions, seam, log})`:
+  - `preview({sessionId, versionId, scope})`:context 差集 = 当前 surface 中不在目标版本折叠 surface 的节点(`foldSurface(events.slice(0, boundarySeq+1))`,官方导出);artifacts 计划逐文件给 action/method(git / snapshot / delete / skip-no-snapshot);`applicable` 标记是否有事可做。
+  - `execute`:context 复用 `appendEditorMarker(op='restore')` 追加空标记替换差集区间;artifacts:git 优先(`git checkout <headHash> -- <paths>`,仅清单路径,`ls-tree` 预筛存在性),快照兜底(`resolveSnapshot` 反查 refcounts → `store.read` 校验 → `ctx.fs.writeText` CAS `replaceIfVersion` + `sandboxPolicy.resolve({session, mode:'workspace-write'})`),删除文件走 subprocess `rm`(realpath 在工作区内且路径在清单内)。
+  - 幂等:per-session 锁;回退本身是版本(kind=restore),投影推送自动可见。
+- `lib/host-core.js`(重构):`editorId/editorError/lastModelSource/appendEditorMarker` 提升为模块级导出(rollback 复用,host-core 仍零依赖)。
+- `lib/versioning.js`(扩展):新增 seam 方法 `agentOf/resolveSnapshot/readSnapshot/gitHeadFor/gitStatus/gitCheckout/gitInit`;边界副作用新增 `recordVersionGit`(读状态 `rev-parse HEAD` + `status --porcelain` → 域表 `versiongit`)。
+
+**关键决策**:versiongit 用域表而非投影字段——折叠保持纯函数,git 事实是边界时刻的副作用记录;快照回退写回走 CAS 防覆盖用户手动编辑。
+
+**验证方式**:`test/rollback.test.js`(8 用例:preview 差集/计划/适用性、execute 三类范围、git/快照/删除三条路径)+ `test/git-adapter.test.js`(7 用例:detect/status/checkout 护栏/init 序列);`pnpm check && pnpm test` 绿(109)。
+
+**遗留问题**:真机验证待做(profile 重装 + GUI 冒烟);`gitHeadFor` 目前仅 rollback 预览提示用,回退直接取执行时刻 gitStatus 的 HEAD。
+
+---
+
+## P1.1 + P1.3 — 时间线浮层与跳转(client,2026-08-25)
+
+**目标**:PLAN §5.1 时间线浮层面板(header 入口、投影推送 + HTTP 降级、详情抽屉、回退预览/确认、git 横幅)+ §5.1 跳转对话 + 高亮。
+
+**方案**:
+
+- `lib/client.js`(扩展):
+  - 注册 `conversation.session.header.actions`(order 30)入口按钮 + 浮层面板(绝对定位,不换视图环标签页——chat 保持挂载,跳转才可行)。
+  - 数据:版本列表优先 `useProjection('retrace/versions')`(推送帧,零轮询),缺省走 `GET /versions` + 手动刷新;详情 `GET /event?seq&before&after` 惰性加载;回退 `POST /rollback/preview` → 范围三选 → `POST /rollback`;git 横幅 `GET /git/status` + 一键 `POST /git/init`(confirm)。
+  - 跳转:`sessions.binding(id).session.loadOlder()` 循环(≤500 页)直到目标 anchorSeq 节点出现(经 useSession 快照 ref 探测),`[data-chat-anchor-key]` scrollIntoView + 注入高亮动画 CSS,2 轮后自动移除。
+  - 列表:固定行高零依赖窗口化(visible slice)——@tanstack/react-virtual 评估后放弃(打包 +15KiB,均匀行高下收益为负),DEVLOG 记录偏差。
+  - 事件查看器(详情抽屉)pre 渲染 JSON。
+- i18n:zh/en 各 +42 键(timeline.*,键集一致校验通过 71=71)。
+
+**关键决策**:投影推送帧为数据主源、HTTP 为降级(与 PLAN §4.6 一致);回退必须 preview→confirm 两段式(防误操作);跳转失败(未加载到)给提示不静默。
+
+**验证方式**:`pnpm check`(esbuild 逐文件语法)+ `pnpm build`(bundle 60KiB,自注册 loader entry)+ bundle 加载冒烟(模拟 window/ModuleLoader,exports 完整)+ `pnpm test` 绿(109)。
+
+**遗留问题**:真机 GUI 冒烟待做;react-virtual 未用(记录偏差);时间线消息/思考节点视图(仅版本节点)留 P2。
+
+---
+
+## P1.4 — GitAdapter(lib/git-adapter.js,2026-08-25)
+
+**目标**:PLAN §4.4 commit-free 记录 + 仓库检测(含外层)+ 非仓库一键 init(专用引用)。
+
+**方案**:
+
+- `lib/git-adapter.js`(新增,transport-shaped 可测):`createGitAdapter({command, writeText})`:
+  - `detect(cwd)`:`git rev-parse --show-toplevel`(外层仓库自然包含)。
+  - `status(cwd)`:`rev-parse HEAD` + `status --porcelain` → `{root, headHash, dirty, paths}`;unborn HEAD → `headHash: null`。
+  - `checkout(cwd, headHash, paths)`:路径护栏(拒绝绝对路径/`..` 逃逸/越界),`ls-tree -r --name-only` 预筛存在路径,只 checkout 存在者。
+  - `init(cwd)`:`git init -q` → 最小 `.gitignore`(经注入的 workspace 沙箱写)→ 基线提交 → `update-ref refs/dsh/versions HEAD`(专用引用,可删引用复原)。
+- 全部命令经 `ctx.subprocess`(resolveExecutable('git'),collect 输出,30s grace)。
+
+**关键决策**:适配器与 runner 分离(`createSubprocessRunner` 包装 ctx.subprocess),测试注入 fake runner 走全决策路径;写命令只在用户确认流程中触发。
+
+**验证方式**:`test/git-adapter.test.js`(7 用例,含护栏/预筛/init 序列)。
+
+**遗留问题**:真机验证待做;diffSha 未实现(P2)。
+
+---
+
+## P1.5 — 防膨胀 GC(versioning.js,2026-08-25)
+
+**目标**:PLAN §4.3/§1.5 保留上限内回收快照,长会话不无界增长。
+
+**方案**:
+
+- 边界时维护 `retainedVersions`(sessionId → 窗口内版本 id 集);节流(默认 60s,可配 `gcIntervalMs`)扫掠:
+  1. refcounts 中过滤已知会话已截断版本的引用(未知会话保守保留);
+  2. 零引用对象经 `gcArtifacts` 删除(内容寻址文件);
+  3. versiongit 行同步剪枝(版本不在任何已知会话窗口即删)。
+- 快照侧 4MiB/二进制跳过已在 P0.3 实现;版本上限 200 在折叠内(P0.1)。
+
+**验证方式**:`test/versioning.test.js` 新增 GC 用例(205 版本截断到 200 → v2 引用被剪、对象文件被删、保留对象仍在);fake KvTable 补 entries/keys/delete。
+
+**遗留问题**:跨重启的未知会话引用不做激进回收(安全优先);真机验证待做。
