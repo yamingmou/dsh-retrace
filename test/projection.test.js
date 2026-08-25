@@ -112,6 +112,30 @@ describe('versionsProjectionDefinition', () => {
     expect(typeof versionsProjectionDefinition.schema?.parse).toBe('function')
   })
 
+  it('exposes wire + stateSchema so the registry serves the value (framework contract regression)', () => {
+    // The registry (`dsh-session-projection` register) reads `definition.wire`
+    // — a unit without it is checkpoint-only and its key NEVER appears in
+    // snapshot()/push frames (P0 bug found by the P1 real-harness smoke).
+    expect(versionsProjectionDefinition.wire).toBeDefined()
+    expect(typeof versionsProjectionDefinition.wire.view).toBe('function')
+    expect(typeof versionsProjectionDefinition.wire.viewSchema?.parse).toBe('function')
+    expect(typeof versionsProjectionDefinition.stateSchema?.parse).toBe('function')
+    // The wire view must parse through its own schema (what the registry does).
+    const state = run(versionsProjectionDefinition, [
+      userMessage(0),
+      toolCall(1, { name: 'fs.write', args: { path: 'src/a.ts' } }),
+      editorMarker(2, { start: 0, end: 1, op: 'edit' }),
+    ])
+    const parsed = versionsProjectionDefinition.wire.viewSchema.parse(
+      versionsProjectionDefinition.wire.view(state),
+    )
+    expect(parsed.versions).toHaveLength(1)
+    expect(parsed.versions[0].versionId).toBe('v2')
+    // The raw fold state must parse through the stateSchema (durable rows).
+    const stateParsed = versionsProjectionDefinition.stateSchema.parse(state)
+    expect(stateParsed.knownFiles).toContain('src/a.ts')
+  })
+
   it('is idempotent across a re-fold (deterministic, replayable)', () => {
     const events = [
       userMessage(0),
