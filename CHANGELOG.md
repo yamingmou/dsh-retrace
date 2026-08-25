@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-26 · 时间线与产物回退
+
 ### 已实现(P0 — 版本数据服务,2026-08-21)
 
 - **`retrace/versions` 投影单元**(官方 `ctx.sessionProjections`):撤回/编辑/重生成/恢复、compaction 检查点与其它 replace 的版本边界检测;surface 折叠与 `foldSurface` 同语义;触碰文件窗口归集(created/modified/deleted);wire view 版本列表摘要;版本上限 200(完整历史可经日志重放)。
@@ -89,6 +91,7 @@
 - **v3.1** — 单消息撤回(隐藏消息与操作行)、自动消失的回退提示、重发消息下折叠原输入对照
 
 <!-- 版本链接占位(发布后启用)
+[0.4.0]: https://github.com/yamingmou/dsh-retrace/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yamingmou/dsh-retrace/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/yamingmou/dsh-retrace/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/yamingmou/dsh-retrace/compare/v0.2.0...v0.2.1
