@@ -12,7 +12,7 @@
 **方案**:
 
 - 目录改名:仓库根目录本身即 `dsh-message-editor/`,直接 `mv`(git 仓库与其父目录名无关,仓库内相对路径引用不受影响)。
-- `git remote set-url origin https://github.com/azmavethy/dsh-retrace.git`(与 package.json `repository` 字段一致)。
+- `git remote set-url origin https://github.com/yamingmou/dsh-retrace.git`(与 package.json `repository` 字段一致)。
 - `HUMANS.txt` / `LICENSE` 抬头品牌同步;`PLAN.md` 自身的历史迁移说明保留(它是改名记录)。
 - 新增 `DEVLOG.md`。
 
@@ -22,7 +22,7 @@
 
 **验证方式**:`git status` 干净(除 P0 进行中文件);`git remote -v` 指向新地址;`git grep -i message-editor` 仅剩 PLAN.md 历史迁移说明与 CHANGELOG/README 的迁移文档(有意保留)。
 
-**遗留问题**:新远程仓库 `azmavethy/dsh-retrace` 若尚未在 GitHub 创建,首次 `git push` 前需创建;旧包 deprecation 发布待定。
+**遗留问题**:新远程仓库已定名 `yamingmou/dsh-retrace`（2026-08-25 由 `dsh-message-editor` 改名而来,旧链接自动重定向）;旧包 deprecation 发布待定。
 
 ---
 

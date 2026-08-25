@@ -69,8 +69,8 @@
 - **v3.1** — 单消息撤回(隐藏消息与操作行)、自动消失的回退提示、重发消息下折叠原输入对照
 
 <!-- 版本链接占位(发布后启用)
-[0.3.0]: https://github.com/azmavethy/dsh-retrace/compare/v0.2.2...v0.3.0
-[0.2.2]: https://github.com/azmavethy/dsh-retrace/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/azmavethy/dsh-retrace/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/azmavethy/dsh-retrace/releases/tag/v0.2.0
+[0.3.0]: https://github.com/yamingmou/dsh-retrace/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/yamingmou/dsh-retrace/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/yamingmou/dsh-retrace/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/yamingmou/dsh-retrace/releases/tag/v0.2.0
 -->

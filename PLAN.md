@@ -49,7 +49,7 @@
 - 采用面小(几乎无人使用),迁移成本低;旧包 README 指引迁移。
 - 残留改名动作(**步骤 0**,开工第一件事):
   1. 目录名 `dsh-message-editor` → `dsh-retrace`(`git mv`,仓库内所有相对路径引用不受影响)。
-  2. `git remote set-url origin <dsh-retrace 新仓库地址>`(当前仍指向 `azmavethy/dsh-message-editor.git`)。
+  2. `git remote set-url origin <dsh-retrace 新仓库地址>`(当前仍指向 `yamingmou/dsh-retrace.git`)。
   3. `git grep -i message-editor` 全仓清零(路由/前缀已换,查漏)。
   4. 旧包 `dsh-message-editor` 发 0.2.3 仅更新 README 迁移指引(deprecation note)。
 
@@ -373,7 +373,7 @@ ctx.inject(['sessionProjections'], (ctx) => {
 ## 9. 阶段计划与验收
 
 ### 步骤 0 — 改名与工程基建(开工第一步)
-- [x] 0.1 `git mv dsh-message-editor dsh-retrace`(目录名)+ 新远程 URL + 全仓 `message-editor` 残留清零(2026-08-21,remote 已指向 `azmavethy/dsh-retrace.git`;HUMANS/LICENSE 抬头已换)
+- [x] 0.1 `git mv dsh-message-editor dsh-retrace`(目录名)+ 新远程 URL + 全仓 `message-editor` 残留清零(2026-08-21 remote 指向 dsh-retrace;2026-08-25 GitHub 仓库定名 `yamingmou/dsh-retrace`;HUMANS/LICENSE 抬头已换)
 - [x] 0.2 新建 `DEVLOG.md`,初始化本方案对应任务清单;确认提交/分支/tag 规范落地
 - [ ] 0.3 旧包 deprecation 发布准备(0.2.3 README 迁移指引,可后置)
 - **验收**:`git status` 干净、README/CHANGELOG/PLAN 全部为 dsh-retrace 品牌;首个基建提交入库。

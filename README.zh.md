@@ -8,9 +8,9 @@
 同时支持 **Web 端** 与 **桌面客户端**(两者共用同一套 Web 前端)。
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
-[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/azmavethy/dsh-retrace/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/yamingmou/dsh-retrace/blob/main/LICENSE)
 [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4A90D9)](https://github.com/topics/dsh-plugin)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/azmavethy/dsh-retrace/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/yamingmou/dsh-retrace/pulls)
 
 **简体中文** · [English](./README.md)
 
@@ -261,7 +261,7 @@ npm pack --dry-run    # 校验发布文件清单
 > （`host.call` vs HTTP 路由）。
 
 欢迎提交 PR 与 issue —— 见 [CONTRIBUTING](./CONTRIBUTING.md)（筹备中）与
-[问题追踪](https://github.com/azmavethy/dsh-retrace/issues)。
+[问题追踪](https://github.com/yamingmou/dsh-retrace/issues)。
 
 ---
 
