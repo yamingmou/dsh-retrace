@@ -203,3 +203,19 @@
 **验证方式**:`test/versioning.test.js` 新增 GC 用例(205 版本截断到 200 → v2 引用被剪、对象文件被删、保留对象仍在);fake KvTable 补 entries/keys/delete。
 
 **遗留问题**:跨重启的未知会话引用不做激进回收(安全优先);真机验证待做。
+
+---
+
+## 真机冒烟(web profile,2026-08-25 深夜)
+
+**目标**:把新构建同步进 `~/.dsh/profiles/web/node_modules/dsh-retrace`,起 `dsh web`,对真实会话验证 P1 Host 管线。
+
+**验证结果**:
+1. ✅ 插件在真实 harness 加载干净(apply 无抛错,路由注册成功);
+2. ✅ 发现并修复真实 bug:`ctx.subprocess` 在 cordis 是 getter,未注入时**直接 throw**("cannot get property 'subprocess' without inject")——headless/最小组合下 git 面首次调用即崩。修复:ensureGit 用 try/catch 包裹,降级为纯快照回退(commit c5c1fc4);
+3. ✅ `GET /git/status` 优雅降级返回 `{ok:true,value:null}`;
+4. ⚠️ `GET /versions` 对**未 attach 的会话**返回 session-not-found——`ctx.sessions.get(id)` 只解析客户端已订阅(attach)的会话;GUI 打开会话即 attach,主路径(时间线推送帧/回退)可用;HTTP 降级通道在未打开会话时需冷读投影缓存(sessionProjectionCache)——记入 P1.6 观察。
+
+**关键认知**:RPC 信封为 `POST /api/<method>` + `{type:'client-request', rpcId, method, payload}`;会话 id 带 `session-` 前缀;`session.list`/`session.history` 走磁盘读,可对未 attach 会话工作。
+
+**遗留问题**:P1.6(可选):seam.snapshot 对未 attach 会话做投影缓存冷读,补齐时间线 HTTP 降级;headless 浏览器 GUI 冒烟(时间线渲染/回退交互)待做。
