@@ -9,9 +9,9 @@ paths your conversation explored. A Harness enhancement plugin for the
 Desktop app (both share the same Web frontend).
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
-[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/azmavethy/dsh-retrace/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/yamingmou/dsh-retrace/blob/main/LICENSE)
 [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4A90D9)](https://github.com/topics/dsh-plugin)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/azmavethy/dsh-retrace/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/yamingmou/dsh-retrace/pulls)
 
 **English** · [简体中文](./README.zh.md)
 
@@ -292,7 +292,7 @@ npm pack --dry-run    # verify the published file list
 > `__setMessageEditorWire`.
 
 PRs and issues are welcome — see [CONTRIBUTING](./CONTRIBUTING.md) (coming soon)
-and the [issue tracker](https://github.com/azmavethy/dsh-retrace/issues).
+and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 
 ---
 

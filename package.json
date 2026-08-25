@@ -89,12 +89,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/azmavethy/dsh-retrace.git"
+    "url": "git+https://github.com/yamingmou/dsh-retrace.git"
   },
   "bugs": {
-    "url": "https://github.com/azmavethy/dsh-retrace/issues"
+    "url": "https://github.com/yamingmou/dsh-retrace/issues"
   },
-  "homepage": "https://github.com/azmavethy/dsh-retrace#readme",
+  "homepage": "https://github.com/yamingmou/dsh-retrace#readme",
   "devDependencies": {
     "esbuild": "^0.28.2",
     "vitest": "^4.1.11"
