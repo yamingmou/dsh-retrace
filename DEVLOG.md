@@ -99,3 +99,25 @@
 **验证方式**:`pnpm check && pnpm test` 绿;构建产物(client.bundle.js/dynamic-client.js)由 `pnpm build` 再生成且 CI diff 门禁一致。
 
 **遗留问题**:版本化开关的 apply 时注册与否,待客户端设置真正接线后(可考虑 `ctx.settings` 服务端设置迁移,plan §4.6 后续项)再收敛;`sessionQuery` 在 headless 组合缺失时 GET /event /surface 返回 503,不影响核心 ops。
+
+---
+
+## 修复 — marker 前缀向后兼容 + 隐藏开关(2026-08-25)
+
+**目标**:0.3.0 改名(`message-editor-` → `retrace-`)导致旧 marker 不被识别,旧会话显示不一致;且 fromScratch 链式编辑隐藏整段内容,用户无查看出口。本次修复让"改名永不破坏识别、隐藏永远可逆"。
+
+**方案**:
+
+- 客户端 `lib/client.js`:引入 `MARKER_PREFIXES`(当前 + 遗留前缀)与 `LEGACY_MARKER_PREFIXES`。旧前缀(`message-editor-`)marker 现在**被识别**(渲染"已编辑并重新发送"提示与原输入对照),但作为**软兼容**:其 shadowed 范围**永不隐藏**(视为空),保证改名后既有内容不会因旧 marker 重新被藏。
+- 新增配置 `hideShadowed`(默认开=现状行为):关闭后所有 marker 只显示提示/对照,不隐藏任何消息——全局"查看完整历史"出口(设置 → 通用)。
+- Host 侧 `lib/version-index.js`:`kindFromMarkerId` 改为多前缀识别,旧 marker 正确归类 recall/edit/regenerate。
+- `readConfig` 增加遗留配置键迁移(`dsh-message-editor:config` → `dsh-retrace:config`)。
+- 三个文件均写明 **RENAME RULE**:改名时必须把旧前缀加入遗留列表,识别永不因改名断裂。
+
+**涉及文件**:`lib/client.js`、`lib/client.bundle.js`(重建)、`lib/dynamic-client.js`、`lib/host-core.js`(注释)、`lib/version-index.js`、`test/version-index.test.js`(新增遗留前缀分类回归)。
+
+**关键决策**:旧前缀 marker 采用"软兼容"(识别但不隐藏)而非"硬兼容"(恢复隐藏)——后者会让用户已可见的历史内容再次消失,违背本次事故的教训。
+
+**验证方式**:84 测试全过(新增 1 条遗留前缀回归);headless GUI 实测「插件新版本」会话 882 行全渲染、0 隐藏、5 个 marker 标注行正常、旧 marker 不再隐藏 121763、无客户端报错;bundle 已同步 desktop/web 两个 profile。
+
+**遗留问题**:Host 侧新代码需重启 DSH Desktop 生效(客户端 bundle 已即时生效,no-cache 直出)。

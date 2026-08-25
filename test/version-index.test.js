@@ -149,6 +149,12 @@ describe('kindFromMarkerId / classifyBoundaryKind', () => {
     expect(kindFromMarkerId(undefined)).toBe('edit')
   })
 
+  it('classifies legacy (renamed-away) marker id prefixes — rename must not break recognition', () => {
+    expect(kindFromMarkerId('message-editor-recall-abc')).toBe('recall')
+    expect(kindFromMarkerId('message-editor-edit-abc')).toBe('edit')
+    expect(kindFromMarkerId('message-editor-regenerate-abc')).toBe('regenerate')
+  })
+
   it('classifies boundary events: marker / compaction / generic replace', () => {
     expect(classifyBoundaryKind(editorMarker(5, { start: 0, end: 4, op: 'recall' }))).toBe('recall')
     expect(classifyBoundaryKind(editorMarker(5, { start: 0, end: 4, op: 'edit' }))).toBe('edit')
