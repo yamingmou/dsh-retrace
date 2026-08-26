@@ -13,6 +13,8 @@
 
 ## 0. 本轮修订说明(为什么改方案)
 
+> **2026-08-26 补充(0.4.2,轨迹借力)**:发现官方 `@deepseek-ai/dsh-client-ui-trajectory` 已是成熟的**事件台账视图**(conversationViews + conversation.view Tab + 事件详情面板 + loadOlder 分页)。结论:不是重复造轮子——版本/回退/分叉仍是官方没有的;但有三处会重复(P2 消息/思考时间线、事件详情查看、自绘浮层视图基建)。本次修订:时间线迁移为官方视图 Tab、详情让位官方轨迹、跳转适配视图切换;砍掉 P2 消息/思考时间线。详见 §5.1/§5.2/§10。
+
 重读官方文档后,原方案的三处"自造轮子"全部有官方能力可替代,架构简化为
 **"纯折叠投影 + 副作用存储 + 官方查询"** 三段式:
 
@@ -273,30 +275,25 @@ ctx.inject(['sessionProjections'], (ctx) => {
 
 **新流程/新用法清单(体验差异化 B 面,官方能力重组)**:① 撤回即回到过去(对话+产物一体);② 从旧版本继续(回退+编辑重发);③ 任务保存点(命名版本=里程碑,失败一键回);④ 复盘/审计(带版本注解的时间线导出);⑤ 版本对比(对话+文件 diff 并排);⑥ 理解拓扑(分叉图回答"怎么走到这里的")。
 
-### 5.1 时间线面板(浮层,P1)
+### 5.1 版本时间线(官方视图 Tab,P1,0.4.2 定稿)
 
-- **形态**:注册 `conversation.session.header.actions` 按钮(order≈30)+ **浮层面板**(非视图环标签页)。
-  - 原因(调研结论):视图环一次只渲染一个视图,标签页激活会**卸载 chat**,无法 scrollIntoView;且无公共 API 切回 chat。浮层保持 chat 挂载 → 跳转一步到位。(P2 可另注册 `conversationViews.register({target:'timeline', …})` 全页视图,trajectory 先例,作为可选项。)
+- **形态**:注册 `conversation.view` 视图 Tab(`id: "retrace"`,order 20,标签「版本」),与官方「对话/轨迹」平级;不再使用 header 浮层。
+  - 决策(2026-08-26 trajectory 借力分析,见 DEVLOG):官方轨迹 = 事件台账(发生了什么,事件级,只读检查);retrace = 变更层(什么被改了、为什么、怎么回退,版本级,可操作)。**台账是底,变更是层**——视图壳、视图切换、分页、事件详情复用官方机制;版本数据是派生数据(官方事件流不携带),数据通道自持。
+  - 跳转:先 `actions.setView('chat')` 挂载 chat 视图,再循环 `session.loadOlder()`(50/页)直至锚点 seq 出现或 `hasMore=false`,随后 rAF 轮询 `[data-chat-anchor-key]` DOM 元素 → `scrollIntoView({behavior:'smooth', block:'center'})` + 短时高亮 CSS。视图切换会卸载本视图,故整个流程在 `jump()` 内完成(不依赖组件副作用)。
 - **数据源**:
-  - 版本列表:**session/projection 推送帧**成品值(实时,零轮询);降级走 HTTP `GET /versions`。
-  - 节点原文:HTTP `GET /event`(`sessionQuery.readEvent` 惰性读,支持 before/after 上下文窗口)。
-  - 消息/工具/思考节点:`s.chat.timeline`(turn/step 树,已核实)+ 版本索引;被回退消息灰显(投影状态 surface 或 `filterEvents surface=shadowed`)。
-- **渲染**:自带 `@tanstack/react-virtual`(依赖树已有,trajectory 内联先例,>100 节点开启)。
-- **节点内容**:
-  - 版本节点:操作类型图标(撤回/编辑/重生成/恢复/压缩)、时间、`markerText` 摘要(被回退内容)、产物变更徽标(`+3 -1 个文件`)、git 头哈希(启用时)。
-  - 消息节点:截断输入/输出 + 状态(成功/失败/被回退灰显)。
-  - 思考节点:reasoning 块摘要(首 N 字;LLM 摘要缓存,一次生成一次缓存,P2.2)。
-- **详情与跳转**:
-  - 点击节点 → 详情抽屉:原文全文(输入/输出/思考)经 HTTP `readEvent` 惰性加载。
-  - "跳转到对话":计算 chat 节点 key(`14:assistant-step{turn}:{step}` / `13:input-message{id}` / 按 anchorSeq 在 `s.chat.nodes` 定位)→ 目标在已加载窗口外则循环 `session.loadOlder()`(50/页)直至出现或 `hasMore=false` → `document.querySelector('[data-chat-anchor-key="…"]')?.scrollIntoView({behavior:'smooth', block:'center'})`(属性已核实)→ 注入短时高亮 CSS。
-- **样式**:沿用 `<style data-plugin="dsh-retrace">` 纯 CSS + `--dsw-alias-*` 变量。
+  - 版本列表:**session/projection 推送帧**成品值(`useProjection('retrace/versions')`,实时,零轮询);降级走 HTTP `GET /versions`。
+  - 事件原文查看:**让位给官方轨迹**——版本行「轨迹台账」按钮 `actions.setView('trajectory')`(官方事件台账含全部事件)。**已移除自绘 JSON 详情 modal 及客户端 `GET /event` 调用**(host 路由保留,回退内部仍用)。按 seq 精确定位待官方轨迹提供外部 focus API(见 §10)。
+- **渲染**:零依赖固定行高窗口化(版本列表行数有限,`react-virtual` 评估后放弃打包);纯 CSS + `--dsw-alias-*` 变量。
+- **节点内容**:版本节点(操作类型图标、时间、`markerText` 摘要、产物变更徽标、git 头哈希);不再做消息/思考节点行。
+- **P2 明确不做「消息/思考节点时间线视图」**:官方轨迹已完整覆盖(thinking quote / assistant content / tool call / 折叠 / 耗时 / token)——再做即纯重复(2026-08-26 决定)。
 
 ### 5.2 分叉图/思考流(P2)
 
 - **骨架**:`s.chat.timeline` turn/step 树 + 版本索引(标记 = 分叉点)+ **`ctx.sessionQuery.traceEvent` 官方关系**(`replacedBy/replacementChain/replacedEventSeqs`,旧路径→标记→新路径 的链接,无需自解析)。
+- **数据面借官方(2026-08-26 决定)**:分叉 = 会话树,数据面用官方 `sessions` 服务、`fork` API、subagent 目录,不自建平行数据;渲染注册官方视图机制(若需独立视图)。
 - **节点**:回合(输入→思考→输出→工具链折叠);边:推进;分叉点:标记节点,显示"此处回退:旧路径(阴影区间) vs 新路径"。
-- **渲染**:SVG 连线 + 小图元卡片;节点摘要 + 点击详情/跳转(复用 5.1 机制);大图虚拟化。
-- **思考流对应**:每个回合节点内嵌思考概要;折叠展开完整 reasoning 块;与时间线同源数据,保证"图上看到的=对话真实发生的"。
+- **渲染**:SVG 连线 + 小图元卡片;节点摘要 + 点击跳转对话(复用 5.1 机制);大图虚拟化。
+- **思考流对应**:官方轨迹已展示每个回合的思考/输出/工具行(thinking quote / assistant content / tool call)——分叉图内嵌思考概要可直接读官方轨迹同源数据,不做第二套渲染。
 
 ### 5.3 设置(已完成 UI,待接逻辑)
 
@@ -387,17 +384,18 @@ ctx.inject(['sessionProjections'], (ctx) => {
 - **验收**:撤回/编辑后 Host 产出可查询版本记录(投影推送 + HTTP 双通道);重启后投影缓存恢复一致;开关关闭时行为与 0.2.x 一致;`pnpm check && pnpm test` 绿。
 
 ### P1 — 时间线 + 产物回退(差异化主体)
-- [x] 1.1 时间线浮层面板:版本/消息/思考/工具节点、虚拟列表、详情抽屉(投影推送 + readEvent)（2026-08-25 实现：header.actions 入口 + 浮层面板；版本列表走 useProjection 推送帧、HTTP /versions 降级；详情 GET /event；列表为固定行高零依赖窗口化——react-virtual 评估后放弃打包，见 DEVLOG）
+- [x] 1.1 版本时间线视图:版本节点、虚拟列表、详情让位官方轨迹（2026-08-25 实现浮层版：header.actions 入口 + 浮层面板；版本列表走 useProjection 推送帧、HTTP /versions 降级；详情 GET /event；列表为固定行高零依赖窗口化。2026-08-26 0.4.2 按轨迹借力决策**重构为官方 conversation.view Tab**：移除浮层与自绘 JSON 详情，版本行「轨迹台账」切官方轨迹视图；跳转改为 setView('chat') + loadOlder 循环 + DOM 轮询滚动）
 - [x] 1.2 产物回退:context/artifacts/both;快照兜底 + git 优先;干跑预览 + 确认(§4.5)（2026-08-25 实现：lib/rollback.js + POST /rollback/preview + /rollback）
-- [x] 1.3 跳转对话 + 高亮(loadOlder 循环 + data-chat-anchor-key + CSS 高亮)（2026-08-25 实现：jump 经 sessions.binding().session.loadOlder 循环 + anchor 高亮动画）
+- [x] 1.3 跳转对话 + 高亮(loadOlder 循环 + data-chat-anchor-key + CSS 高亮)（2026-08-25 实现；2026-08-26 适配视图切换：流程移入 jump() 内完成）
 - [x] 1.4 GitAdapter:仓库检测(含外层)、commit-free 记录、非仓库一键 init(专用引用)（2026-08-25 实现：lib/git-adapter.js + versiongit 域表记录边界 HEAD + GET /git/status + POST /git/init）
 - [x] 1.5 防膨胀完善:GC 后台任务、快照上限、二进制/超大文件策略（2026-08-25 实现：节流 GC 扫掠（已知会话保留版本过滤 + 零引用对象清理 + versiongit 剪枝）；4MiB/二进制跳过在 P0.3 已实现；版本上限 200 在折叠内）
-- **验收**:代码实现 + 单测绿（109）；**真机 GUI 冒烟待做**（profile 重装 + 实际会话验证时间线渲染/产物回退/跳转）
+- **验收**:代码实现 + 单测绿（120）；**真机 GUI 冒烟待做**（profile 重装 + 实际会话验证时间线渲染/产物回退/跳转）
 
 ### P2 — 分叉图 + 增强(旗舰)
-- [ ] 2.1 分叉流程图:turn/step 树 + 标记分叉点 + `traceEvent` 旧路径链接;SVG + 虚拟化
+- [ ] 2.1 分叉流程图:turn/step 树 + 标记分叉点 + `traceEvent` 旧路径链接;SVG + 虚拟化;数据面借官方 sessions/fork/subagent
 - [ ] 2.2 分支意图卡:回退区间摘要 + 产物列表 + 思考概要(LLM 摘要缓存)
 - [ ] 2.3 精选增强:版本对比(对话/文件 diff)、保存点、审计视图
+- ~~消息/思考节点时间线视图~~(2026-08-26 取消:官方轨迹已覆盖,见 §5.1)
 - **验收**:分叉图可读可导航;节点可展开原文、跳转对话;大会话不卡。
 
 ---
@@ -410,6 +408,7 @@ ctx.inject(['sessionProjections'], (ctx) => {
 - **设置位置**:客户端 localStorage vs `ctx.settings`(§4.6 已选前者,后续可迁)。
 - **LLM 摘要成本**:仅 P2.2 使用,一次生成一次缓存;可关闭。
 - **`foldSurface` 与投影单元 surface 折叠的一致性**:两者同状态转换,用同一套 `replace` 语义;P0 用共享夹具单测对齐(含 start>end 的位置跨度用例)。
+- **官方轨迹无外部 focus API(2026-08-26 新识)**:`actions.setView('trajectory')` 只能切换视图,无法按 seq 精确定位。0.4.2 的「轨迹台账」按钮为整台账切换;按 seq 定位需官方轨迹开放外部选择/focus API,或 P1 注册 `target:'trajectory'` 的 retrace 定义在台账内贡献版本行(2026-08-26 分析:conversationEvents 定义按 target 隔离,可行)。
 
 ---
 
@@ -419,7 +418,9 @@ ctx.inject(['sessionProjections'], (ctx) => {
 |---|---|---|
 | 0.2.3 | 旧包 deprecation README(以 dsh-message-editor 名义,仅文档) | 随时可发 |
 | 0.3.0 | ✅ 已发(2026-08-21):步骤 0(改名/基建)+ P0(投影单元 + 快照 + 配置生效) | 时间线接口/推送可用 |
-| **0.4.0** | ✅ **已发(2026-08-26)**:P1 完成(时间线 + 产物回退 + git + 跳转)+ 写前校验 + 两个生产级修复(wire 契约 / subprocess) | 差异化主体上线 |
+| **0.4.0** | ✅ 已发(2026-08-26):P1 完成(时间线 + 产物回退 + git + 跳转)+ 写前校验 + 两个生产级修复(wire 契约 / subprocess) | 差异化主体上线 |
+| **0.4.1** | ✅ 已发(2026-08-26):「加载更早看不到历史」事故闭环(默认配置安全化 v3 + 40% 隐藏闸 + host 注入补齐) | 稳定性修复 |
+| **0.4.2** | 🔜 2026-08-26:轨迹借力 P0(时间线迁移官方视图 Tab + 详情让位轨迹 + 跳转适配视图切换) | 对齐官方机制 |
 | 0.5.x | P2 完成:分叉图 + 意图卡 + 精选增强 | 旗舰功能上线 |
 
 > 每个 P 完成后发布并写 CHANGELOG + DEVLOG;README 同步新品牌与功能矩阵。

@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-08-26 · 轨迹借力 P0(时间线迁移官方视图 Tab)
+
+### 变更(2026-08-26 轨迹借力分析落地)
+
+- **时间线从 header 浮层迁移为官方 `conversation.view` 视图 Tab**(「版本」,与官方「对话/轨迹」平级):视图壳、视图切换、分页复用官方机制;版本数据通道保持插件自持(`useProjection('retrace/versions')` 推送帧 + HTTP `/versions` 降级——版本是派生数据,官方事件流不携带)。
+- **详情让位官方轨迹**:版本行「详情」按钮改为「轨迹台账」(`actions.setView('trajectory')`,官方事件台账含全部事件);移除自绘 JSON 详情 modal 与客户端 `GET /event` 调用(host 路由保留)。
+- **跳转适配视图切换**:跳转改为 `actions.setView('chat')` → `session.loadOlder()` 循环 → rAF 轮询 `[data-chat-anchor-key]` → scrollIntoView + 高亮;流程整体在 `jump()` 内完成(视图切换会卸载本视图)。
+- **砍掉 P2「消息/思考节点时间线视图」**:官方轨迹已完整覆盖(thinking/tool/turn/耗时/token),避免重复造轮子。
+- 计划调整:PLAN.md §5.1/§5.2/§9/§10 按轨迹借力结论重写。
+
 ## [0.4.1] — 2026-08-26 · 「加载更早看不到历史」事故闭环
 
 ### 修复(2026-08-26 事故,真机实锤)

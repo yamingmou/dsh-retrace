@@ -51,7 +51,7 @@ in the conversation — all **inside the same session**, no session-switching.
 
 **Versioning & rollback (live in 0.4.x)** — every rewind is also recorded as a **version**:
 
-- 🕘 **Timeline** — the conversation header gains a **时间线 / Timeline** entry: a floating panel of every version (type, time, message count, file-change badges, summary), pushed live via `session/projection` (no polling), windowed for long histories.
+- 🕘 **Timeline** — a **Versions** tab in the conversation view (on par with the official 对话/轨迹 tabs, since 0.4.2): every version (type, time, message count, file-change badges, summary), pushed live via `session/projection` (no polling), windowed for long histories; event inspection reuses the official Trajectory ledger.
 - ↩️ **Artifact rollback** — each version offers **context-only / artifacts-only / both** rollback with a dry-run preview; git-first (commit-free checkout of the listed paths) with content-addressed snapshot fallback. The rollback itself is recorded as a new version (`restore`) — rollback of a rollback.
 - 🧭 **Jump-to-conversation** — one click from a version to that point in the conversation (auto-loads earlier history, anchor highlight).
 - 🧹 **Bounded storage** — file snapshots keep the most recent N versions (default 50); a throttled background sweep prunes snapshots of truncated versions, keeping long sessions bounded.
