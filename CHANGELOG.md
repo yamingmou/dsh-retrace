@@ -109,7 +109,9 @@
 - **v3.2** — 隐藏规则在提示消失后保持挂载;折叠摘要显示截断的原输入
 - **v3.1** — 单消息撤回(隐藏消息与操作行)、自动消失的回退提示、重发消息下折叠原输入对照
 
-<!-- 版本链接占位(发布后启用)
+<!-- 版本链接(已发布)
+[0.4.2]: https://github.com/yamingmou/dsh-retrace/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/yamingmou/dsh-retrace/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/yamingmou/dsh-retrace/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yamingmou/dsh-retrace/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/yamingmou/dsh-retrace/compare/v0.2.1...v0.2.2
