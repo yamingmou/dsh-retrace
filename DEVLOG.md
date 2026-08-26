@@ -296,3 +296,21 @@
 6. **发现 bug B(链式编辑分叉可见性)**:5 次编辑互相遮蔽,仅最后 marker 在脊柱上,其余 4 个边界 UI 不可见(数据完整);新增「历史分叉点」区段展示 off-spine 边界(kind/被遮蔽数/markerText)。
 
 **遗留问题**:分叉图节点点击跳转在真机上未逐一验证(脊柱节点跳转与版本跳转共用 jumpToAnchor,后者已验证);SVG 图形化/意图卡(P2.2);历史分叉区段的展开折叠(P2.2)。
+
+---
+
+## 0.4.4 修复 — 撤回/编辑失效回归(union-wide guard)(2026-08-27)
+
+**事故**:0.4.3 的 union-wide hide guard(73fde78)在会话内 marker 累积覆盖 >40% 行时降级**所有** marker。并行会话在「规划高级版本 (1)」实测 7 个 marker 全无隐藏规则;新产生的"已撤回 4 条消息"也不隐藏——撤回/编辑"失效"(用户反馈)。
+
+**根因**:`useMarkerHidePlan` 的 `degraded = union.size/rowCount > 0.4` 是**会话级永久状态**——历史 marker 累积一旦超限,后续每个新 marker 都被连带降级。
+
+**修复(用户确认方案 A:per-marker 闸 + 大范围提示)**:
+- guard 改回每 marker 独立(`keys.length/rowCount > 0.4` 才降级该 marker);普通撤回/编辑永远隐藏;
+- 降级时渲染明确提示条(`marker.degradedHint`),首个 marker 在累积 >40% 时渲染累积提示(`marker.unionHint`);
+- 操作行按"实际隐藏"判定:`rowHiddenByKey`/`useRowHidden`/`useSeqHidden` 替代 `useShadowed`——降级 marker 的消息保持可见且可操作(修 0.4.3 半失效态);
+- 删除 `useShadowed`(shadowed 但未隐藏的判定已无用途)。
+
+**验证**:真机(web profile)「规划高级版本 (1)」:修复前 hideRulesTotal=0 → 修复后 101(历史 marker 恢复隐藏);新会话大范围撤回(78 条)触发降级并显示提示条;小范围 marker 正常隐藏。`pnpm check && pnpm build && pnpm test` 全绿(134);i18n 85=85。
+
+**遗留**:大范围撤回(如中间消息连坐 78 条)被 guard 降级——若用户确实要回退大段,可走时间线回退;guard 提示条已解释。
