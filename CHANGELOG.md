@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.1] — 2026-08-26 · one edit must never hide the whole conversation
+
+- one edit must never hide the whole conversation
+
 ## [0.4.0] — 2026-08-26 · timeline + artifact rollback + pre-write guard
 
 - timeline + artifact rollback + pre-write guard
