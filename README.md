@@ -4,11 +4,12 @@
 
 **Retrace · 回溯** — Recall · Edit-and-resend · Regenerate, plus **in-conversation
 versioning**: a timeline of every rewind, artifact rollback, and a fork map of the
-paths your conversation explored. A Harness enhancement plugin for the
+paths your conversation explored (roadmap). A Harness enhancement plugin for the
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI and
 Desktop app (both share the same Web frontend).
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
 [![License: MIT](https://img.shields.io/npm/l/dsh-retrace)](https://github.com/yamingmou/dsh-retrace/blob/main/LICENSE)
 [![DSH plugin](https://img.shields.io/badge/DSH-plugin-4A90D9)](https://github.com/topics/dsh-plugin)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/yamingmou/dsh-retrace/pulls)
@@ -45,8 +46,15 @@ in the conversation — all **inside the same session**, no session-switching.
 | Action | Where | What happens |
 | --- | --- | --- |
 | **↩ 撤回** (recall) | hover any assistant reply, or the row under any user message | Removes the **whole exchange round** (the input **and** the agent's output, tool rows included) from both the model context and the conversation view; the input text is echoed into the composer so you can re-ask or re-edit immediately. A small transient notice marks the rewind and disappears once you keep typing. |
-| **✎ 编辑重发** (edit & re-send) | row under any user message | The old message and its reply are rewound and hidden. By default the conversation **starts fresh** (earlier messages are hidden too and excluded from context); the edited text is sent and the agent answers. A collapsed **"original input"** reference sits right under the new message — click to expand, configurable off. |
+| **✎ 编辑重发** (edit & re-send) | row under any user message | The edited round is rewound and the new text is re-sent. By default **only the edited round** is replaced — earlier history stays visible; the optional "fresh conversation" setting rewinds the whole surface (earlier messages then leave the model context, and stay visible in the view as a marker notice by default). A collapsed **"original input"** reference sits right under the new message — click to expand, configurable off. |
 | **↻ 重新生成** (regenerate) | hover any assistant reply | The reply (and everything after it) is rewound and hidden, then the original prompt is re-sent so the agent answers again. |
+
+**Versioning & rollback (live in 0.4.x)** — every rewind is also recorded as a **version**:
+
+- 🕘 **Timeline** — the conversation header gains a **时间线 / Timeline** entry: a floating panel of every version (type, time, message count, file-change badges, summary), pushed live via `session/projection` (no polling), windowed for long histories.
+- ↩️ **Artifact rollback** — each version offers **context-only / artifacts-only / both** rollback with a dry-run preview; git-first (commit-free checkout of the listed paths) with content-addressed snapshot fallback. The rollback itself is recorded as a new version (`restore`) — rollback of a rollback.
+- 🧭 **Jump-to-conversation** — one click from a version to that point in the conversation (auto-loads earlier history, anchor highlight).
+- 🧹 **Bounded storage** — file snapshots keep the most recent N versions (default 50); a throttled background sweep prunes snapshots of truncated versions, keeping long sessions bounded.
 
 **Why it's different**
 
@@ -112,7 +120,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.2.0"
+       "dsh-retrace": "^0.4.0"
      },
      "dsh": {
        "profile": {
@@ -178,8 +186,12 @@ The dynamic host registers the same operations behind the package-private
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| **编辑后显示原提问对照** | on | A collapsed "original input" reference under the re-sent message showing the **most recent** replaced text (reference only — never sent to the model). |
-| **编辑后从新对话开始** | on | After editing, hide earlier messages too so the conversation looks like a fresh start (the whole surface is rewound before re-sending). |
+| **Show the original input after editing** | on | A collapsed "original input" reference under the re-sent message showing the **most recent** replaced text (reference only — never sent to the model). |
+| **Start a fresh conversation after editing** | off | Hide earlier messages too, so the conversation looks like a fresh start (the whole surface is rewound before re-sending). Default off: only the edited round's context is replaced. |
+| **Hide shadowed messages per marker** | off | On: recall/edit/regenerate hide the replaced messages per their markers. Off (default): every message stays visible; markers only show the notice and reference (review the full history). A single marker that would hide more than 40% of the conversation degrades to notice-only (history never silently vanishes). |
+| **Version & artifact snapshots** | on | On: every recall/edit records a version (messages and touched files) powering the timeline and artifact rollback. Off: only rewinds context — no version records, no artifact tracking (lightest). |
+| **Git integration** | on | On: use git to record and roll back when the workspace is a repository (never auto-commits, never touches your branches); non-repo workspaces can enable git from the timeline. Off: built-in snapshots under `~/.dsh` only — the plugin never touches the workspace git state; features are equivalent. |
+| **Version retention limit** | 50 | File snapshots are kept for the most recent N versions; older ones are pruned automatically (timeline records and the audit trail are always kept). |
 
 ---
 
@@ -187,14 +199,14 @@ The dynamic host registers the same operations behind the package-private
 
 ```
  durable transcript (append-only)          model context & view
- ┌────────────────────────────────┐        ┌──────────────────┐
- │ ... target message             │        │  … target message │
- │     ↓ shadow span              │        │       ↓ rewind    │
- │ [target … last surface node]   │ ─────▶ │  (empty replace   │
- │     ↳ one replacement          │        │   = context cut)  │
- │       assistant/message (empty)│        └──────────────────┘
- │     ↳ optional original-input  │        agent.followup(new prompt)
- └────────────────────────────────┘        → next turn rebuilds request
+ ┌─────────────────────────────────┐    ┌────────────────────┐
+ │  … target message               │    │  … target message  │
+ │      ↓ shadow span              │    │       ↓ rewind     │
+ │  [target … last surface node]   │ ──▶│  (empty replace    │
+ │      ↳ one replacement          │    │   = context cut)   │
+ │        assistant/message (empty)│    └────────────────────┘
+ │      ↳ optional original-input  │    agent.followup(new prompt)
+ └─────────────────────────────────┘    → next turn rebuilds request
 ```
 
 1. **Host core** (`lib/host-core.js`, zero runtime imports) locates the target
@@ -214,7 +226,7 @@ The dynamic host registers the same operations behind the package-private
      sync), plus the optional original-input comparison block,
    - the `retrace` entry in the `conversation.chat.assistant-actions`
      strip (撤回 / 重新生成),
-   - two preference toggles under Settings → General.
+   - preference toggles and the retention limit under Settings → General.
 
 > Two different layers are at play: the **durable transcript** (append-only; old
 > events are never rewritten or deleted) and the **model-visible surface** (rewound
@@ -246,11 +258,13 @@ The dynamic host registers the same operations behind the package-private
 
 Built per [PLAN.md](./PLAN.md):
 
-- **P1 — Timeline & artifact rollback**: an in-session version timeline (messages,
-  thinking, touched files), artifact snapshots (git-first, snapshot-fallback, opt-in),
-  rollback with dry-run preview, and jump-to-conversation navigation.
-- **P2 — Fork map**: a flow graph of the conversation's turns with fork points at every
-  rewind, thinking flow per turn, branch-intent cards, and version comparison.
+- **P1 — Timeline & artifact rollback** ✅ *shipped in 0.4.x*: an in-session version
+  timeline (messages, thinking, touched files), artifact snapshots (git-first,
+  snapshot-fallback, opt-in), rollback with dry-run preview, and jump-to-conversation
+  navigation.
+- **P2 — Fork map** 🔨 *in progress*: a flow graph of the conversation's turns with fork
+  points at every rewind, thinking flow per turn, branch-intent cards, and version
+  comparison.
 - More locales beyond 简体中文 / English.
 
 ---
