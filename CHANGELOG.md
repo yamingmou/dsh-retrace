@@ -3,6 +3,15 @@
 本项目(dsh-retrace)的版本历史与开发记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [Unreleased]
+## [Unreleased]
+
+### 修复(0.4.4,撤回/编辑失效回归)
+
+- **隐藏判定回退为 per-marker**:0.4.3 的 union-wide guard 在会话内 marker 累积覆盖 >40% 行时让**所有** marker(含新的撤回/编辑)全部降级不隐藏——「规划高级版本 (1)」会话即如此(实测 7 个 marker 全无隐藏规则,新撤回"已撤回 4 条消息"也不隐藏)。现在每个 marker 独立判定:普通撤回/编辑(几行)永远隐藏;仅单次覆盖 >40% 的大范围操作(如「编辑后从新对话开始」)降级。
+- **降级不再静默**:大范围操作降级时显示提示条("为保护历史未隐藏内容,日志完好");首个 marker 在累积隐藏 >40% 时提示可关闭「按标记隐藏」查看完整历史。
+- **操作行与隐藏状态一致**:UserActionsRow / AssistantActions / ReferenceRow 改为按"实际隐藏"判定(useRowHidden/useSeqHidden)——修复 0.4.3 的半失效态(消息可见但操作行消失)。
+- 真机验证:历史 marker 隐藏规则 0 → 101;大范围撤回(78 条)降级 + 提示;i18n 85=85;测试 134 绿。
+
 
 ### 新增(P2.1 分叉图骨架,2026-08-26)
 
