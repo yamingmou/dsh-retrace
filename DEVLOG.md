@@ -246,3 +246,35 @@
 **关键认知**:20 万事件全量重放校验 ~220ms,可接受;M1 检查只对 append 的 assistant/message 要求 turn/step(插件 marker 是 replace 不受影响);真实日志每个 surface 事件都带 surfaceOp 标记,夹具必须对齐。
 
 **遗留问题**:设置 UI 未加 prewrite 开关行(可通过 localStorage 直接关);大会话(百万事件)的校验成本需随 P2 再评估。
+
+---
+
+## P2.1 分叉图骨架 — retrace/forkmap 投影 + 「分叉」视图 Tab(2026-08-26)
+
+**目标**:PLAN §5.2 的分支拓扑展示层骨架——数据面(分叉边)+ 视图面(脊柱 + 旧路径卡片 + 跳转),为 P2.2 意图卡立骨架;顺带修复 0.4.2 遗留的"程序化切视图静默 no-op"。
+
+**方案**:
+
+- `lib/forkmap.js`(新增,纯折叠,复用 version-index 谓词):镜像官方 `foldSurface` 的状态转换(append→push;replace→splice **at startIdx**,官方 `applySurfacePlan` 同语义),并在每个 replace 边界记录 `{seq, kind, replacedSeqs}`——replacedSeqs 即被遮蔽的旧路径节点(splice 移除区间;区间非活跃时降级取 `sourceEventSeqs`)。**不截断**(分叉全貌优先;versions 的 VERSION_LIMIT 截断正是我们不扩展它的原因)。
+- `lib/projection/forkmap.js`(新增):`{key:'retrace/forkmap', stateSchema, init, apply, wire:{viewSchema, view}, stateVersion:1}` + 顶层别名(照 versions 单元模式,**带 wire**——8-25 教训)。wire 保持精简:节点只有 `{seq,type}`(类型供图标),markerText 由客户端从 versions wire 按 boundarySeq join。
+- `lib/versioning.js`:seam register() 追加注册 forkmap 单元(纯折叠,无副作用,不需 onChanged);`snapshotForkmap(sessionId)` HTTP 降级(与 snapshot 同构,抽公共 `snapshotKey`)。
+- `lib/http.js`:`GET /forkmap?sessionId=` 路由。
+- `lib/client.js`:
+  - **跳转修复(0.4.2 遗留 bug 实锤)**:调研确认 `actions` 只注入给声明 `store` 的条目,chatStore 是 ui-conversation 模块私有——第三方视图 `actions?.setView?.()` 收到 undefined 静默 no-op(0.4.2 的跳转/轨迹按钮真机上失效)。修复:`switchToViewTab(viewId)` 按注册顺序 DOM 点击 tab 栏按钮(`[role="tablist"] [role="tab"]`,chat=0/trajectory=1/retrace=2/fork=3)——与用户点击同一路径。
+  - 共享 `jumpToAnchor(store, seq)`(原 RetraceView 内部 jump 提升为模块级,含 waitForElement/flashKey):切 chat Tab → loadOlder 循环(24 页预算)→ rAF 轮询锚点行 → scrollIntoView + 高亮。
+  - `ForkView`(id `retrace-fork`,order 30,label「分叉/Fork」):`useProjection('retrace/forkmap')` 推送帧 + HTTP 降级;脊柱 = 当前 surface 节点流(用户/助手/工具 图标 + seq),边界行卡片化(分叉图标 + kind + 被遮蔽 N 节点 + markerText 摘要);固定行高窗口化;节点点击 jump。
+  - i18n:+10 键(zh/en 对齐,82=82)。
+
+**涉及文件**:`lib/forkmap.js`(新增)、`lib/projection/forkmap.js`(新增)、`lib/versioning.js`、`lib/http.js`、`lib/client.js`、`lib/client.bundle.js`/`lib/dynamic-client.js`(重建)、`test/forkmap.test.js`(新增)、`test/http.test.js`、`test/versioning.test.js`。
+
+**关键决策**:
+- **分叉边数据走新投影单元而非扩展 versions**:VERSION_LIMIT=200 截断会丢旧分叉点;独立单元一次 fold 即全量、推送实时、与既有双通道同构(调研结论)。
+- **"标记→新路径"不自解析**:官方 `traceEvent` 的 `derivedEventSeqs` 不指向新路径(新路径事件不引用标记)——新路径就是脊柱(边界后的 surface 节点),PLAN.md:295 原文修正。
+- **replace 的 start/end 是事件 seq**:splice-at-startIdx 使替换节点落在被替换区间起点(官方 `applySurfacePlan` 语义),脊柱顺序即模型可见顺序(可非单调 seq)。
+- 折叠对"区间非活跃"防御处理(官方会 throw):投影 apply 永不抛错,降级为仅记录边界 + `sourceEventSeqs` 兜底(与 versions 单元一致)。
+
+**验证方式**:`test/forkmap.test.js` 13 用例(表面折叠/边界分类/链式分叉/replacedSeqs 兜底/同引用契约/wire/定义契约);`test/http.test.js` +1(forkmap 路由);`test/versioning.test.js` 更新(双单元注册断言);`pnpm check && pnpm build && pnpm test` 全绿(**134**);i18n 键集 82=82;生成物同步。
+
+**遗留问题**:
+- **真机 GUI 冒烟待做**(P1 遗留 + 本次引入):验证时间线 Tab 渲染、**跳转按钮修复后生效**(tab-bar DOM click 依赖 chat=index0 的注册顺序)、轨迹台账按钮、分叉 Tab 渲染与节点跳转。
+- SVG 图形化/节点原文/分支意图卡(P2.2);分叉点性能(千级节点聚合)评估;compaction/replace 边界在分叉图上的非分叉呈现(当前仅作脊柱标记)。
