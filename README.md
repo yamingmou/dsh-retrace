@@ -51,7 +51,7 @@ in the conversation — all **inside the same session**, no session-switching.
 
 **Versioning & rollback (live in 0.4.x)** — every rewind is also recorded as a **version**:
 
-- 🕘 **Timeline** — the conversation header gains a **时间线 / Timeline** entry: a floating panel of every version (type, time, message count, file-change badges, summary), pushed live via `session/projection` (no polling), windowed for long histories.
+- 🕘 **Timeline** — a **Versions** tab in the conversation view (on par with the official 对话/轨迹 tabs, since 0.4.2): every version (type, time, message count, file-change badges, summary), pushed live via `session/projection` (no polling), windowed for long histories; event inspection reuses the official Trajectory ledger.
 - ↩️ **Artifact rollback** — each version offers **context-only / artifacts-only / both** rollback with a dry-run preview; git-first (commit-free checkout of the listed paths) with content-addressed snapshot fallback. The rollback itself is recorded as a new version (`restore`) — rollback of a rollback.
 - 🧭 **Jump-to-conversation** — one click from a version to that point in the conversation (auto-loads earlier history, anchor highlight).
 - 🧹 **Bounded storage** — file snapshots keep the most recent N versions (default 50); a throttled background sweep prunes snapshots of truncated versions, keeping long sessions bounded.
@@ -188,7 +188,7 @@ The dynamic host registers the same operations behind the package-private
 | --- | --- | --- |
 | **Show the original input after editing** | on | A collapsed "original input" reference under the re-sent message showing the **most recent** replaced text (reference only — never sent to the model). |
 | **Start a fresh conversation after editing** | off | Hide earlier messages too, so the conversation looks like a fresh start (the whole surface is rewound before re-sending). Default off: only the edited round's context is replaced. |
-| **Hide shadowed messages per marker** | off | On: recall/edit/regenerate hide the replaced messages per their markers. Off (default): every message stays visible; markers only show the notice and reference (review the full history). A single marker that would hide more than 40% of the conversation degrades to notice-only (history never silently vanishes). |
+| **Hide shadowed messages per marker** | on | On (default): recall/edit/regenerate hide the replaced round per their markers. Off: every message stays visible; markers only show the notice and reference (review the full history). A single marker that would hide more than 40% of the conversation degrades to notice-only (history never silently vanishes). |
 | **Version & artifact snapshots** | on | On: every recall/edit records a version (messages and touched files) powering the timeline and artifact rollback. Off: only rewinds context — no version records, no artifact tracking (lightest). |
 | **Git integration** | on | On: use git to record and roll back when the workspace is a repository (never auto-commits, never touches your branches); non-repo workspaces can enable git from the timeline. Off: built-in snapshots under `~/.dsh` only — the plugin never touches the workspace git state; features are equivalent. |
 | **Version retention limit** | 50 | File snapshots are kept for the most recent N versions; older ones are pruned automatically (timeline records and the audit trail are always kept). |
