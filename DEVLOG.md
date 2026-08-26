@@ -278,3 +278,21 @@
 **遗留问题**:
 - **真机 GUI 冒烟待做**(P1 遗留 + 本次引入):验证时间线 Tab 渲染、**跳转按钮修复后生效**(tab-bar DOM click 依赖 chat=index0 的注册顺序)、轨迹台账按钮、分叉 Tab 渲染与节点跳转。
 - SVG 图形化/节点原文/分支意图卡(P2.2);分叉点性能(千级节点聚合)评估;compaction/replace 边界在分叉图上的非分叉呈现(当前仅作脊柱标记)。
+
+---
+
+## 真机 GUI 冒烟(web profile,2026-08-26,补 P1 遗留 + P2.1 验证)
+
+**目标**:真实 harness 验证 P2.1(分叉 Tab/跳转修复/窗口化)+ 补 P1 遗留的时间线验证。
+
+**方式**:`dsh --profile web --no-open --port 3080` + 无头 Chrome CDP(9222);CDP 脚本驱动打开「插件新版本讨论」会话(e61d70da),逐项断言。
+
+**验证结果(14/14 PASS)**:
+1. 4 Tab 并存:对话/轨迹/版本/分叉(conversation.view 多条目 ✓);
+2. **0.4.2 跳转修复生效**:版本行「跳转」点击后活跃 tab 切到对话(activeIdx=0)——此前 `actions?.setView?.()` 静默 no-op(第三方视图无 store 注入 actions,调研实锤),tab-bar DOM click 修复真机验证通过;
+3. 轨迹台账按钮切到轨迹(activeIdx=1)✓;
+4. 版本视图 5 版本全数据 ✓;分叉脊柱 605 节点 ✓;
+5. **发现 bug A(窗口化高度陷阱)**:viewArea flex 链 `min-height:auto` 让虚拟列表的高 spacer 把视图撑到全列表高度(33880px),列表永不滚动、窗口切片不动;官方轨迹因内容不贡献高度而幸免。修复 `bindListHeight`(实测可用高度 + `flex:none` 钉住——纯 height 被 flex 布局忽略),versions 列表同款隐患一并修;
+6. **发现 bug B(链式编辑分叉可见性)**:5 次编辑互相遮蔽,仅最后 marker 在脊柱上,其余 4 个边界 UI 不可见(数据完整);新增「历史分叉点」区段展示 off-spine 边界(kind/被遮蔽数/markerText)。
+
+**遗留问题**:分叉图节点点击跳转在真机上未逐一验证(脊柱节点跳转与版本跳转共用 jumpToAnchor,后者已验证);SVG 图形化/意图卡(P2.2);历史分叉区段的展开折叠(P2.2)。
