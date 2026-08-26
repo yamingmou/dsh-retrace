@@ -25,7 +25,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # pnpm 11.7.0 (packageManager field) requires Node >= 22.13
+          # (uses the node:sqlite builtin); Node 20 fails at setup with
+          # ERR_UNKNOWN_BUILTIN_MODULE during `pnpm store path`.
+          node-version: 22
           registry-url: https://registry.npmjs.org
           cache: pnpm
 

@@ -142,6 +142,22 @@ describe('P1 HTTP routes', () => {
     expect(parsed.value.headHash).toBe('abc')
   })
 
+  it('GET /forkmap proxies the seam (P2.1)', async () => {
+    const seam = makeSeam()
+    seam.snapshotForkmap = vi.fn(() => ({
+      enabled: true,
+      nodes: [{ seq: 5, type: 'assistant/message' }, { seq: 3, type: 'user/message' }],
+      boundaries: [{ seq: 5, kind: 'edit', replacedSeqs: [1, 2] }],
+    }))
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const res = await get(handler, `${ROUTE_PREFIX}/forkmap?sessionId=s1`)
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(true)
+    expect(seam.snapshotForkmap).toHaveBeenCalledWith('s1')
+    expect(parsed.value.boundaries).toEqual([{ seq: 5, kind: 'edit', replacedSeqs: [1, 2] }])
+    expect(parsed.value.nodes).toHaveLength(2)
+  })
+
   it('POST /git/init proxies the seam', async () => {
     const seam = makeSeam()
     const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })

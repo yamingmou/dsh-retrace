@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 新增(P2.1 分叉图骨架,2026-08-26)
+
+- **`retrace/forkmap` 投影单元**:镜像官方 `foldSurface` 的增量折叠 + 每个 replace 边界的 `replacedSeqs`(被遮蔽的旧路径节点);不截断(分叉全貌优先);wire 精简(节点 `{seq,type}` + 边界 `{seq,kind,replacedSeqs}`);`GET /forkmap` HTTP 降级,与 versions 同双通道。
+- **「分叉」视图 Tab**(`conversation.view`,order 30,与 对话/轨迹/版本 平级):脊柱 = 当前 surface 节点流(用户/助手/工具 图标),分叉边界卡片化(撤回/编辑/重新生成/恢复 图标 + kind + 被遮蔽节点数 + markerText 摘要),固定行高窗口化,节点点击跳转对话。
+- **修复 0.4.2 程序化切视图静默 no-op**:调研实锤第三方视图的 `actions.setView` 收到 undefined(chatStore 私有,仅声明 `store` 的条目有 actions);跳转/轨迹按钮改为 tab-bar DOM click(与用户点击同路径),共享 `jumpToAnchor`(切 Tab → loadOlder → 锚点滚动高亮)。
+- i18n:+10 键(zh/en 对齐);测试 120 → **134**。
+
 ## [0.4.2] — 2026-08-26 · 轨迹借力 P0(时间线迁移官方视图 Tab)
 
 ### 变更(2026-08-26 轨迹借力分析落地)
