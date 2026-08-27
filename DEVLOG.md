@@ -314,3 +314,13 @@
 **验证**:真机(web profile)「规划高级版本 (1)」:修复前 hideRulesTotal=0 → 修复后 101(历史 marker 恢复隐藏);新会话大范围撤回(78 条)触发降级并显示提示条;小范围 marker 正常隐藏。`pnpm check && pnpm build && pnpm test` 全绿(134);i18n 85=85。
 
 **遗留**:大范围撤回(如中间消息连坐 78 条)被 guard 降级——若用户确实要回退大段,可走时间线回退;guard 提示条已解释。
+
+---
+
+## Backlog:被遮蔽/压缩消息隐藏操作入口(2026-08-27,用户 UX 反馈)
+
+**改进点**:被 marker 遮蔽或 compaction 压缩的消息,编辑/撤回/重新生成入口应直接隐藏,而非点击后才报 `target-shadowed`。
+
+**背景**:0.4.4 把操作行判定从 useShadowed(被遮蔽)改为 useRowHidden/useSeqHidden(视觉隐藏)——修"降级 marker 消息可见但操作行消失"的半失效态,但把两个维度混用了:视觉隐藏(guard 保护)与操作可行性(遮蔽即失败)应分开。当前降级/压缩时按钮残留,点击报错。
+
+**方案(下次开发执行)**:操作行显示 = `hidden(视觉) OR shadowed(被遮蔽)` 均隐藏入口;UserActionsRow/AssistantActions 判定改回含 useShadowed;核实 compaction checkpoint 事件是否携带覆盖被压缩范围的 shadowedSeqs(是则天然匹配)。
