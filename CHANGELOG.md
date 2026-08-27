@@ -3,6 +3,10 @@
 本项目(dsh-retrace)的版本历史与开发记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [Unreleased]
+### 新增(UX,2026-08-28)
+
+- **被遮蔽/压缩消息隐藏操作入口**:被撤回/编辑/重新生成/恢复遮蔽或 compaction 压缩的消息,编辑/撤回/重新生成按钮直接隐藏——不再点击后才报 `target-shadowed`。操作行判定恢复为"视觉隐藏 OR 被遮蔽"双维度(useSeqHidden || useShadowed);compaction checkpoint(user/message + replace + `plugin:compact` source)作为"只判定不渲染"的 marker 节点,其 sourceEventSeqs 覆盖被压缩范围,不渲染提示行、不注入 CSS 隐藏(压缩由引擎处理)。
+
 ## [Unreleased]
 
 ### 修复(0.4.4,撤回/编辑失效回归)
