@@ -3,6 +3,26 @@
 本项目(dsh-retrace)的版本历史与开发记录。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [Unreleased]
+### 新增(UX,2026-08-28)
+
+- **被遮蔽/压缩消息隐藏操作入口**:被撤回/编辑/重新生成/恢复遮蔽或 compaction 压缩的消息,编辑/撤回/重新生成按钮直接隐藏——不再点击后才报 `target-shadowed`。操作行判定恢复为"视觉隐藏 OR 被遮蔽"双维度(useSeqHidden || useShadowed);compaction checkpoint(user/message + replace + `plugin:compact` source)作为"只判定不渲染"的 marker 节点,其 sourceEventSeqs 覆盖被压缩范围,不渲染提示行、不注入 CSS 隐藏(压缩由引擎处理)。
+
+## [Unreleased]
+
+### 修复(0.4.4,撤回/编辑失效回归)
+
+- **隐藏判定回退为 per-marker**:0.4.3 的 union-wide guard 在会话内 marker 累积覆盖 >40% 行时让**所有** marker(含新的撤回/编辑)全部降级不隐藏——「规划高级版本 (1)」会话即如此(实测 7 个 marker 全无隐藏规则,新撤回"已撤回 4 条消息"也不隐藏)。现在每个 marker 独立判定:普通撤回/编辑(几行)永远隐藏;仅单次覆盖 >40% 的大范围操作(如「编辑后从新对话开始」)降级。
+- **降级不再静默**:大范围操作降级时显示提示条("为保护历史未隐藏内容,日志完好");首个 marker 在累积隐藏 >40% 时提示可关闭「按标记隐藏」查看完整历史。
+- **操作行与隐藏状态一致**:UserActionsRow / AssistantActions / ReferenceRow 改为按"实际隐藏"判定(useRowHidden/useSeqHidden)——修复 0.4.3 的半失效态(消息可见但操作行消失)。
+- 真机验证:历史 marker 隐藏规则 0 → 101;大范围撤回(78 条)降级 + 提示;i18n 85=85;测试 134 绿。
+
+
+### 新增(P2.1 分叉图骨架,2026-08-26)
+
+- **`retrace/forkmap` 投影单元**:镜像官方 `foldSurface` 的增量折叠 + 每个 replace 边界的 `replacedSeqs`(被遮蔽的旧路径节点);不截断(分叉全貌优先);wire 精简(节点 `{seq,type}` + 边界 `{seq,kind,replacedSeqs}`);`GET /forkmap` HTTP 降级,与 versions 同双通道。
+- **「分叉」视图 Tab**(`conversation.view`,order 30,与 对话/轨迹/版本 平级):脊柱 = 当前 surface 节点流(用户/助手/工具 图标),分叉边界卡片化(撤回/编辑/重新生成/恢复 图标 + kind + 被遮蔽节点数 + markerText 摘要),固定行高窗口化,节点点击跳转对话。
+- **修复 0.4.2 程序化切视图静默 no-op**:调研实锤第三方视图的 `actions.setView` 收到 undefined(chatStore 私有,仅声明 `store` 的条目有 actions);跳转/轨迹按钮改为 tab-bar DOM click(与用户点击同路径),共享 `jumpToAnchor`(切 Tab → loadOlder → 锚点滚动高亮)。
+- i18n:+10 键(zh/en 对齐);测试 120 → **134**。
 
 ## [0.4.2] — 2026-08-26 · 轨迹借力 P0(时间线迁移官方视图 Tab)
 

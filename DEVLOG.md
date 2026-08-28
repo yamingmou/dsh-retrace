@@ -246,3 +246,101 @@
 **关键认知**:20 万事件全量重放校验 ~220ms,可接受;M1 检查只对 append 的 assistant/message 要求 turn/step(插件 marker 是 replace 不受影响);真实日志每个 surface 事件都带 surfaceOp 标记,夹具必须对齐。
 
 **遗留问题**:设置 UI 未加 prewrite 开关行(可通过 localStorage 直接关);大会话(百万事件)的校验成本需随 P2 再评估。
+
+---
+
+## P2.1 分叉图骨架 — retrace/forkmap 投影 + 「分叉」视图 Tab(2026-08-26)
+
+**目标**:PLAN §5.2 的分支拓扑展示层骨架——数据面(分叉边)+ 视图面(脊柱 + 旧路径卡片 + 跳转),为 P2.2 意图卡立骨架;顺带修复 0.4.2 遗留的"程序化切视图静默 no-op"。
+
+**方案**:
+
+- `lib/forkmap.js`(新增,纯折叠,复用 version-index 谓词):镜像官方 `foldSurface` 的状态转换(append→push;replace→splice **at startIdx**,官方 `applySurfacePlan` 同语义),并在每个 replace 边界记录 `{seq, kind, replacedSeqs}`——replacedSeqs 即被遮蔽的旧路径节点(splice 移除区间;区间非活跃时降级取 `sourceEventSeqs`)。**不截断**(分叉全貌优先;versions 的 VERSION_LIMIT 截断正是我们不扩展它的原因)。
+- `lib/projection/forkmap.js`(新增):`{key:'retrace/forkmap', stateSchema, init, apply, wire:{viewSchema, view}, stateVersion:1}` + 顶层别名(照 versions 单元模式,**带 wire**——8-25 教训)。wire 保持精简:节点只有 `{seq,type}`(类型供图标),markerText 由客户端从 versions wire 按 boundarySeq join。
+- `lib/versioning.js`:seam register() 追加注册 forkmap 单元(纯折叠,无副作用,不需 onChanged);`snapshotForkmap(sessionId)` HTTP 降级(与 snapshot 同构,抽公共 `snapshotKey`)。
+- `lib/http.js`:`GET /forkmap?sessionId=` 路由。
+- `lib/client.js`:
+  - **跳转修复(0.4.2 遗留 bug 实锤)**:调研确认 `actions` 只注入给声明 `store` 的条目,chatStore 是 ui-conversation 模块私有——第三方视图 `actions?.setView?.()` 收到 undefined 静默 no-op(0.4.2 的跳转/轨迹按钮真机上失效)。修复:`switchToViewTab(viewId)` 按注册顺序 DOM 点击 tab 栏按钮(`[role="tablist"] [role="tab"]`,chat=0/trajectory=1/retrace=2/fork=3)——与用户点击同一路径。
+  - 共享 `jumpToAnchor(store, seq)`(原 RetraceView 内部 jump 提升为模块级,含 waitForElement/flashKey):切 chat Tab → loadOlder 循环(24 页预算)→ rAF 轮询锚点行 → scrollIntoView + 高亮。
+  - `ForkView`(id `retrace-fork`,order 30,label「分叉/Fork」):`useProjection('retrace/forkmap')` 推送帧 + HTTP 降级;脊柱 = 当前 surface 节点流(用户/助手/工具 图标 + seq),边界行卡片化(分叉图标 + kind + 被遮蔽 N 节点 + markerText 摘要);固定行高窗口化;节点点击 jump。
+  - i18n:+10 键(zh/en 对齐,82=82)。
+
+**涉及文件**:`lib/forkmap.js`(新增)、`lib/projection/forkmap.js`(新增)、`lib/versioning.js`、`lib/http.js`、`lib/client.js`、`lib/client.bundle.js`/`lib/dynamic-client.js`(重建)、`test/forkmap.test.js`(新增)、`test/http.test.js`、`test/versioning.test.js`。
+
+**关键决策**:
+- **分叉边数据走新投影单元而非扩展 versions**:VERSION_LIMIT=200 截断会丢旧分叉点;独立单元一次 fold 即全量、推送实时、与既有双通道同构(调研结论)。
+- **"标记→新路径"不自解析**:官方 `traceEvent` 的 `derivedEventSeqs` 不指向新路径(新路径事件不引用标记)——新路径就是脊柱(边界后的 surface 节点),PLAN.md:295 原文修正。
+- **replace 的 start/end 是事件 seq**:splice-at-startIdx 使替换节点落在被替换区间起点(官方 `applySurfacePlan` 语义),脊柱顺序即模型可见顺序(可非单调 seq)。
+- 折叠对"区间非活跃"防御处理(官方会 throw):投影 apply 永不抛错,降级为仅记录边界 + `sourceEventSeqs` 兜底(与 versions 单元一致)。
+
+**验证方式**:`test/forkmap.test.js` 13 用例(表面折叠/边界分类/链式分叉/replacedSeqs 兜底/同引用契约/wire/定义契约);`test/http.test.js` +1(forkmap 路由);`test/versioning.test.js` 更新(双单元注册断言);`pnpm check && pnpm build && pnpm test` 全绿(**134**);i18n 键集 82=82;生成物同步。
+
+**遗留问题**:
+- **真机 GUI 冒烟待做**(P1 遗留 + 本次引入):验证时间线 Tab 渲染、**跳转按钮修复后生效**(tab-bar DOM click 依赖 chat=index0 的注册顺序)、轨迹台账按钮、分叉 Tab 渲染与节点跳转。
+- SVG 图形化/节点原文/分支意图卡(P2.2);分叉点性能(千级节点聚合)评估;compaction/replace 边界在分叉图上的非分叉呈现(当前仅作脊柱标记)。
+
+---
+
+## 真机 GUI 冒烟(web profile,2026-08-26,补 P1 遗留 + P2.1 验证)
+
+**目标**:真实 harness 验证 P2.1(分叉 Tab/跳转修复/窗口化)+ 补 P1 遗留的时间线验证。
+
+**方式**:`dsh --profile web --no-open --port 3080` + 无头 Chrome CDP(9222);CDP 脚本驱动打开「插件新版本讨论」会话(e61d70da),逐项断言。
+
+**验证结果(14/14 PASS)**:
+1. 4 Tab 并存:对话/轨迹/版本/分叉(conversation.view 多条目 ✓);
+2. **0.4.2 跳转修复生效**:版本行「跳转」点击后活跃 tab 切到对话(activeIdx=0)——此前 `actions?.setView?.()` 静默 no-op(第三方视图无 store 注入 actions,调研实锤),tab-bar DOM click 修复真机验证通过;
+3. 轨迹台账按钮切到轨迹(activeIdx=1)✓;
+4. 版本视图 5 版本全数据 ✓;分叉脊柱 605 节点 ✓;
+5. **发现 bug A(窗口化高度陷阱)**:viewArea flex 链 `min-height:auto` 让虚拟列表的高 spacer 把视图撑到全列表高度(33880px),列表永不滚动、窗口切片不动;官方轨迹因内容不贡献高度而幸免。修复 `bindListHeight`(实测可用高度 + `flex:none` 钉住——纯 height 被 flex 布局忽略),versions 列表同款隐患一并修;
+6. **发现 bug B(链式编辑分叉可见性)**:5 次编辑互相遮蔽,仅最后 marker 在脊柱上,其余 4 个边界 UI 不可见(数据完整);新增「历史分叉点」区段展示 off-spine 边界(kind/被遮蔽数/markerText)。
+
+**遗留问题**:分叉图节点点击跳转在真机上未逐一验证(脊柱节点跳转与版本跳转共用 jumpToAnchor,后者已验证);SVG 图形化/意图卡(P2.2);历史分叉区段的展开折叠(P2.2)。
+
+---
+
+## 0.4.4 修复 — 撤回/编辑失效回归(union-wide guard)(2026-08-27)
+
+**事故**:0.4.3 的 union-wide hide guard(73fde78)在会话内 marker 累积覆盖 >40% 行时降级**所有** marker。并行会话在「规划高级版本 (1)」实测 7 个 marker 全无隐藏规则;新产生的"已撤回 4 条消息"也不隐藏——撤回/编辑"失效"(用户反馈)。
+
+**根因**:`useMarkerHidePlan` 的 `degraded = union.size/rowCount > 0.4` 是**会话级永久状态**——历史 marker 累积一旦超限,后续每个新 marker 都被连带降级。
+
+**修复(用户确认方案 A:per-marker 闸 + 大范围提示)**:
+- guard 改回每 marker 独立(`keys.length/rowCount > 0.4` 才降级该 marker);普通撤回/编辑永远隐藏;
+- 降级时渲染明确提示条(`marker.degradedHint`),首个 marker 在累积 >40% 时渲染累积提示(`marker.unionHint`);
+- 操作行按"实际隐藏"判定:`rowHiddenByKey`/`useRowHidden`/`useSeqHidden` 替代 `useShadowed`——降级 marker 的消息保持可见且可操作(修 0.4.3 半失效态);
+- 删除 `useShadowed`(shadowed 但未隐藏的判定已无用途)。
+
+**验证**:真机(web profile)「规划高级版本 (1)」:修复前 hideRulesTotal=0 → 修复后 101(历史 marker 恢复隐藏);新会话大范围撤回(78 条)触发降级并显示提示条;小范围 marker 正常隐藏。`pnpm check && pnpm build && pnpm test` 全绿(134);i18n 85=85。
+
+**遗留**:大范围撤回(如中间消息连坐 78 条)被 guard 降级——若用户确实要回退大段,可走时间线回退;guard 提示条已解释。
+
+---
+
+## Backlog:被遮蔽/压缩消息隐藏操作入口(2026-08-27,用户 UX 反馈)
+
+**改进点**:被 marker 遮蔽或 compaction 压缩的消息,编辑/撤回/重新生成入口应直接隐藏,而非点击后才报 `target-shadowed`。
+
+**背景**:0.4.4 把操作行判定从 useShadowed(被遮蔽)改为 useRowHidden/useSeqHidden(视觉隐藏)——修"降级 marker 消息可见但操作行消失"的半失效态,但把两个维度混用了:视觉隐藏(guard 保护)与操作可行性(遮蔽即失败)应分开。当前降级/压缩时按钮残留,点击报错。
+
+**方案(下次开发执行)**:操作行显示 = `hidden(视觉) OR shadowed(被遮蔽)` 均隐藏入口;UserActionsRow/AssistantActions 判定改回含 useShadowed;核实 compaction checkpoint 事件是否携带覆盖被压缩范围的 shadowedSeqs(是则天然匹配)。
+
+---
+
+## UX 改进:被遮蔽/压缩消息隐藏操作入口(2026-08-28)
+
+**背景(用户反馈)**:被 marker 遮蔽或 compaction 压缩的消息仍显示编辑/撤回按钮,点击后才报 `target-shadowed`——基础体验问题。
+
+**方案**:
+- 恢复 `useShadowed`(0.4.4 删除)——"操作可行性"维度:seq 被任何 marker 遮蔽 → 操作必然失败 → 按钮隐藏;
+- UserActionsRow/AssistantActions 判定 `hidden(视觉) || shadowed(可行性)` 都隐藏入口;视觉隐藏(guard 降级保护)保持独立;
+- **compaction checkpoint 支持**:`recallMarkerDefinition.match` 增加 user/message + replace + `plugin:compact` source 分支,生成 `compact:true` 的 marker 节点——shadowedSeqs = sourceEventSeqs(实测覆盖数千被压缩 seq),但 `compact` 标记使其:RecallMarkerRow 不渲染(return null)、useMarkerHidePlan/rowHiddenByKey 跳过(不参与 guard/union/视觉隐藏)、仅 useShadowed 消费(压缩消息无编辑入口);
+- `isCompactCheckpoint(source)`:kind==='plugin' && plugin==='compact'(与 host 侧一致)。
+
+**验证(真机 web profile)**:
+- 「插件新版本 开发 (1)」:旧 bundle visibleRefs=2(残留)→ 新 bundle=0(修复,半整数锚点 0.4.5);
+- 「数字生命讨论 (实验升维)」:编辑后 rowsWithEdit 递减(7→6,被遮蔽消息按钮消失),refs 恒 1(无残留增长);
+- 全遮蔽会话 visibleUserRows=0(按钮全隐藏)。
+- `pnpm check && pnpm build && pnpm test` 全绿(134);i18n 对齐。
+
+**遗留**:重发消息/新对照链路在 headless(agent 无响应)下未能端到端复验编辑→重发→对照显示;压缩会话真机(需含 checkpoint 的会话)复验待 GUI 环境。

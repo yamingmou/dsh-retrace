@@ -54,12 +54,12 @@ function fakeCtx() {
     logger: { info: (line) => logLines.push(line), warn: (line) => logLines.push(line) },
     inject: (_list, fn) => {
       const seamCtx = {
-        registeredDefinition: null,
+        registeredDefinitions: [],
         changeListener: null,
         domain: null,
         sessionProjections: {
           register: (definition) => {
-            seamCtx.registeredDefinition = definition
+            seamCtx.registeredDefinitions.push(definition)
             return () => {}
           },
           onChanged: (listener) => {
@@ -68,7 +68,10 @@ function fakeCtx() {
           },
           snapshot: () => ({
             asOfSeq: -1,
-            values: { 'retrace/versions': { versions: [] } },
+            values: {
+              'retrace/versions': { versions: [] },
+              'retrace/forkmap': { nodes: [], boundaries: [] },
+            },
           }),
         },
         sessionQuery: {
@@ -176,12 +179,17 @@ function foldView(events) {
 // ---------------------------------------------------------------------------
 
 describe('createVersioningSeam', () => {
-  it('registers the projection unit and wires the change feed on inject', async () => {
+  it('registers the projection units and wires the change feed on inject', async () => {
     const ctx = fakeCtx()
     const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
     seam.register()
     const seamCtx = ctx.inject.seam
-    expect(seamCtx.registeredDefinition).toBe(versionsProjectionDefinition)
+    // Both units register: the versions unit and the P2.1 fork-map unit.
+    expect(seamCtx.registeredDefinitions).toContain(versionsProjectionDefinition)
+    expect(seamCtx.registeredDefinitions.map((d) => d.key)).toEqual([
+      'retrace/versions',
+      'retrace/forkmap',
+    ])
     expect(typeof seamCtx.changeListener).toBe('function')
   })
 
