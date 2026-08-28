@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.5] — 2026-08-28 · fork-map view skeleton + stability batch
+
+- fork-map view skeleton + stability batch
+
 ## [0.4.3] — 2026-08-27 · union-wide hide guard — stacked edits cannot wipe history
 
 - union-wide hide guard — stacked edits cannot wipe history
