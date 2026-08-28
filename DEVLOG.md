@@ -324,3 +324,23 @@
 **背景**:0.4.4 把操作行判定从 useShadowed(被遮蔽)改为 useRowHidden/useSeqHidden(视觉隐藏)——修"降级 marker 消息可见但操作行消失"的半失效态,但把两个维度混用了:视觉隐藏(guard 保护)与操作可行性(遮蔽即失败)应分开。当前降级/压缩时按钮残留,点击报错。
 
 **方案(下次开发执行)**:操作行显示 = `hidden(视觉) OR shadowed(被遮蔽)` 均隐藏入口;UserActionsRow/AssistantActions 判定改回含 useShadowed;核实 compaction checkpoint 事件是否携带覆盖被压缩范围的 shadowedSeqs(是则天然匹配)。
+
+---
+
+## UX 改进:被遮蔽/压缩消息隐藏操作入口(2026-08-28)
+
+**背景(用户反馈)**:被 marker 遮蔽或 compaction 压缩的消息仍显示编辑/撤回按钮,点击后才报 `target-shadowed`——基础体验问题。
+
+**方案**:
+- 恢复 `useShadowed`(0.4.4 删除)——"操作可行性"维度:seq 被任何 marker 遮蔽 → 操作必然失败 → 按钮隐藏;
+- UserActionsRow/AssistantActions 判定 `hidden(视觉) || shadowed(可行性)` 都隐藏入口;视觉隐藏(guard 降级保护)保持独立;
+- **compaction checkpoint 支持**:`recallMarkerDefinition.match` 增加 user/message + replace + `plugin:compact` source 分支,生成 `compact:true` 的 marker 节点——shadowedSeqs = sourceEventSeqs(实测覆盖数千被压缩 seq),但 `compact` 标记使其:RecallMarkerRow 不渲染(return null)、useMarkerHidePlan/rowHiddenByKey 跳过(不参与 guard/union/视觉隐藏)、仅 useShadowed 消费(压缩消息无编辑入口);
+- `isCompactCheckpoint(source)`:kind==='plugin' && plugin==='compact'(与 host 侧一致)。
+
+**验证(真机 web profile)**:
+- 「插件新版本 开发 (1)」:旧 bundle visibleRefs=2(残留)→ 新 bundle=0(修复,半整数锚点 0.4.5);
+- 「数字生命讨论 (实验升维)」:编辑后 rowsWithEdit 递减(7→6,被遮蔽消息按钮消失),refs 恒 1(无残留增长);
+- 全遮蔽会话 visibleUserRows=0(按钮全隐藏)。
+- `pnpm check && pnpm build && pnpm test` 全绿(134);i18n 对齐。
+
+**遗留**:重发消息/新对照链路在 headless(agent 无响应)下未能端到端复验编辑→重发→对照显示;压缩会话真机(需含 checkpoint 的会话)复验待 GUI 环境。
