@@ -26,6 +26,11 @@
 
 - watchdog 6 用例（双写入验收 / 不误报 / dispose 干净 / 降级）；prewrite-guard +6（T1 判定 / 不阻断 / host-core 标注）；全量 **156** 绿。
 
+### 修复（启动崩溃，2026-08-29 真机）
+
+- **cordis ctx Proxy 崩溃**：watchdog 曾访问 `ctx.setInterval`/`ctx.clearInterval`/`ctx.off`——cordis 的 ctx 是 Proxy,对任何未 inject 的属性访问直接抛 `cannot get property "timer" without inject`,导致 desktop 启动时插件树加载失败(必须删除插件才能启动)。修复:定时器改用全局 `setInterval`/`clearInterval`(host-runner sandbox 会重定向),`ctx.on()` 返回的 disposer 函数替代不存在的 `ctx.off`;测试注入 `schedule`/`unschedule` 保可测性。
+- desktop profile 正式把 dsh-retrace 加入 `bundles` + `dependencies`(此前仅手动塞 node_modules,删除插件后即丢失)。
+
 ## [0.4.5] — 2026-08-28 · 分叉图骨架 + 稳定性修复批
 
 ### 新增(P2.1 分叉图骨架)
