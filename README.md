@@ -328,3 +328,20 @@ DeepSeek Harness community.
 ## 📄 License
 
 MIT
+
+
+## 🧭 会话日志考古（retrace CLI）
+
+DSH 会话日志持久化了每次工具调用的完整输入输出——数据资产与审计资产。
+`retrace` CLI 提供只读考古能力（复用 dsh-log-contract 0.3.0 的契约与提取）：
+
+```sh
+retrace index <session>                        # 工具调用索引（A1）
+retrace query <session> --cmd "seed-scale"     # 按命令正则查输出（A1）
+retrace extract <session> --pattern "seed-scale" --out ./found   # 导出输出（A2）
+retrace file-history <session> <path>          # 文件 write/edit 历史版本（A3）
+retrace file-diff <session> <path> 0 5         # 两版本行级 diff（A3）
+retrace lineage <session>                      # 会话 parent 链谱系（A4）
+```
+
+<session> 为完整日志路径或 sessionId（自动在 ~/.dsh/sessions 查找）。全部只读。
