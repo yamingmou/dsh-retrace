@@ -1,5 +1,31 @@
 ## [Unreleased]
 
+## [0.4.6] — 2026-08-29 · R1 实时看门狗 + R2 marker T1 契约 + 考古 A4 谱系
+
+### 新增（R1 · 实时看门狗，lib/watchdog.js）
+
+- **实时看门狗**：订阅 `session/event` 跟踪活跃会话，每 10s 比较「文件尾部最后一条事件 seq」（`dsh-log-contract tailSeq`，懒加载、只解最后一帧）与「内存 session.events.length」。**只检查一个方向**：文件尾部 seq 领先内存 → 另一进程/旧光标回放在写（事故根因 1/2 的现场）→ 字节级快照到 `$DSH_HOME/dsh-retrace/snapshots/` + warning 日志 + 每会话 5 分钟防刷屏。`fileSeq <= events.length` 永不告警（本进程未 flush 是常态，防误报）。
+- 卸载/热重载 dispose 干净（定时器 + 监听双清理）；`dsh-log-contract` 缺失时降级「不检查」。
+
+### 新增（R2 · marker T1 契约，prewrite-guard.js + host-core.js + client）
+
+- **T1 折叠自检**：写前校验（三层契约之后）追加 `tokenMeterFoldOk`——逐字复刻 checks.js T1 状态机（含「无 step/start 不检查」保护）。t1Ok=false 时**不阻断写入**（编辑必须生效），在 marker 的 `editor.markerT1Broken` 标注，recall/edit/regenerate 返回值带 `markerT1Broken`。
+- **客户端提示**：markerT1Broken 时显示提示「编辑已生效；此标记会使本会话的 /compact 失效。离线清理：关闭会话后运行 dsh-log-contract fix --drop-turnnull」。
+- 让 turn-null marker 从「静默破坏 /compact」变为「写入即标注 + 提示」，离线清理命令直接给出。
+
+### 新增（考古 A4 谱系 UI，0.4.6 批）
+
+- **会话谱系卡片**（分叉视图头部）：`seam.lineage` 沿 `header.parentSession` 追溯父链（环保护），`GET /lineage` HTTP 路由，ForkView 头部渲染 hop 链（`dsh-rt-fork-lineage-*`），i18n zh+en。
+- **doctorScan**：会话内 token-meter 违规（T1）离线扫描（`/doctor`）。
+
+### 变更
+
+- `dsh-log-contract` 新增导出 `tailSeq`（log-reader.js）供看门狗读文件尾部 seq。
+
+### 测试
+
+- watchdog 6 用例（双写入验收 / 不误报 / dispose 干净 / 降级）；prewrite-guard +6（T1 判定 / 不阻断 / host-core 标注）；全量 **156** 绿。
+
 ## [0.4.5] — 2026-08-28 · 分叉图骨架 + 稳定性修复批
 
 ### 新增(P2.1 分叉图骨架)
