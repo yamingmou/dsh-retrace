@@ -1,5 +1,49 @@
 ## [Unreleased]
 
+## [0.4.11] — 2026-08-30 · 渲染卡死修复（ForkView/VersionsView O(N²)）
+
+### 修复（2026-08-30 禁用验证坐实：5e551007 打开转圈、Renderer CPU 27.7%）
+
+- **ForkView / VersionsView 窗口化渲染 O(N²) → O(1)**：`visible.map` 里
+  `nodes.indexOf(node)` / `list.indexOf(record)` 在每次渲染对每个可见节点做
+  线性查找——2047 节点 × ~15 可见行 = 每次渲染 ~30K 次比较，React 重渲染风暴
+  → 转圈、Renderer CPU 27.7% 持续高负载。大会话（5e551007 126.9 万事件、
+  forkmap 2047 节点）打开卡死，小会话不触发。
+- 修复：窗口化切片带起始索引（visibleStart），渲染用 `(visibleStart + i) * ROW_H`
+  直接算 top，去掉 indexOf。ForkView + VersionsView 两处同修。
+- 回归测试 +2：断言源码不再出现 `top: nodes/list.indexOf(...)`，且两处都用
+  索引切片（防复发）。
+
+### 备注
+
+- forkmap 投影 nodes 的 seq 乱序（compaction replace 插在遮蔽范围开头）是官方
+  foldSurface 语义，非 bug；ForkView 不依赖有序，仅渲染顺序，无碍。
+- 本版不处理「幽灵 resend 占位消息」（0.4.6 历史遗留 seed 数据，客户端渲染正常）。
+
+## [0.4.10] — 2026-08-30 · R2 根治：轮次间编辑不再产生 turn-null marker
+
+### 修复(刷屏事故根治 v2)
+
+- **轮次间编辑(常态)自动开临时 step 包裹 marker**：step/start → marker(turn=nextTurn, step=1) → step/end。官方 token-meter 要求每条 assistant/message 必须有打开的 step(stepStart===void 0 即抛，dsh-token-meter :590)，turn-null 或伪造 turn/step 都过不了；临时 step 是唯一合法形态。三层验证通过(foldSurface / token-meter / 客户端 Location boundary——step/turn 事件不进 surface)。
+- 0.4.7-0.4.9 只修了回合中编辑(step-context)，轮次间编辑仍写 turn:null(5e551007 实测 6 个，最新 07:27)→ 仍会刷屏压垮 host。本次根治：任何编辑都不再产生 turn-null marker。
+- 配套：check 新增 T2(跨 step sourceEventSeqs)/S9(物理序单调)/I1(inbox 重放)——dsh-log-contract 0.3.5。
+
+### 测试
+
+- host-core/rollback/prewrite-guard 断言更新为临时 step 形态；全量 **162** 绿。
+
+## [0.4.8] — 2026-08-30 · R2 路径二：编辑前自动停止 agent(消除跨 step 引用)
+
+### 修复(2026-08-30 第二类刷屏事故)
+
+- **编辑/重发/重新生成前自动停止运行中的 agent**：ensureIdle 替代 requireIdle——agent 正在响应时不再抛 agent-busy，而是自动 agent.cancel() + whenIdle() 等待其干净收尾再执行编辑。
+- 为什么必要：编辑发生在 agent 还开着 step 时，DSH 的 resend 会把旧 step 的 chunk 全部引用进新 assistant/message 的 sourceEventSeqs(5e551007 seq 7000004 跨 step 7/8/9)，token-meter 抛 belongs to another step(:645)→ 同样刷屏压垮 host。
+- 配套：dsh-log-contract fix --clip-crossstep(0.3.4)裁剪历史跨 step 引用。
+
+### 测试
+
+- +1(auto-stop 后编辑成功 / 无 cancel API 回退 agent-busy)；全量 162 绿。
+
 ## [0.4.7] — 2026-08-30 · R2 路径一：回合内编辑写合法 turn/step（刷屏事故闭环）
 
 ### 修复（2026-08-30 锁定事故闭环）

@@ -75,6 +75,8 @@ function makeSession(cwd = '/work') {
     append(type, data, options = {}) {
       const record = { seq: events.length, time: Date.now(), type, data, ...options }
       events.push(record)
+      // 与真实 dsh-session 一致：step/turn 边界不进 surface
+      if (type === 'step/start' || type === 'step/end' || type === 'turn/start' || type === 'turn/end') return record
       if (options.surfaceOp && options.surfaceOp.op === 'replace') {
         const { start, end } = options.surfaceOp
         surface.nodes = surface.nodes.filter((seq) => seq < start || seq > end)
@@ -203,9 +205,9 @@ describe('rollback execute', () => {
     )
     const { rollback, sessions } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'context' })
-    expect(result.markerSeq).toBe(5)
+    expect(result.markerSeq).toBe(6)
     expect(result.context.messages).toBe(1)
-    const marker = session.events[5]
+    const marker = session.events[6] // marker 在临时 step 之后（step/start@5, marker@6）
     expect(marker.type).toBe('assistant/message')
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 4 })
     expect(marker.sourceEventSeqs).toEqual([4])
@@ -275,7 +277,7 @@ describe('rollback execute', () => {
     )
     const { rollback, writes } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'both' })
-    expect(result.markerSeq).toBe(5)
+    expect(result.markerSeq).toBe(6)
     expect(writes.length).toBe(1)
   })
 })
