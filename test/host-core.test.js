@@ -401,3 +401,68 @@ describe('concurrency and result envelope', () => {
     expect(result.error.code).toBe('internal')
   })
 })
+
+describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 事故闭环）', () => {
+  it('findOpenStep：无 step/start → null（轮次间编辑）', async () => {
+    const { findOpenStep } = await import('../lib/host-core.js')
+    const session = makeSession().seed(userMessage('u1', 'hi'))
+    expect(findOpenStep(session)).toBeNull()
+  })
+
+  it('findOpenStep：step 已关闭 → null', async () => {
+    const { findOpenStep } = await import('../lib/host-core.js')
+    const session = makeSession().seed(
+      userMessage('u1', 'hi'),
+      { type: 'step/start', data: { turn: 3, step: 1 } },
+      assistantMessage('a1', 'yo'),
+      { type: 'step/end', data: { turn: 3, step: 1 } },
+    )
+    expect(findOpenStep(session)).toBeNull()
+  })
+
+  it('findOpenStep：step 仍打开 → 返回 turn/step', async () => {
+    const { findOpenStep } = await import('../lib/host-core.js')
+    const session = makeSession().seed(
+      userMessage('u1', 'hi'),
+      { type: 'step/start', data: { turn: 3, step: 1 } },
+      assistantMessage('a1', 'yo'),
+    )
+    expect(findOpenStep(session)).toEqual({ turn: 3, step: 1 })
+  })
+
+  it('回合中编辑：marker 携带当前 step 的 turn/step（非 null），T1 通过', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    const session = makeSession().seed(
+      userMessage('u1', 'hi'),
+      { type: 'step/start', data: { turn: 3, step: 1 } },
+      assistantMessage('a1', 'yo'),
+    )
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    // 校验钩子：契约通过 + T1 自检通过（step 内 marker 不再破坏 token meter）
+    const validateMarker = async () => ({ t1Ok: true })
+    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    expect(result.ok).toBe(true)
+    const marker = session.events[session.events.length - 1]
+    expect(marker.type).toBe('assistant/message')
+    expect(marker.data.turn).toBe(3) // 携带当前 step 的 turn
+    expect(marker.data.step).toBe(1) // 携带当前 step 的 step
+    expect(marker.data.editor?.markerT1Broken).toBeUndefined() // 无标注
+    expect(result.value.markerT1Broken).toBe(false)
+  })
+
+  it('轮次间编辑（无打开 step）：仍 turn:null + markerT1Broken 标注（回退路径不变）', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const validateMarker = async () => ({ t1Ok: false }) // 模拟 T1 自检失败
+    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    expect(result.ok).toBe(true)
+    const marker = session.events[session.events.length - 1]
+    expect(marker.data.turn).toBeNull()
+    expect(marker.data.step).toBeNull()
+    expect(marker.data.editor?.markerT1Broken).toBe(true)
+    expect(result.value.markerT1Broken).toBe(true)
+  })
+})
