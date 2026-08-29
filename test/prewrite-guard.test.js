@@ -32,7 +32,7 @@ describe('createMarkerGuard (fake prewriter)', () => {
   it('passes a valid envelope through', async () => {
     const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
     const guard = createMarkerGuard({ prewriterFactory: factory })
-    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toBeUndefined()
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toEqual({ t1Ok: true })
     expect(factory).toHaveBeenCalledWith({ events: [] })
   })
 
@@ -59,7 +59,7 @@ describe('createMarkerGuard (fake prewriter)', () => {
   it('skips validation when enabled(sessionId) is false', async () => {
     const factory = vi.fn(() => ({ validateAppend: () => ({ ok: false, violations: [] }) }))
     const guard = createMarkerGuard({ prewriterFactory: factory, enabled: () => false })
-    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toBeUndefined()
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toEqual({ t1Ok: true })
     expect(factory).not.toHaveBeenCalled()
   })
 
@@ -94,7 +94,7 @@ describe('createMarkerGuard (real dsh-log-contract integration)', () => {
     // The real span for this surface: recall shadows u1..a1 (seq 0..1).
     envelope.surfaceOp = { op: 'replace', start: 0, end: 1 }
     envelope.sourceEventSeqs = [0, 1]
-    await expect(guard.validateMarkerAppend({ id: 's1', events }, envelope)).resolves.toBeUndefined()
+    await expect(guard.validateMarkerAppend({ id: 's1', events }, envelope)).resolves.toEqual({ t1Ok: true })
   })
 
   it('rejects the 8-25 incident shape: empty sourceEventSeqs on a replace', async () => {
@@ -148,5 +148,79 @@ describe('host-core hooks.validateMarker', () => {
     const api = createEditorApi({}, sessions, agents, () => {})
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
+  })
+})
+
+describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 /compact）', () => {
+  it('tokenMeterFoldOk：无 step/start 的日志 → true（远古/夹具结构不误报）', async () => {
+    const { tokenMeterFoldOk } = await import('../lib/prewrite-guard.js')
+    expect(tokenMeterFoldOk([{ type: 'user/message', data: {} }])).toBe(true)
+  })
+
+  it('tokenMeterFoldOk：正常 step 配对 → true', async () => {
+    const { tokenMeterFoldOk } = await import('../lib/prewrite-guard.js')
+    const events = [
+      { type: 'step/start', data: { turn: 1, step: 0 } },
+      { type: 'assistant/message', data: { turn: 1, step: 0 } },
+      { type: 'step/end', data: { turn: 1, step: 0 } },
+    ]
+    expect(tokenMeterFoldOk(events)).toBe(true)
+  })
+
+  it('tokenMeterFoldOk：turn-null assistant/message 无打开 step → false（/compact 会被拒）', async () => {
+    const { tokenMeterFoldOk } = await import('../lib/prewrite-guard.js')
+    const events = [
+      { type: 'step/start', data: { turn: 1, step: 0 } },
+      { type: 'assistant/message', data: { turn: 1, step: 0 } },
+      { type: 'step/end', data: { turn: 1, step: 0 } },
+      // 轮次间编辑 marker：turn/step = null，无打开 step
+      { type: 'assistant/message', data: { turn: null, step: null } },
+    ]
+    expect(tokenMeterFoldOk(events)).toBe(false)
+  })
+
+  it('guard 返回 t1Ok=false 但**不阻断**写入（编辑必须生效）', async () => {
+    const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
+    const log = vi.fn()
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    // 会话事件里已有一次闭合的 step，随后追加 turn-null marker → T1 失败
+    const session = {
+      id: 's1',
+      events: [
+        { type: 'step/start', data: { turn: 1, step: 0 } },
+        { type: 'assistant/message', data: { turn: 1, step: 0 } },
+        { type: 'step/end', data: { turn: 1, step: 0 } },
+      ],
+    }
+    const result = await guard.validateMarkerAppend(session, validEnvelope())
+    expect(result).toEqual({ t1Ok: false }) // 不抛错、不阻断
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('markerT1Broken'))
+  })
+
+  it('host-core：t1Ok=false 时 marker 落盘且 editor.markerT1Broken=true，返回值带标志', async () => {
+    const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    // 模拟 prewrite-guard：契约通过但 T1 折叠失败
+    const validateMarker = async () => ({ t1Ok: false })
+    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    expect(result.ok).toBe(true) // 不阻断
+    expect(result.value.markerT1Broken).toBe(true)
+    // marker 已落盘且带标注
+    const marker = session.events[session.events.length - 1]
+    expect(marker.type).toBe('assistant/message')
+    expect(marker.data?.editor?.markerT1Broken).toBe(true)
+  })
+
+  it('host-core：t1Ok=true（正常）时不标注', async () => {
+    const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const validateMarker = async () => ({ t1Ok: true })
+    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    expect(result.ok).toBe(true)
+    expect(result.value.markerT1Broken).toBe(false)
+    const marker = session.events[session.events.length - 1]
+    expect(marker.data?.editor?.markerT1Broken).toBeUndefined()
   })
 })
