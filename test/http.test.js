@@ -158,6 +158,34 @@ describe('P1 HTTP routes', () => {
     expect(parsed.value.nodes).toHaveLength(2)
   })
 
+  it('GET /lineage proxies the seam (A4)', async () => {
+    const seam = makeSeam()
+    seam.lineage = vi.fn(() => [
+      { id: 'leaf', parentId: 'mid' },
+      { id: 'mid', parentId: 'root' },
+      { id: 'root', parentId: null },
+    ])
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const res = await get(handler, `${ROUTE_PREFIX}/lineage?sessionId=leaf`)
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(true)
+    expect(seam.lineage).toHaveBeenCalledWith('leaf')
+    expect(parsed.value).toHaveLength(3)
+    expect(parsed.value[2]).toEqual({ id: 'root', parentId: null })
+  })
+
+  it('GET /lineage surfaces seam errors as ok:false', async () => {
+    const seam = makeSeam()
+    seam.lineage = vi.fn(() => {
+      throw new Error('boom')
+    })
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const res = await get(handler, `${ROUTE_PREFIX}/lineage?sessionId=s1`)
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(false)
+    expect(parsed.error.message).toBe('boom')
+  })
+
   it('POST /git/init proxies the seam', async () => {
     const seam = makeSeam()
     const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })

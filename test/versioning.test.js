@@ -237,6 +237,40 @@ describe('createVersioningSeam', () => {
       code: 'versioning-unavailable',
     })
   })
+
+  it('lineage walks header.parentSession to the root (A4)', async () => {
+    const ctx = fakeCtx()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
+    await settle()
+    ctx.sessions.set('leaf', { id: 'leaf', header: { cwd: '/ws', parentSession: 'mid' } })
+    ctx.sessions.set('mid', { id: 'mid', header: { cwd: '/ws', parentSession: 'root' } })
+    ctx.sessions.set('root', { id: 'root', header: { cwd: '/ws' } })
+    expect(seam.lineage('leaf')).toEqual([
+      { id: 'leaf', parentId: 'mid' },
+      { id: 'mid', parentId: 'root' },
+      { id: 'root', parentId: null },
+    ])
+    // standalone session → single-hop chain
+    expect(seam.lineage('root')).toEqual([{ id: 'root', parentId: null }])
+  })
+
+  it('lineage stops at a cycle (defensive) and tolerates unknown parents', async () => {
+    const ctx = fakeCtx()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
+    await settle()
+    ctx.sessions.set('a', { id: 'a', header: { cwd: '/ws', parentSession: 'b' } })
+    ctx.sessions.set('b', { id: 'b', header: { cwd: '/ws', parentSession: 'a' } })
+    const chain = seam.lineage('a')
+    expect(chain.length).toBe(2)
+    expect(new Set(chain.map((hop) => hop.id))).toEqual(new Set(['a', 'b']))
+    // parent id not present in the registry → still surfaced as a hop
+    // (the UI can show "continues from <ghost>"), no throw
+    ctx.sessions.set('solo', { id: 'solo', header: { cwd: '/ws', parentSession: 'ghost' } })
+    expect(seam.lineage('solo')).toEqual([
+      { id: 'solo', parentId: 'ghost' },
+      { id: 'ghost', parentId: null },
+    ])
+  })
 })
 
 // ---------------------------------------------------------------------------

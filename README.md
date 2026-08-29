@@ -345,3 +345,9 @@ retrace lineage <session>                      # 会话 parent 链谱系（A4）
 ```
 
 <session> 为完整日志路径或 sessionId（自动在 ~/.dsh/sessions 查找）。全部只读。
+
+**分叉图里的会话谱系（A4,UI）**：Fork map 视图头部展示当前会话的
+`parentSession` 接续链（当前会话 → 父 → 根,`←` 方向）。数据来自
+`GET /api/plugins/retrace/lineage?sessionId=`（只读 header 遍历,带环保护）,
+与 CLI `retrace lineage` 同一语义。这样"这个会话是从哪个会话接着干/分叉出来的"
+在界面上一眼可见——也是分叉图拓扑的元数据源。
