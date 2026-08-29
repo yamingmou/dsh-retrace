@@ -192,6 +192,17 @@ describe('P1 HTTP routes', () => {
     expect(res.status).toBe(503)
   })
 
+  it('GET /doctor scans token-meter-breaking markers (B1)', async () => {
+    const seam = makeSeam()
+    seam.doctorScan = vi.fn(() => ({ enabled: true, markerCount: 2, markers: [{ seq: 5, message: 'assistant/message at seq 5 has no matching step/start' }] }))
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const res = await get(handler, `${ROUTE_PREFIX}/doctor?sessionId=s1`)
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(true)
+    expect(seam.doctorScan).toHaveBeenCalledWith('s1')
+    expect(parsed.value.markerCount).toBe(2)
+  })
+
   it('GET /snapshot resolves the version:path object', async () => {
     const seam = makeSeam()
     const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })

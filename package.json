@@ -85,7 +85,7 @@
     "react": "^18.2.0"
   },
   "dependencies": {
-    "dsh-log-contract": "^0.1.0",
+    "dsh-log-contract": "^0.2.1",
     "zod": "^4.4.3"
   },
   "repository": {
