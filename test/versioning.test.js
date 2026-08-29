@@ -193,6 +193,33 @@ describe('createVersioningSeam', () => {
     expect(typeof seamCtx.changeListener).toBe('function')
   })
 
+  it('doctorScan flags turn-null markers that break the token meter (B1)', async () => {
+    const ctx = fakeCtx()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
+    seam.register()
+    const seamCtx = ctx.inject.seam
+    // seed a session with a modern step structure + a turn-null edit marker
+    const session = {
+      id: 's1',
+      events: [
+        { seq: 0, type: 'user/message', surfaceOp: 'append', time: 1, data: { id: 'u1', role: 'user', content: [], source: { kind: 'user' } } },
+        { seq: 1, type: 'step/start', time: 2, data: { turn: 0, step: 1 } },
+        { seq: 2, type: 'assistant/message', surfaceOp: 'append', time: 3, data: { turn: 0, step: 1, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'yo' }], source: { kind: 'model', provider: 'p', model: 'm' } } } },
+        { seq: 3, type: 'step/end', time: 4, data: { turn: 0, step: 1 } },
+        { seq: 4, type: 'assistant/message', surfaceOp: { op: 'replace', start: 0, end: 2 }, sourceEventSeqs: [0, 2], time: 5, data: { turn: null, step: null, message: { id: 'retrace-edit-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 0, text: 'edited' } } },
+      ],
+    }
+    ctx.sessions.set('s1', session)
+    const result = seam.doctorScan('s1')
+    expect(result.enabled).toBe(true)
+    expect(result.markerCount).toBe(1)
+    expect(result.markers[0]).toMatchObject({ seq: 4 })
+    // healthy session without markers → zero
+    const clean = { id: 's2', events: session.events.filter((e) => e.data?.editor === undefined) }
+    ctx.sessions.set('s2', clean)
+    expect(seam.doctorScan('s2').markerCount).toBe(0)
+  })
+
   it('is unavailable before inject (headless compositions degrade to L1)', () => {
     const ctx = fakeCtx()
     const seam = createVersioningSeam(ctx, () => {}, { storeRoot: '/tmp' })
@@ -209,6 +236,40 @@ describe('createVersioningSeam', () => {
     await expect(seam.readSurface('s1')).rejects.toMatchObject({
       code: 'versioning-unavailable',
     })
+  })
+
+  it('lineage walks header.parentSession to the root (A4)', async () => {
+    const ctx = fakeCtx()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
+    await settle()
+    ctx.sessions.set('leaf', { id: 'leaf', header: { cwd: '/ws', parentSession: 'mid' } })
+    ctx.sessions.set('mid', { id: 'mid', header: { cwd: '/ws', parentSession: 'root' } })
+    ctx.sessions.set('root', { id: 'root', header: { cwd: '/ws' } })
+    expect(seam.lineage('leaf')).toEqual([
+      { id: 'leaf', parentId: 'mid' },
+      { id: 'mid', parentId: 'root' },
+      { id: 'root', parentId: null },
+    ])
+    // standalone session → single-hop chain
+    expect(seam.lineage('root')).toEqual([{ id: 'root', parentId: null }])
+  })
+
+  it('lineage stops at a cycle (defensive) and tolerates unknown parents', async () => {
+    const ctx = fakeCtx()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
+    await settle()
+    ctx.sessions.set('a', { id: 'a', header: { cwd: '/ws', parentSession: 'b' } })
+    ctx.sessions.set('b', { id: 'b', header: { cwd: '/ws', parentSession: 'a' } })
+    const chain = seam.lineage('a')
+    expect(chain.length).toBe(2)
+    expect(new Set(chain.map((hop) => hop.id))).toEqual(new Set(['a', 'b']))
+    // parent id not present in the registry → still surfaced as a hop
+    // (the UI can show "continues from <ghost>"), no throw
+    ctx.sessions.set('solo', { id: 'solo', header: { cwd: '/ws', parentSession: 'ghost' } })
+    expect(seam.lineage('solo')).toEqual([
+      { id: 'solo', parentId: 'ghost' },
+      { id: 'ghost', parentId: null },
+    ])
   })
 })
 
