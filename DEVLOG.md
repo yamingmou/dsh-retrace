@@ -365,3 +365,25 @@
 - 真机验证:「数字生命讨论 (实验升维2)」9 个 marker → banner 显示 ✓;测试 134→136。
 
 **关键认知**:marker 形态无法绕开 token-meter 检查(空 assistant/message 是唯一"合法且隐形"形态,而它必被检查;user/message 会派生幽灵消息)。根治依赖上游 D3(token meter 跳过 turn-null replace)或中期 B1(回合内携带 turn/step,受 requireIdle 限制)——已按报告路线记录。
+
+## R1 + R2 — 实时看门狗 + marker T1 契约(2026-08-29)
+
+**目标**:① 把「重启救火」变成「现场报警 + 自动备份」(R1,交接书 P0);② 让 turn-null marker 不再静默破坏 /compact(R2,交接书 P0)。
+
+**方案**:
+
+- **R1 watchdog(lib/watchdog.js)**:订阅 `session/event` 只记录活跃度(与 dsh-token-meter lib/index.js:480 同款),每 10s 轮询「最近 5min 有事件」的会话;用 `dsh-log-contract tailSeq`(新增导出,复用 scanZstdFrames 只解最后一帧)读文件尾部 seq,与 `session.events.length` 比较。**只报 fileSeq > memory**(另一写入者/旧光标回放),绝不报 fileSeq < memory(本进程未 flush 是常态)。异常 → 字节级快照到 `$DSH_HOME/dsh-retrace/snapshots/<id>-<ts>.jsonl.zstd`(host node:fs,同 artifact-store 模式)+ warn 日志 + 每会话 5min 防刷屏。dispose 清定时器 + `ctx.off('session/event')`。
+- **R2 marker T1 契约(prewrite-guard.js + host-core.js + client.js)**:三层契约校验后追加 `tokenMeterFoldOk`——逐字复刻 checks.js T1 状态机(含「无 step/start 不检查」保护,checks.js:372)。t1Ok=false **不阻断写入**(编辑必须生效),marker 的 `editor.markerT1Broken: true` 标注,recall/edit/regenerate 返回值带 `markerT1Broken`,客户端显示 /compact 失效提示 + 离线清理命令。
+
+**关键决策**:
+
+- watchdog 检测方向只做「文件领先」:旧光标回放/多进程写入的唯一可靠现场特征;反向(内存领先)是持久化未 flush 的常态,检查必误报。
+- R2 不阻断:编辑的即时价值 > /compact 的远期价值;标注 + 提示 + 离线命令(`dsh-log-contract fix --drop-turnnull`)让用户可自愈。不做插件内删除(会话驻留时改持久化文件会被内存覆盖,必须离线)。
+- tailSeq 只解最后一帧(撕裂尾帧跳过),O(帧数)内完成,10s 轮询开销可忽略。
+- 依赖注入(tailSeqReader/snapshot/sessionFileFor)让全部测试零真实文件。
+
+**涉及文件**:`lib/watchdog.js`(新)、`lib/index.js`、`lib/prewrite-guard.js`、`lib/host-core.js`、`lib/client.js`、`lib/dynamic-client.js`、`lib/client.bundle.js`、`test/watchdog.test.js`(新)、`test/prewrite-guard.test.js`;dsh-log-contract:`lib/log-reader.js`(tailSeq)、`lib/index.js`。
+
+**验证**:watchdog 6 用例(双写入→快照+告警 / 一致与落后不误报 / reader null 降级 / dispose 干净 / 快照失败不崩溃);prewrite-guard +6(T1 判定三态 / 不阻断 / host-core 标注与返回值);全量 **156** 绿;check-syntax/check-dynamic 通过。
+
+**遗留**:客户端提示用 failure 行展示(可升级为 toast);watchdog 快照目录清理策略沿用版本快照 retention(未单独实现);R3/R4/R5 未做(交接书简表)。
