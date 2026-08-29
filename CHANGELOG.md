@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.6] — 2026-08-29 · watchdog + marker contract + lineage view
+
+- watchdog + marker contract + lineage view
+
 ## [0.4.5] — 2026-08-28 · fork-map view skeleton + stability batch
 
 - fork-map view skeleton + stability batch

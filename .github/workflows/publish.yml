@@ -56,6 +56,9 @@ jobs:
         run: pnpm test
 
       - name: Publish to npm
-        run: pnpm publish --provenance
+        # --no-git-checks: the Actions checkout leaves HEAD detached, and
+        # pnpm's git-checks then fail with ERR_PNPM_GIT_UNKNOWN_BRANCH
+        # (publish-branch defaults to master|main).
+        run: pnpm publish --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
