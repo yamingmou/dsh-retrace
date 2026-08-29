@@ -116,15 +116,31 @@ describe('recall', () => {
     expect(session.events.some((e) => e.type === 'user/message' && e.data.id === 'u1')).toBe(true)
   })
 
-  it('returns agent-busy while the agent is running', async () => {
+  it('returns agent-busy while the agent is running and has no cancel API (fallback)', async () => {
     const session = standardSession()
-    const api = makeApi(session, makeAgent({ status: 'running' }))
+    const api = makeApi(session, makeAgent({ status: 'running' })) // 无 cancel → 回退 agent-busy
 
     const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
 
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('agent-busy')
     expect(surfaceSeqs(session)).toEqual([1, 2, 3, 4, 5]) // untouched
+  })
+
+  it('running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 事故闭环)', async () => {
+    const session = standardSession()
+    const cancel = vi.fn()
+    const whenIdle = vi.fn(async () => {})
+    const api = makeApi(session, makeAgent({ status: 'running', cancel, whenIdle }))
+
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(whenIdle).toHaveBeenCalledTimes(1)
+    expect(result.ok).toBe(true) // 停止后编辑成功
+    // marker 已写入（编辑生效）
+    const last = session.events[session.events.length - 1]
+    expect(last.type).toBe('assistant/message')
   })
 
   it('returns session-not-found for an unknown session', async () => {
