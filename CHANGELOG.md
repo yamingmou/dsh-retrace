@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+## [0.4.7] — 2026-08-30 · R2 路径一：回合内编辑写合法 turn/step（刷屏事故闭环）
+
+### 修复（2026-08-30 锁定事故闭环）
+
+- **回合内编辑不再产生 turn-null marker**：`appendEditorMarker` 通过 `findOpenStep()` 检测当前打开的 step，marker 携带该 step 的 `turn/step`（空 content + surface replace 形态经官方 foldSurface 与 token-meter 双验证）→ **token-meter 配对通过、零 T1 违规、不再刷屏**。
+- 轮次间编辑（无打开 step）回退路径不变：`turn:null` + `editor.markerT1Broken` 标注 + 客户端提示。
+- 配套：`dsh-log-contract fix --neutralize`（0.3.3）原地中和历史 turn-null marker（type→`retrace/marker` + `ignorable:true`，不动 seq/行数，会话驻留安全）——已用于现场会话 89b3cb30 / 65bcfa40。
+
+### 测试
+
+- +5（findOpenStep 三态 / 回合内编辑携带 turn/step + t1Ok / 轮次间回退不变）；全量 **161** 绿。
+
 ## [0.4.6] — 2026-08-29 · R1 实时看门狗 + R2 marker T1 契约 + 考古 A4 谱系
 
 ### 新增（R1 · 实时看门狗，lib/watchdog.js）
