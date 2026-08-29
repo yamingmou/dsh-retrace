@@ -344,3 +344,24 @@
 - `pnpm check && pnpm build && pnpm test` 全绿(134);i18n 对齐。
 
 **遗留**:重发消息/新对照链路在 headless(agent 无响应)下未能端到端复验编辑→重发→对照显示;压缩会话真机(需含 checkpoint 的会话)复验待 GUI 环境。
+
+---
+
+## B1 短期 + T1 — marker 压缩兼容地基(2026-08-28,事故根因 3)
+
+**事故根因 3**:retrace 的 turn-null 编辑/撤回 marker(空 assistant/message replace)在 foldSurface 与 M1 下合法,但 **dsh-token-meter 折叠崩溃**(assistant/message 必须匹配打开的 step/start)——编辑过的会话 /compact 与压力测量永久失败(6+ 会话实测)。
+
+**T1 规则(dsh-log-contract 0.2.2,已发布 npm)**:
+- `tokenMeterViolations`(checks.js):复刻 token-meter step 状态机(step/start→end 配对 + assistant/message 匹配);仅在有 step/start 的现代会话严格判定(远古/简化日志不误报,方案 Z)。
+- validate.js 全量 check:turn-null marker → T1 error(体检如实标红,化石 e61d70da 命中 5)。
+- prewrite.js:只判定拟写事件自身;retrace marker(data.editor)白名单降级 warning(编辑必须可用,压缩前需 doctor 清理),其它 assistant 配对失败保持 error。
+- 测试 49→53;index.js re-export tokenMeterViolations。
+
+**retrace doctor 压缩前检测(B1 短期)**:
+- seam.doctorScan(sessionId):用 tokenMeterViolations 扫描会话,返回 turn-null marker 列表(只读)。
+- GET /api/plugins/retrace/doctor?sessionId=(时间线 banner 数据源)。
+- 时间线 banner:"该会话含 N 个编辑/撤回标记,压缩(/compact)前请先清理"。
+- 依赖 dsh-log-contract ^0.2.2(0.2.1→0.2.2 含 T1)。
+- 真机验证:「数字生命讨论 (实验升维2)」9 个 marker → banner 显示 ✓;测试 134→136。
+
+**关键认知**:marker 形态无法绕开 token-meter 检查(空 assistant/message 是唯一"合法且隐形"形态,而它必被检查;user/message 会派生幽灵消息)。根治依赖上游 D3(token meter 跳过 turn-null replace)或中期 B1(回合内携带 turn/step,受 requireIdle 限制)——已按报告路线记录。
