@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.8] — 2026-08-30 · auto-stop a running agent before edit / resend / regenerate
+
+- auto-stop a running agent before edit / resend / regenerate
+
 ## [0.4.7] — 2026-08-30 · step-context markers + documentation neutralization
 
 - step-context markers + documentation neutralization
