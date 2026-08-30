@@ -2,10 +2,24 @@
 
 # 🧭 dsh-retrace
 
-**Retrace · 回溯** —— 在 **撤回 · 编辑重发 · 重新生成** 之上，更进一步：
-为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 对话提供
-**单会话内的版本化**——每一次回退的时间线、产物回退，以及对话走过的分叉路径图（路线图）。
-同时支持 **Web 端** 与 **桌面客户端**（两者共用同一套 Web 前端）。
+**Retrace · 回溯** —— DeepSeek Harness 会话的 **Agent 业务层**（生产级保证）实现。
+
+**现在能做什么（0.4.x，全部已上线）：**
+
+- **撤回 · 编辑重发 · 重新生成**——每次回退都过三层写前校验、编辑前自动停止运行中的
+  agent、轮次间 marker 用临时 step 包裹：**回退永不弄脏日志，/compact 永不失效**。
+- **单会话版本化**——每一次回退的时间线、产物回退（git 优先 + 快照兜底）、
+  分叉图 + 会话谱系、跳转对话任意位置。
+- **实时守护**——看门狗在并发写入第一时间快照日志。
+- **离线体检与修复**——配套 `dsh-log-contract` 30+ 条契约规则
+  （token-meter 配对 / 跨 step 引用 / 物理序 / inbox 重放…），能找出让官方
+  /compact 永久失效的深层问题，并原地修复。
+
+**未来（Agent 业务层，见 [公开路线图](./docs/ROADMAP.md)）**：运行时守护、
+中断治理、生态开放接口——把卫生 / 可回溯 / 可审计 / 可恢复作为**与平台无关的
+业务层**提供给更多 agent 形态。
+
+支持 **Web 端** 与 **桌面客户端**（两者共用同一套 Web 前端）。
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)

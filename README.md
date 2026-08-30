@@ -2,9 +2,30 @@
 
 # 🧭 dsh-retrace
 
-**Retrace · 回溯** — Recall · Edit-and-resend · Regenerate, plus **in-conversation
-versioning**: a timeline of every rewind, artifact rollback, and a fork map of the
-paths your conversation explored (roadmap). A Harness enhancement plugin for the
+**Retrace · 回溯** — the **Agent business layer (production-grade guarantees)** for
+DeepSeek Harness sessions.
+
+**What it does today (0.4.x, all shipped):**
+
+- **Recall · Edit-and-resend · Regenerate** — every rewind goes through a three-layer
+  pre-write contract guard, edits auto-stop the running agent, and turn-interval
+  markers are wrapped in a temporary step: **rewinds never dirty the log and never
+  break `/compact`**.
+- **In-conversation versioning** — a timeline of every rewind, artifact rollback
+  (git-first, snapshot fallback), a fork map + session lineage, and jump-to-any-point.
+- **Real-time guarding** — a watchdog snapshots the log at the first sign of
+  concurrent writes.
+- **Offline check & repair** — companion `dsh-log-contract` ships 30+ contract rules
+  (token-meter pairing / cross-step references / physical order / inbox replay…),
+  finding and fixing in place the deep problems that make the official `/compact`
+  permanently fail.
+
+**What's next (the business layer, see [public roadmap](./docs/ROADMAP.md))**:
+runtime guarding, interruption governance, ecosystem-facing interfaces — hygiene,
+retraceability, auditability and recoverability as a **platform-agnostic business
+layer** for more agent shapes.
+
+A Harness enhancement plugin for the
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI and
 Desktop app (both share the same Web frontend).
 
