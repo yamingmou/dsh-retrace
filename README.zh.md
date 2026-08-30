@@ -26,12 +26,19 @@
 > # 或：dsh plugin --profile web add dsh-retrace  # 独立 Web 部署
 > ```
 >
-> **方式 B —— 从 GitHub 下载了 ZIP？** 解压到固定位置（如 `~/plugins/dsh-retrace`），
-> 然后执行 `dsh plugin --profile desktop add ~/plugins/dsh-retrace`，或按
-> [📦 安装](#-安装) → *手动安装* 的步骤操作。
+> **方式 B —— 从 GitHub 下载了 ZIP（或把本仓库链接直接丢给 AI）？** 解压到固定位置
+> （如 `~/plugins/dsh-retrace`）后执行 `dsh plugin --profile desktop add ~/plugins/dsh-retrace`；
+> 或**直接从 GitHub 安装，无需解压**：
 >
-> **方式 C —— 完全没有命令行？** 如果你的 Harness 有「设置 → 插件」页面，
-> 里面可以直接一键安装 dsh-retrace。
+> ```sh
+> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+> ```
+>
+> 更详细的文件级步骤见 [📦 安装](#-安装) → *手动安装*。
+>
+> **方式 C —— 完全没有命令行？** 安装完成后，可在 Harness 的「设置 → 插件」页面
+> 里**启用** dsh-retrace。注意：设置页只能列出/启停**已安装**的插件，不会从商店拉取
+> 包——安装这一步始终是上面的 `dsh` CLI / `pnpm` 命令。
 >
 > > ⚠️ **安装后必须重启。** 运行中的应用不会热加载 bundle，请**退出并重新打开
 > > DSH Desktop**（独立 Web 部署则重启 `dsh` 进程）后插件才会生效。
@@ -116,9 +123,6 @@ dsh plugin --profile <name> add dsh-retrace
 > **不会**热加载 bundle —— 请**退出并重新打开 DSH Desktop**（独立 Web 部署则重启
 > `dsh` 进程）来加载插件。卸载：`dsh plugin --profile <name> remove
 > dsh-retrace`（卸载后同样需要重启）。
-
-同时可在 [dsh-market](https://github.com/dsh-market/dsh-market) 里一键安装
-（安装后同样需要重启）。
 
 ### 2. 手动安装（不依赖 `dsh` CLI）
 
@@ -303,9 +307,21 @@ npm pack --dry-run    # 校验发布文件清单
 
 ## 📚 生态
 
-收录于 [dsh-plugin topic](https://github.com/topics/dsh-plugin)，可在
-[dsh-market](https://github.com/dsh-market/dsh-market) 一键安装。DeepSeek Harness
-插件生态的精选总览见 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)。
+收录于 [dsh-plugin topic](https://github.com/topics/dsh-plugin)。
+
+> **直接从 GitHub 安装**（无需 npm registry —— 适合把本仓库链接丢给 AI，或想装最新提交）：
+>
+> ```sh
+> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+> # 或直接用 pnpm 装进 profile：
+> cd ~/.dsh/profiles/desktop && pnpm add github:yamingmou/dsh-retrace
+> ```
+>
+> 然后照常重启 DSH Desktop。`dsh-log-contract` 依赖会自动带上。
+
+DeepSeek Harness 插件生态的精选总览见
+[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+（第三方收录，使用前请自行确认可用性）。
 
 ---
 

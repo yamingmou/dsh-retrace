@@ -27,12 +27,22 @@ Desktop app (both share the same Web frontend).
 > # or: dsh plugin --profile web add dsh-retrace  # standalone Web
 > ```
 >
-> **Option B — downloaded this repo as ZIP:** unpack it, then run the same
-> `dsh plugin` command against the unpacked folder, or follow
-> [📦 Installation](#-installation) → *Manual install* for the exact steps.
+> **Option B — downloaded this repo as ZIP (or handing this link to an AI):**
+> unpack it and run `dsh plugin --profile desktop add <folder>` — or install
+> straight from GitHub, no unpacking:
+>
+> ```sh
+> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+> ```
+>
+> Follow [📦 Installation](#-installation) → *Manual install* for the exact
+> file-edit steps.
 >
 > **Option C — no command line at all:** if your Harness has the plugin
-> settings screen, dsh-retrace is listed there for one-click install.
+> settings screen, use it to **enable** dsh-retrace after it is installed
+> (Settings → Plugins). Note: the settings screen lists and toggles
+> installed plugins; it does not fetch packages from a store — the
+> install itself is always the `dsh` CLI / `pnpm` step above.
 >
 > > ⚠️ **Restart required after install.** Quit and reopen **DSH Desktop**
 > > (or restart the `dsh` process for a standalone Web deployment) — a running
@@ -129,9 +139,6 @@ dsh plugin --profile <name> add dsh-retrace
 > deployment) to load the plugin. To uninstall:
 > `dsh plugin --profile <name> remove dsh-retrace` (then restart again).
 
-It also shows up in [dsh-market](https://github.com/dsh-market/dsh-market) for
-one-click install from inside Settings (same restart applies).
-
 ### 2. Manual install (no `dsh` CLI)
 
 The same result with plain file edits and `pnpm` — exactly the steps
@@ -178,6 +185,9 @@ The same result with plain file edits and `pnpm` — exactly the steps
 For local development, point the dependency at a checkout instead of the
 registry: `"dsh-retrace": "file:/path/to/dsh-retrace"` — or let
 `dsh` do it: `dsh plugin --profile <name> add /path/to/dsh-retrace`.
+For the latest GitHub commit without a release: use
+`"dsh-retrace": "github:yamingmou/dsh-retrace"` (standard pnpm git
+dependency syntax) in the same `dependencies` block, then `pnpm install`.
 
 ### 3. npm package + composition (classic)
 
@@ -341,10 +351,23 @@ and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 
 ## 📚 Ecosystem
 
-Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin) and
-installable from [dsh-market](https://github.com/dsh-market/dsh-market). For a
-curated overview of the DeepSeek Harness plugin ecosystem, see
-[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin).
+Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin).
+
+> **Install straight from GitHub** (no npm registry needed — handy when you
+> hand this repo's link to an AI or want the latest commit):
+>
+> ```sh
+> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+> # or with pnpm directly into a profile:
+> cd ~/.dsh/profiles/desktop && pnpm add github:yamingmou/dsh-retrace
+> ```
+>
+> Then restart DSH Desktop as usual. The `dsh-log-contract` dependency is
+> pulled in automatically.
+
+A curated overview of the DeepSeek Harness plugin ecosystem lives at
+[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+(third-party listing — verify availability before relying on it).
 
 ---
 
