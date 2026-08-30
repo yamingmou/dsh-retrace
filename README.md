@@ -63,6 +63,22 @@ goes further: because a recall only rewinds the **context**, while files the age
 already changed stay changed, retrace versions your conversation **and its artifacts**
 in one place.
 
+**What makes it different from a plain "undo / fork-graph / verify" plugin:**
+
+- **Edits never dirty your log.** Every rewind is written through a **pre-write
+  contract guard** (three-layer validation before commit), edits auto-stop the running
+  agent via the official `cancel`/`whenIdle` API, and turn-interval markers are wrapped
+  in a temporary step — so rewinds stay legal for the official token meter and never
+  break `/compact` (a failure mode that silently corrupts sessions in other tools).
+- **Deep offline checks, not shallow ones.** The companion `dsh-log-contract` ships
+  30+ contract rules (token-meter pairing, cross-step source references, physical
+  order, inbox replay…) validated against real corrupted-session fixtures — it catches
+  the class of problem that makes the official `/compact` permanently fail, which a
+  generic "orphan tool call" linter cannot see.
+- **Detect → repair → guard loop.** Watchdog snapshots the log at the first sign of
+  concurrent writes; offline `fix` neutralizes problem markers and clips cross-step
+  references in place; pre-write validation stops bad events before they land.
+
 Recall / edit **remove the target messages from the conversation view and the model
 context** — that is exactly the effect you see. What stays untouched is the underlying
 **durable transcript**: it remains append-only, old events are never rewritten or deleted,
@@ -72,10 +88,11 @@ of every rewind. On top of that trail, retrace records version boundaries, touch
 and (optionally) git state, and lets you roll back artifacts or jump back to any point
 in the conversation — all **inside the same session**, no session-switching.
 
-> ✅ **Timeline + artifact rollback are live (0.4.x)** — recall / edit /
+> ✅ **Timeline + artifact rollback + safe-edit guard are live (0.4.x)** — recall / edit /
 > regenerate, the version timeline, artifact rollback (git-first, snapshot
-> fallback), jump-to-conversation and marker pre-write validation (three-layer
-> contract guard) are all in. The fork map (P2) is in progress per [PLAN.md](./PLAN.md).
+> fallback), jump-to-conversation, marker pre-write validation (three-layer
+> contract guard) and the real-time watchdog are all in. The fork map (P2) is in
+> progress per [PLAN.md](./PLAN.md).
 
 ---
 
