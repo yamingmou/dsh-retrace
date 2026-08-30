@@ -36,6 +36,15 @@ function surfaceSeqs(session) {
   return session.surface.nodes.slice()
 }
 
+/** 找最后一个 retrace marker（surfaceOp replace 的 assistant/message；step 边界不算）。 */
+function lastMarker(session) {
+  for (let i = session.events.length - 1; i >= 0; i--) {
+    const e = session.events[i]
+    if (e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') return e
+  }
+  return null
+}
+
 describe('recall', () => {
   it('removes the whole exchange round containing a user message', async () => {
     const session = standardSession()
@@ -47,7 +56,7 @@ describe('recall', () => {
     expect(result.ok).toBe(true)
     expect(result.value).toMatchObject({ op: 'recall', seq: 1, shadowed: 3, messageId: 'u1' })
     // Round [u1, a1, tool] shadowed from the surface; u2 + a2 + marker remain.
-    expect(surfaceSeqs(session)).toEqual([4, 5, 6])
+    expect(surfaceSeqs(session)).toEqual([4, 5, 7])
   })
 
   it('recalling an assistant reply removes its whole round too (input + output)', async () => {
@@ -58,7 +67,7 @@ describe('recall', () => {
 
     expect(result.ok).toBe(true)
     expect(result.value.shadowed).toBe(3)
-    expect(surfaceSeqs(session)).toEqual([4, 5, 6])
+    expect(surfaceSeqs(session)).toEqual([4, 5, 7])
   })
 
   it('appends an invisible replacement marker (empty assistant, surfaceOp replace)', async () => {
@@ -67,9 +76,10 @@ describe('recall', () => {
 
     await api.recall({ sessionId: 's1', messageId: 'u2' })
 
-    const marker = session.events.at(-1)
+    const marker = lastMarker(session)
     expect(marker.type).toBe('assistant/message')
-    expect(marker.data.turn).toBeNull()
+    expect(marker.data.turn).not.toBeNull() // 轮次间编辑：临时 step 包裹，turn 非 null（0.4.10）
+    expect(marker.data.step).toBe(1)
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 5 })
     expect(marker.sourceEventSeqs).toEqual([4, 5])
     expect(marker.data.message).toMatchObject({
@@ -79,6 +89,11 @@ describe('recall', () => {
     })
     expect(marker.data.message.id).toMatch(/^retrace-recall-/)
     expect(marker.data.editor).toEqual({ targetSeq: 4, text: 'second question' })
+    // 临时 step 成对包裹：step/start 在 marker 前，step/end 在 marker 后
+    const idx = session.events.indexOf(marker)
+    expect(session.events[idx - 1].type).toBe('step/start')
+    expect(session.events[idx + 1].type).toBe('step/end')
+    expect(session.events[idx - 1].data).toMatchObject({ turn: marker.data.turn, step: 1 })
   })
 
   it('reports the durable text of the recalled message', async () => {
@@ -138,9 +153,8 @@ describe('recall', () => {
     expect(cancel).toHaveBeenCalledTimes(1)
     expect(whenIdle).toHaveBeenCalledTimes(1)
     expect(result.ok).toBe(true) // 停止后编辑成功
-    // marker 已写入（编辑生效）
-    const last = session.events[session.events.length - 1]
-    expect(last.type).toBe('assistant/message')
+    // marker 已写入（编辑生效；轮次间编辑被临时 step 包裹，最后事件是 step/end）
+    expect(lastMarker(session).type).toBe('assistant/message')
   })
 
   it('returns session-not-found for an unknown session', async () => {
@@ -204,7 +218,7 @@ describe('recall', () => {
 
       expect(result.ok).toBe(true)
       // Round is [u1, a1]; the injected context message stays in the surface.
-      expect(surfaceSeqs(session)).toEqual([1, 4])
+      expect(surfaceSeqs(session)).toEqual([1, 5])
       expect(result.value.shadowed).toBe(2)
     })
 
@@ -220,7 +234,7 @@ describe('recall', () => {
       const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
 
       expect(result.ok).toBe(true)
-      expect(surfaceSeqs(session)).toEqual([4])
+      expect(surfaceSeqs(session)).toEqual([5])
       expect(result.value.shadowed).toBe(3)
     })
   })
@@ -247,7 +261,7 @@ describe('editAndResend', () => {
       originalText: 'second question',
       fromScratch: false,
     })
-    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 6]) // [u1,a1,tool] kept; [u2,a2] shadowed + marker
+    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 7]) // [u1,a1,tool] kept; [u2,a2] shadowed + marker
     expect(agent.followup).toHaveBeenCalledTimes(1)
     const [sent] = agent.followup.mock.calls[0]
     expect(sent).toMatchObject({
@@ -273,7 +287,7 @@ describe('editAndResend', () => {
     expect(result.ok).toBe(true)
     expect(result.value.fromScratch).toBe(true)
     expect(result.value.shadowed).toBe(5)
-    expect(surfaceSeqs(session)).toEqual([6])
+    expect(surfaceSeqs(session)).toEqual([7])
     expect(agent.followup).toHaveBeenCalledTimes(1)
   })
 
@@ -313,7 +327,7 @@ describe('editAndResend', () => {
 
     await api.editAndResend({ sessionId: 's1', messageId: 'u2', text: 'edited' })
 
-    const marker = session.events.at(-1) // the marker is the only appended event
+    const marker = lastMarker(session)
     expect(marker.data.editor).toEqual({ targetSeq: 4, text: 'second question' })
   })
 })
@@ -328,7 +342,7 @@ describe('regenerate', () => {
 
     expect(result.ok).toBe(true)
     expect(result.value).toMatchObject({ op: 'regenerate', seq: 5, shadowed: 2 })
-    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 6])
+    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 7])
     expect(agent.followup).toHaveBeenCalledTimes(1)
     const [sent] = agent.followup.mock.calls[0]
     expect(sent.content[0].text).toBe('second question')
@@ -467,18 +481,22 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     expect(result.value.markerT1Broken).toBe(false)
   })
 
-  it('轮次间编辑（无打开 step）：仍 turn:null + markerT1Broken 标注（回退路径不变）', async () => {
+  it('轮次间编辑（无打开 step）：自动开临时 step 包裹，marker turn 非 null，T1 通过（0.4.10 根治）', async () => {
     const { createEditorApi } = await import('../lib/host-core.js')
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    const validateMarker = async () => ({ t1Ok: false }) // 模拟 T1 自检失败
+    const validateMarker = vi.fn(async () => ({ t1Ok: true })) // 临时 step 后 T1 恒通过
     const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
-    const marker = session.events[session.events.length - 1]
-    expect(marker.data.turn).toBeNull()
-    expect(marker.data.step).toBeNull()
-    expect(marker.data.editor?.markerT1Broken).toBe(true)
-    expect(result.value.markerT1Broken).toBe(true)
+    const marker = lastMarker(session)
+    expect(marker.data.turn).not.toBeNull() // 不再 turn:null
+    expect(marker.data.step).toBe(1)
+    expect(marker.data.editor?.markerT1Broken).toBeUndefined() // 不再标注
+    expect(result.value.markerT1Broken).toBe(false)
+    // 临时 step 成对包裹
+    const idx = session.events.indexOf(marker)
+    expect(session.events[idx - 1].type).toBe('step/start')
+    expect(session.events[idx + 1].type).toBe('step/end')
   })
 })

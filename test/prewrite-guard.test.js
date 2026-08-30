@@ -197,19 +197,25 @@ describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 
     expect(log).toHaveBeenCalledWith(expect.stringContaining('markerT1Broken'))
   })
 
-  it('host-core：t1Ok=false 时 marker 落盘且 editor.markerT1Broken=true，返回值带标志', async () => {
+  it('host-core：轮次间编辑自动开临时 step，T1 通过，marker 落盘且不标注（0.4.10 根治）', async () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    // 模拟 prewrite-guard：契约通过但 T1 折叠失败
-    const validateMarker = async () => ({ t1Ok: false })
+    // 临时 step 包裹后 token-meter 配对必然通过 → t1Ok=true
+    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
     const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true) // 不阻断
-    expect(result.value.markerT1Broken).toBe(true)
-    // marker 已落盘且带标注
-    const marker = session.events[session.events.length - 1]
+    expect(result.value.markerT1Broken).toBe(false)
+    // marker 已落盘、turn 非 null、无标注
+    let marker = null
+    for (let i = session.events.length - 1; i >= 0; i--) {
+      const e = session.events[i]
+      if (e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') { marker = e; break }
+    }
     expect(marker.type).toBe('assistant/message')
-    expect(marker.data?.editor?.markerT1Broken).toBe(true)
+    expect(marker.data.turn).not.toBeNull()
+    expect(marker.data.step).toBe(1)
+    expect(marker.data?.editor?.markerT1Broken).toBeUndefined()
   })
 
   it('host-core：t1Ok=true（正常）时不标注', async () => {

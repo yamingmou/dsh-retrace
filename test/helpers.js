@@ -110,6 +110,9 @@ export function makeSession() {
     append(type, data, options = {}) {
       const record = { seq: events.length, type, data, ...options }
       events.push(record)
+      // 真实 DSH（dsh-session）只有 surface-eligible 类型（user/assistant/tool + surfaceOp）
+      // 进入 surface；step/start、step/end、turn/start、turn/end 是位置边界，不产生节点。
+      if (type === 'step/start' || type === 'step/end' || type === 'turn/start' || type === 'turn/end') return record
       if (options.surfaceOp && options.surfaceOp.op === 'replace') {
         const { start, end } = options.surfaceOp
         surface.nodes = surface.nodes.filter((seq) => seq < start || seq > end)
