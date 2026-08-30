@@ -36,9 +36,16 @@
 >
 > 更详细的文件级步骤见 [📦 安装](#-安装) → *手动安装*。
 >
-> **方式 C —— 完全没有命令行？** 安装完成后，可在 Harness 的「设置 → 插件」页面
-> 里**启用** dsh-retrace。注意：设置页只能列出/启停**已安装**的插件，不会从商店拉取
-> 包——安装这一步始终是上面的 `dsh` CLI / `pnpm` 命令。
+> **方式 C —— 完全没有命令行？** 先装一次社区插件市场，再从市场 UI 一键安装
+> dsh-retrace：
+>
+> ```sh
+> dsh plugin --profile desktop add dshmarket   # 只需一次
+> ```
+>
+> 重启后进入 **设置 → Plugin Market** → 搜索 **dsh-retrace** → **安装**（一键）。
+> 市场收录自 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+> 精选目录，dsh-retrace 已在其中。
 >
 > > ⚠️ **安装后必须重启。** 运行中的应用不会热加载 bundle，请**退出并重新打开
 > > DSH Desktop**（独立 Web 部署则重启 `dsh` 进程）后插件才会生效。

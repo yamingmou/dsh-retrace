@@ -38,11 +38,17 @@ Desktop app (both share the same Web frontend).
 > Follow [📦 Installation](#-installation) → *Manual install* for the exact
 > file-edit steps.
 >
-> **Option C — no command line at all:** if your Harness has the plugin
-> settings screen, use it to **enable** dsh-retrace after it is installed
-> (Settings → Plugins). Note: the settings screen lists and toggles
-> installed plugins; it does not fetch packages from a store — the
-> install itself is always the `dsh` CLI / `pnpm` step above.
+> **Option C — no command line at all:** install the community plugin market
+> once, then install dsh-retrace from its UI:
+>
+> ```sh
+> dsh plugin --profile desktop add dshmarket   # one time
+> ```
+>
+> Restart, then **Settings → Plugin Market** → search **dsh-retrace** →
+> **Install** (one click). The market lists plugins from the curated
+> [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+> registry; dsh-retrace is listed there.
 >
 > > ⚠️ **Restart required after install.** Quit and reopen **DSH Desktop**
 > > (or restart the `dsh` process for a standalone Web deployment) — a running
