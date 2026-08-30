@@ -18,6 +18,28 @@ Desktop app (both share the same Web frontend).
 
 </div>
 
+> ## ⚡ Install in one minute
+>
+> **Option A — one command (recommended):** with DeepSeek Harness's `dsh` CLI:
+>
+> ```sh
+> dsh plugin --profile desktop add dsh-retrace   # DSH Desktop
+> # or: dsh plugin --profile web add dsh-retrace  # standalone Web
+> ```
+>
+> **Option B — downloaded this repo as ZIP:** unpack it, then run the same
+> `dsh plugin` command against the unpacked folder, or follow
+> [📦 Installation](#-installation) → *Manual install* for the exact steps.
+>
+> **Option C — no command line at all:** if your Harness has the plugin
+> settings screen, dsh-retrace is listed there for one-click install.
+>
+> > ⚠️ **Restart required after install.** Quit and reopen **DSH Desktop**
+> > (or restart the `dsh` process for a standalone Web deployment) — a running
+> > app keeps the previous bundle in memory and will not hot-reload it.
+>
+> Hover any assistant reply → **↩ / ↻**; any user message → **✎** — that's it.
+
 DeepSeek Harness stores every conversation as an **append-only event log**, so there is
 no built-in "undo". `dsh-retrace` brings back the three moves every chat deserves —
 **撤回 (recall)**, **编辑重发 (edit-and-resend)**, **重新生成 (regenerate)** — and then
@@ -68,6 +90,9 @@ in the conversation — all **inside the same session**, no session-switching.
 
 ## 🚀 Quick start
 
+The one-line install is at the top of this page (**⚡ Install in one minute**).
+This section covers the same ground with more detail.
+
 > Requires DeepSeek Harness with the `dsh` CLI. Installs the plugin as a profile
 > bundle and automatically rebuilds the Web client:
 
@@ -83,8 +108,7 @@ dsh plugin --profile web add dsh-retrace
 > in memory, so **quit and reopen DSH Desktop** (or restart the `dsh` process for
 > a standalone Web deployment) before the plugin activates.
 
-That's it — after the restart, hover any assistant reply, or any user message,
-and use ↩ / ✎ / ↻.
+After the restart, hover any assistant reply, or any user message, and use ↩ / ✎ / ↻.
 
 ---
 
@@ -112,6 +136,12 @@ one-click install from inside Settings (same restart applies).
 
 The same result with plain file edits and `pnpm` — exactly the steps
 `dsh plugin add` performs for you:
+
+> **Downloaded this repo as a ZIP?** Unpack it somewhere stable (e.g.
+> `~/plugins/dsh-retrace`), then either
+> `dsh plugin --profile desktop add ~/plugins/dsh-retrace`, or follow the
+> steps below with the dependency line pointing at the folder:
+> `"dsh-retrace": "file:~/plugins/dsh-retrace"`.
 
 1. Open the profile manifest (defaults: `~/.dsh/profiles/desktop` on DSH
    Desktop, `~/.dsh/profiles/web` for standalone Web) and add **both** the

@@ -17,6 +17,27 @@
 
 </div>
 
+> ## ⚡ 一分钟安装
+>
+> **方式 A —— 一条命令（推荐）：** 需要带 `dsh` CLI 的 DeepSeek Harness：
+>
+> ```sh
+> dsh plugin --profile desktop add dsh-retrace   # DSH 桌面版
+> # 或：dsh plugin --profile web add dsh-retrace  # 独立 Web 部署
+> ```
+>
+> **方式 B —— 从 GitHub 下载了 ZIP？** 解压到固定位置（如 `~/plugins/dsh-retrace`），
+> 然后执行 `dsh plugin --profile desktop add ~/plugins/dsh-retrace`，或按
+> [📦 安装](#-安装) → *手动安装* 的步骤操作。
+>
+> **方式 C —— 完全没有命令行？** 如果你的 Harness 有「设置 → 插件」页面，
+> 里面可以直接一键安装 dsh-retrace。
+>
+> > ⚠️ **安装后必须重启。** 运行中的应用不会热加载 bundle，请**退出并重新打开
+> > DSH Desktop**（独立 Web 部署则重启 `dsh` 进程）后插件才会生效。
+>
+> 重启后悬停任意助手回复 → **↩ / ↻**；任意用户消息 → **✎**，即可使用。
+
 DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，本身没有撤销能力。
 `dsh-retrace` 先为对话补上聊天本该有的三个操作 —— **撤回**、**编辑重发**、
 **重新生成**；再往前一步：撤回只回退了**上下文**，而智能体已经改过的**产物文件**
@@ -62,6 +83,8 @@ DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，�
 
 ## 🚀 快速开始
 
+页首的 **⚡ 一分钟安装** 是最短路径；本节给出同样内容的更详细说明。
+
 > 需要带 `dsh` CLI 的 DeepSeek Harness。以 profile bundle 方式安装，并自动重建 Web 客户端：
 
 ```sh
@@ -100,6 +123,10 @@ dsh plugin --profile <name> add dsh-retrace
 ### 2. 手动安装（不依赖 `dsh` CLI）
 
 用纯文件编辑 + `pnpm` 装进同一个 profile —— 也就是 `dsh plugin add` 帮你做的那些步骤：
+
+> **从 GitHub 下载了 ZIP？** 解压到固定位置（如 `~/plugins/dsh-retrace`），
+> 然后执行 `dsh plugin --profile desktop add ~/plugins/dsh-retrace`；或按下面步骤，
+> 把依赖行指向该文件夹：`"dsh-retrace": "file:~/plugins/dsh-retrace"`。
 
 1. 打开 profile 清单（默认位置：DSH Desktop 为 `~/.dsh/profiles/desktop`，
    独立 Web 为 `~/.dsh/profiles/web`），同时加入依赖**和** bundle 层条目：
