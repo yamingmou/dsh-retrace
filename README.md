@@ -2,11 +2,9 @@
 
 # 🧭 dsh-retrace
 
-**Retrace · 回溯** — Recall · Edit-and-resend · Regenerate, plus **in-conversation
-versioning**: a timeline of every rewind, artifact rollback, and a fork map of the
-paths your conversation explored (roadmap). A Harness enhancement plugin for the
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI and
-Desktop app (both share the same Web frontend).
+**Recall · Edit-and-resend · Regenerate**, plus **write-safe** in-conversation
+versioning — the **Agent business layer (production-grade guarantees)** for
+DeepSeek Harness.
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
@@ -18,64 +16,47 @@ Desktop app (both share the same Web frontend).
 
 </div>
 
-> ## ⚡ Install in one minute
->
-> **Option A — one command (recommended):** with DeepSeek Harness's `dsh` CLI:
->
-> ```sh
-> dsh plugin --profile desktop add dsh-retrace   # DSH Desktop
-> # or: dsh plugin --profile web add dsh-retrace  # standalone Web
-> ```
->
-> **Option B — downloaded this repo as ZIP (or handing this link to an AI):**
-> unpack it and run `dsh plugin --profile desktop add <folder>` — or install
-> straight from GitHub, no unpacking:
->
-> ```sh
-> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
-> ```
->
-> Follow [📦 Installation](#-installation) → *Manual install* for the exact
-> file-edit steps.
->
-> **Option C — no command line at all:** install the community plugin market
-> once, then install dsh-retrace from its UI:
->
-> ```sh
-> dsh plugin --profile desktop add dshmarket   # one time
-> ```
->
-> Restart, then **Settings → Plugin Market** → search **dsh-retrace** →
-> **Install** (one click). The market lists plugins from the curated
-> [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
-> registry; dsh-retrace is listed there.
->
-> > ⚠️ **Restart required after install.** Quit and reopen **DSH Desktop**
-> > (or restart the `dsh` process for a standalone Web deployment) — a running
-> > app keeps the previous bundle in memory and will not hot-reload it.
->
-> Hover any assistant reply → **↩ / ↻**; any user message → **✎** — that's it.
+**Recall / edit-and-resend / regenerate** — the three moves every conversation
+deserves. But rewinding is not just "delete a message": DeepSeek Harness stores
+conversations in an append-only event log, so a recall only rewinds the context
+while changed **artifact files stay changed**. dsh-retrace versions the
+conversation **and its artifacts** together, and guarantees **every rewind is
+legal — never dirtying the log, never breaking /compact**.
 
-DeepSeek Harness stores every conversation as an **append-only event log**, so there is
-no built-in "undo". `dsh-retrace` brings back the three moves every chat deserves —
-**撤回 (recall)**, **编辑重发 (edit-and-resend)**, **重新生成 (regenerate)** — and then
-goes further: because a recall only rewinds the **context**, while files the agent
-already changed stay changed, retrace versions your conversation **and its artifacts**
-in one place.
+> 🛡️ **Write safety** · 🔍 **Deep offline checks** · 🔄 **Detect → repair → guard** — see below.
 
-Recall / edit **remove the target messages from the conversation view and the model
-context** — that is exactly the effect you see. What stays untouched is the underlying
-**durable transcript**: it remains append-only, old events are never rewritten or deleted,
-and the plugin merely appends one valid replacement event (the same `replace` primitive
-the built-in compaction uses) to rewind the surface — so the log keeps a full audit trail
-of every rewind. On top of that trail, retrace records version boundaries, touched files
-and (optionally) git state, and lets you roll back artifacts or jump back to any point
-in the conversation — all **inside the same session**, no session-switching.
+---
 
-> ✅ **Timeline + artifact rollback are live (0.4.x)** — recall / edit /
-> regenerate, the version timeline, artifact rollback (git-first, snapshot
-> fallback), jump-to-conversation and marker pre-write validation (three-layer
-> contract guard) are all in. The fork map (P2) is in progress per [PLAN.md](./PLAN.md).
+## ⚡ One-minute install
+
+> Requires DeepSeek Harness with the `dsh` CLI. **Restart DSH after install** (a running app does not hot-reload).
+
+```sh
+dsh plugin --profile desktop add dsh-retrace    # DSH Desktop
+# or Web: dsh plugin --profile web add dsh-retrace
+# or GitHub: dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+# or ZIP: dsh plugin --profile desktop add ~/plugins/dsh-retrace
+```
+
+**No command line?** Install the community plugin market once, then find
+**dsh-retrace** in **Settings → Plugin Market** and install it with one click:
+
+```sh
+dsh plugin --profile desktop add dshmarket    # one time
+```
+
+After the restart, hover any assistant reply → **↩ / ↻**; any user message → **✎**.
+Full steps in [📦 Installation](#-installation).
+
+---
+
+## 🛡️ Production-grade guarantees (all live in 0.4.x)
+
+| | Capability | What it means |
+|---|---|---|
+| 🛡️ | **Write safety** | Every rewind passes a three-layer pre-write contract guard; running agents are auto-stopped (official `cancel`/`whenIdle`); turn-interval markers are wrapped in a temporary step — **rewinds never dirty the log, /compact never breaks** |
+| 🔍 | **Deep offline checks** | Companion `dsh-log-contract` ships 30+ contract rules (token-meter pairing / cross-step references / physical order / inbox replay), validated against real corrupted-session fixtures — it finds the class of problem that makes /compact permanently fail |
+| 🔄 | **Detect → repair → guard** | A watchdog snapshots the log at the first sign of concurrent writes; offline `fix` neutralizes problem markers and clips cross-step references in place; pre-write validation stops bad events before they land |
 
 ---
 
@@ -83,48 +64,25 @@ in the conversation — all **inside the same session**, no session-switching.
 
 | Action | Where | What happens |
 | --- | --- | --- |
-| **↩ 撤回** (recall) | hover any assistant reply, or the row under any user message | Removes the **whole exchange round** (the input **and** the agent's output, tool rows included) from both the model context and the conversation view; the input text is echoed into the composer so you can re-ask or re-edit immediately. A small transient notice marks the rewind and disappears once you keep typing. |
-| **✎ 编辑重发** (edit & re-send) | row under any user message | The edited round is rewound and the new text is re-sent. By default **only the edited round** is replaced — earlier history stays visible; the optional "fresh conversation" setting rewinds the whole surface (earlier messages then leave the model context, and stay visible in the view as a marker notice by default). A collapsed **"original input"** reference sits right under the new message — click to expand, configurable off. |
-| **↻ 重新生成** (regenerate) | hover any assistant reply | The reply (and everything after it) is rewound and hidden, then the original prompt is re-sent so the agent answers again. |
+| **↩ Recall** | hover any assistant reply, or the row under any user message | Removes the **whole exchange round** (the input **and** the agent's output, tool rows included) from both the model context and the conversation view; the input text is echoed into the composer so you can re-ask or re-edit immediately. A small transient notice marks the rewind and disappears once you keep typing. |
+| **✎ Edit & re-send** | row under any user message | The edited round is rewound and the new text is re-sent. By default **only the edited round** is replaced — earlier history stays visible; the optional "fresh conversation" setting rewinds the whole surface (earlier messages then leave the model context, and stay visible in the view as a marker notice by default). A collapsed **"original input"** reference sits right under the new message — click to expand, configurable off. |
+| **↻ Regenerate** | hover any assistant reply | The reply (and everything after it) is rewound and hidden, then the original prompt is re-sent so the agent answers again. |
 
 **Versioning & rollback (live in 0.4.x)** — every rewind is also recorded as a **version**:
 
-- 🕘 **Timeline** — a **Versions** tab in the conversation view (on par with the official 对话/轨迹 tabs, since 0.4.2): every version (type, time, message count, file-change badges, summary), pushed live via `session/projection` (no polling), windowed for long histories; event inspection reuses the official Trajectory ledger.
-- ↩️ **Artifact rollback** — each version offers **context-only / artifacts-only / both** rollback with a dry-run preview; git-first (commit-free checkout of the listed paths) with content-addressed snapshot fallback. The rollback itself is recorded as a new version (`restore`) — rollback of a rollback.
-- 🧭 **Jump-to-conversation** — one click from a version to that point in the conversation (auto-loads earlier history, anchor highlight).
-- 🧹 **Bounded storage** — file snapshots keep the most recent N versions (default 50); a throttled background sweep prunes snapshots of truncated versions, keeping long sessions bounded.
+| | What | |
+|---|---|---|
+| 🕘 | **Timeline** | a **Versions** tab in the conversation view: every version (type, time, message count, file-change badges), pushed live via `session/projection` (no polling), windowed for long histories |
+| ↩️ | **Artifact rollback** | **context-only / artifacts-only / both** with dry-run preview; git-first + content-addressed snapshot fallback; the rollback is itself a new version (`restore`) |
+| 🧭 | **Jump-to-conversation** | one click from a version to that point in the conversation (auto-loads history, anchor highlight) |
+| 🧹 | **Bounded storage** | snapshots keep the most recent N versions (default 50); throttled background sweep prunes truncated ones |
 
-**Why it's different**
+**Why it's different** (the interaction layer — the guarantees above are the storage layer):
 
-- 🎯 **Whole-round recall** — one click removes the input *and* its output (including tool rows), not just a single bubble.
-- 🖥️ **Web + Desktop** — the same plugin covers both surfaces of DeepSeek Harness.
-- 🔒 **Removed from view & context, not from the log** — recalled/edited messages disappear from the conversation view and the model context, while the durable transcript is never rewritten or deleted; the plugin only appends valid, typed session events (the same `replace` primitive the built-in compaction uses), so the log keeps a full audit trail.
+- 🎯 **Whole-round recall** — removes the input *and* its output (tool rows included), not just a single bubble.
+- 🖥️ **Web + Desktop** — one plugin, both DeepSeek Harness surfaces.
 - 🧠 **View ⇄ context in sync** — the conversation view always reflects exactly what the agent sees.
 - ⚡ **Try in 30 seconds** — the dynamic form installs in your current session with no rebuild.
-
----
-
-## 🚀 Quick start
-
-The one-line install is at the top of this page (**⚡ Install in one minute**).
-This section covers the same ground with more detail.
-
-> Requires DeepSeek Harness with the `dsh` CLI. Installs the plugin as a profile
-> bundle and automatically rebuilds the Web client:
-
-```sh
-# DSH Desktop (desktop profile)
-dsh plugin --profile desktop add dsh-retrace
-
-# standalone Web (`dsh web` / web profile)
-dsh plugin --profile web add dsh-retrace
-```
-
-> ⚠️ **Restart after install.** A running app keeps the previously loaded bundle
-> in memory, so **quit and reopen DSH Desktop** (or restart the `dsh` process for
-> a standalone Web deployment) before the plugin activates.
-
-After the restart, hover any assistant reply, or any user message, and use ↩ / ✎ / ↻.
 
 ---
 
@@ -265,13 +223,13 @@ The dynamic host registers the same operations behind the package-private
    rewound `session.deriveMessages()`.
 3. **Client** (`lib/client.js`) registers:
    - a `user-actions` conversation node under every user message
-     (编辑 / 撤回 row with an inline editor); recall echoes the text into the
+     (an edit/recall row with an inline editor); recall echoes the text into the
      composer,
    - the `recall-marker` node renderer: a notice row that injects CSS hiding
      every shadowed message row from the flow (view and model context stay in
      sync), plus the optional original-input comparison block,
    - the `retrace` entry in the `conversation.chat.assistant-actions`
-     strip (撤回 / 重新生成),
+     strip (recall / regenerate),
    - preference toggles and the retention limit under Settings → General.
 
 > Two different layers are at play: the **durable transcript** (append-only; old
@@ -302,16 +260,21 @@ The dynamic host registers the same operations behind the package-private
 
 ## 🗺️ Roadmap
 
-Built per [PLAN.md](./PLAN.md):
+**What's in today (0.4.x):**
 
-- **P1 — Timeline & artifact rollback** ✅ *shipped in 0.4.x*: an in-session version
-  timeline (messages, thinking, touched files), artifact snapshots (git-first,
-  snapshot-fallback, opt-in), rollback with dry-run preview, and jump-to-conversation
-  navigation.
-- **P2 — Fork map** 🔨 *in progress*: a flow graph of the conversation's turns with fork
-  points at every rewind, thinking flow per turn, branch-intent cards, and version
-  comparison.
-- More locales beyond 简体中文 / English.
+- Recall / edit-and-resend / regenerate, each written through a three-layer
+  **pre-write contract guard** and a safe-edit path (auto-stop the agent, temp-step
+  markers) — rewinds never corrupt the log or break `/compact`.
+- In-session **version timeline** + **artifact rollback** (git-first, snapshot
+  fallback, dry-run preview, jump-to-conversation).
+- **Fork map + session lineage** in the conversation view.
+- **Real-time watchdog** — snapshots the log at the first sign of concurrent writes.
+- Companion **`dsh-log-contract`**: 30+ offline contract rules + in-place repair
+  (`fix --neutralize` / `--clip-crossstep`) for sessions that would fail `/compact`.
+
+**What's next** — see the [public roadmap](./docs/ROADMAP.md) for the agent
+business-layer plan (runtime guard, interruption governance, ecosystem-facing
+interfaces). This README only describes what is already shipped.
 
 ---
 
@@ -359,6 +322,15 @@ and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 
 Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin).
 
+Part of the **Agent business layer (production-grade guarantees)** — see the
+[public roadmap](./docs/ROADMAP.md) for the framework-agnostic layer and how
+dsh-retrace is its DeepSeek Harness implementation. Companion components:
+
+- [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) — the
+  business layer's "doctor": 30+ offline contract rules + in-place repair
+  (`fix --neutralize` / `--clip-crossstep`). Installed automatically as a
+  dependency; also published standalone for direct use.
+
 > **Install straight from GitHub** (no npm registry needed — handy when you
 > hand this repo's link to an AI or want the latest commit):
 >
@@ -389,24 +361,27 @@ DeepSeek Harness community.
 MIT
 
 
-## 🧭 会话日志考古（retrace CLI）
+## 🧭 Session archaeology (`retrace` CLI)
 
-DSH 会话日志持久化了每次工具调用的完整输入输出——数据资产与审计资产。
-`retrace` CLI 提供只读考古能力（复用 dsh-log-contract 0.3.0 的契约与提取）：
+Every tool call's full input/output is persisted in the session log — a data and
+audit asset. The `retrace` CLI provides read-only archaeology (reusing
+dsh-log-contract's contracts and extraction):
 
 ```sh
-retrace index <session>                        # 工具调用索引（）
-retrace query <session> --cmd "seed-scale"     # 按命令正则查输出（）
-retrace extract <session> --pattern "seed-scale" --out ./found   # 导出输出（）
-retrace file-history <session> <path>          # 文件 write/edit 历史版本（）
-retrace file-diff <session> <path> 0 5         # 两版本行级 diff（）
-retrace lineage <session>                      # 会话 parent 链谱系（）
+retrace index <session>                        # tool-call index ()
+retrace query <session> --cmd "seed-scale"     # search outputs by command regex ()
+retrace extract <session> --pattern "seed-scale" --out ./found   # export outputs ()
+retrace file-history <session> <path>          # write/edit history of a file ()
+retrace file-diff <session> <path> 0 5         # line diff between two versions ()
+retrace lineage <session>                      # parent-chain lineage ()
 ```
 
-<session> 为完整日志路径或 sessionId（自动在 ~/.dsh/sessions 查找）。全部只读。
+`<session>` is a full log path or a sessionId (auto-looked-up under
+`~/.dsh/sessions`). All read-only.
 
-**分叉图里的会话谱系（,UI）**：Fork map 视图头部展示当前会话的
-`parentSession` 接续链（当前会话 → 父 → 根,`←` 方向）。数据来自
-`GET /api/plugins/retrace/lineage?sessionId=`（只读 header 遍历,带环保护）,
-与 CLI `retrace lineage` 同一语义。这样"这个会话是从哪个会话接着干/分叉出来的"
-在界面上一眼可见——也是分叉图拓扑的元数据源。
+**Session lineage in the fork map (, UI)**: the Fork map view header shows the
+current session's `parentSession` chain (session → parent → root, `←` direction).
+Data comes from `GET /api/plugins/retrace/lineage?sessionId=` (read-only header
+walk with cycle protection), the same semantics as the CLI `retrace lineage` —
+so "which session did this one continue/fork from" is visible at a glance, and
+serves as the fork-topology metadata source.

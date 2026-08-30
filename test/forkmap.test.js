@@ -213,3 +213,25 @@ describe('forkmapProjectionDefinition — registry contract', () => {
     expect(forkmapProjectionDefinition.wire.viewSchema.safeParse(view).success).toBe(true)
   })
 })
+
+describe('渲染卡死回归（2026-08-30：ForkView/VersionsView O(N²) indexOf）', () => {
+  it('窗口化渲染用索引算 top，不再对可见节点做 indexOf 线性查找', () => {
+    const fs = require('node:fs')
+    const path = require('node:path')
+    const src = fs.readFileSync(path.join(__dirname, '../lib/client.js'), 'utf8')
+    // 原 bug：visible.map(... top: nodes.indexOf(node) * ROW_H / list.indexOf(record) * ROW_H)
+    // 2047 节点 × ~15 可见行 = 每次渲染 ~30K 次比较 → 转圈、Renderer CPU 27.7%
+    expect(src).not.toMatch(/top:\s*(nodes|list)\.indexOf\(/)
+    // 修复后：带起始索引切片 + (visibleStart + i) * ROW_H
+    expect(src).toMatch(/visibleStart \+ i\) \* ROW_H/)
+    expect(src).toMatch(/const visibleStart = Math\.max\(0, Math\.floor\(scrollTop \/ ROW_H\) - 2\)/)
+  })
+
+  it('ForkView 与 VersionsView 两处都修复', () => {
+    const fs = require('node:fs')
+    const path = require('node:path')
+    const src = fs.readFileSync(path.join(__dirname, '../lib/client.js'), 'utf8')
+    const occurrences = (src.match(/visibleStart \+ i\) \* ROW_H/g) ?? []).length
+    expect(occurrences).toBeGreaterThanOrEqual(2) // ForkRow + VersionRow
+  })
+})

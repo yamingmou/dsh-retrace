@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.11] — 2026-08-30 · ForkView / VersionsView windowed list: O(N^2) indexOf to O(1) index math
+
+- ForkView / VersionsView windowed list: O(N^2) indexOf to O(1) index math
+
 ## [0.4.10] — 2026-08-30 · turn-interval edits open a temporary step around the marker
 
 - turn-interval edits open a temporary step around the marker
