@@ -2,32 +2,8 @@
 
 # 🧭 dsh-retrace
 
-**Retrace · 回溯** — the **Agent business layer (production-grade guarantees)** for
-DeepSeek Harness sessions.
-
-**What it does today (0.4.x, all shipped):**
-
-- **Recall · Edit-and-resend · Regenerate** — every rewind goes through a three-layer
-  pre-write contract guard, edits auto-stop the running agent, and turn-interval
-  markers are wrapped in a temporary step: **rewinds never dirty the log and never
-  break `/compact`**.
-- **In-conversation versioning** — a timeline of every rewind, artifact rollback
-  (git-first, snapshot fallback), a fork map + session lineage, and jump-to-any-point.
-- **Real-time guarding** — a watchdog snapshots the log at the first sign of
-  concurrent writes.
-- **Offline check & repair** — companion `dsh-log-contract` ships 30+ contract rules
-  (token-meter pairing / cross-step references / physical order / inbox replay…),
-  finding and fixing in place the deep problems that make the official `/compact`
-  permanently fail.
-
-**What's next (the business layer, see [public roadmap](./docs/ROADMAP.md))**:
-runtime guarding, interruption governance, ecosystem-facing interfaces — hygiene,
-retraceability, auditability and recoverability as a **platform-agnostic business
-layer** for more agent shapes.
-
-A Harness enhancement plugin for the
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI and
-Desktop app (both share the same Web frontend).
+**撤回 · 编辑重发 · 重新生成**，加上**写安全**的会话版本化 —— DeepSeek Harness 的
+**Agent 业务层（生产级保证）** 实现。
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
@@ -39,81 +15,47 @@ Desktop app (both share the same Web frontend).
 
 </div>
 
-> ## ⚡ Install in one minute
->
-> **Option A — one command (recommended):** with DeepSeek Harness's `dsh` CLI:
->
-> ```sh
-> dsh plugin --profile desktop add dsh-retrace   # DSH Desktop
-> # or: dsh plugin --profile web add dsh-retrace  # standalone Web
-> ```
->
-> **Option B — downloaded this repo as ZIP (or handing this link to an AI):**
-> unpack it and run `dsh plugin --profile desktop add <folder>` — or install
-> straight from GitHub, no unpacking:
->
-> ```sh
-> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
-> ```
->
-> Follow [📦 Installation](#-installation) → *Manual install* for the exact
-> file-edit steps.
->
-> **Option C — no command line at all:** install the community plugin market
-> once, then install dsh-retrace from its UI:
->
-> ```sh
-> dsh plugin --profile desktop add dshmarket   # one time
-> ```
->
-> Restart, then **Settings → Plugin Market** → search **dsh-retrace** →
-> **Install** (one click). The market lists plugins from the curated
-> [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
-> registry; dsh-retrace is listed there.
->
-> > ⚠️ **Restart required after install.** Quit and reopen **DSH Desktop**
-> > (or restart the `dsh` process for a standalone Web deployment) — a running
-> > app keeps the previous bundle in memory and will not hot-reload it.
->
-> Hover any assistant reply → **↩ / ↻**; any user message → **✎** — that's it.
+**撤回 / 编辑重发 / 重新生成** —— 每个会话都该有的三个操作。但回退不只是「撤掉一条
+消息」：DeepSeek Harness 把对话存在 append-only 事件日志里，撤回只回退上下文，改过的
+**产物文件不会自动还原**。dsh-retrace 把对话**和它的产物**一起版本化，并且保证
+**每次回退都合法、不弄脏日志、不破坏 /compact**。
 
-DeepSeek Harness stores every conversation as an **append-only event log**, so there is
-no built-in "undo". `dsh-retrace` brings back the three moves every chat deserves —
-**撤回 (recall)**, **编辑重发 (edit-and-resend)**, **重新生成 (regenerate)** — and then
-goes further: because a recall only rewinds the **context**, while files the agent
-already changed stay changed, retrace versions your conversation **and its artifacts**
-in one place.
+> 🛡️ **写安全** · 🔍 **深层体检** · 🔄 **检测→修复→守护** —— 详见下方「生产级保证」。
 
-**What makes it different from a plain "undo / fork-graph / verify" plugin:**
+---
 
-- **Edits never dirty your log.** Every rewind is written through a **pre-write
-  contract guard** (three-layer validation before commit), edits auto-stop the running
-  agent via the official `cancel`/`whenIdle` API, and turn-interval markers are wrapped
-  in a temporary step — so rewinds stay legal for the official token meter and never
-  break `/compact` (a failure mode that silently corrupts sessions in other tools).
-- **Deep offline checks, not shallow ones.** The companion `dsh-log-contract` ships
-  30+ contract rules (token-meter pairing, cross-step source references, physical
-  order, inbox replay…) validated against real corrupted-session fixtures — it catches
-  the class of problem that makes the official `/compact` permanently fail, which a
-  generic "orphan tool call" linter cannot see.
-- **Detect → repair → guard loop.** Watchdog snapshots the log at the first sign of
-  concurrent writes; offline `fix` neutralizes problem markers and clips cross-step
-  references in place; pre-write validation stops bad events before they land.
+## ⚡ 一分钟安装
 
-Recall / edit **remove the target messages from the conversation view and the model
-context** — that is exactly the effect you see. What stays untouched is the underlying
-**durable transcript**: it remains append-only, old events are never rewritten or deleted,
-and the plugin merely appends one valid replacement event (the same `replace` primitive
-the built-in compaction uses) to rewind the surface — so the log keeps a full audit trail
-of every rewind. On top of that trail, retrace records version boundaries, touched files
-and (optionally) git state, and lets you roll back artifacts or jump back to any point
-in the conversation — all **inside the same session**, no session-switching.
+> 需要带 `dsh` CLI 的 DeepSeek Harness；装完**重启 DSH** 生效（运行中的应用不会热加载）。
 
-> ✅ **Timeline + artifact rollback + safe-edit guard are live (0.4.x)** — recall / edit /
-> regenerate, the version timeline, artifact rollback (git-first, snapshot
-> fallback), jump-to-conversation, marker pre-write validation (three-layer
-> contract guard) and the real-time watchdog are all in. The fork map (P2) is in
-> progress per [PLAN.md](./PLAN.md).
+```sh
+dsh plugin --profile desktop add dsh-retrace    # DSH Desktop
+# 或 Web 部署：dsh plugin --profile web add dsh-retrace
+# 或从 GitHub 直装：dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+# 或从 ZIP 解压后：dsh plugin --profile desktop add ~/plugins/dsh-retrace
+```
+
+**没有命令行？** 先装一次社区插件市场，再在 **设置 → Plugin Market** 搜
+**dsh-retrace** 一键安装：
+
+```sh
+dsh plugin --profile desktop add dshmarket    # 只需一次
+```
+
+重启后，悬停任意助手回复 → **↩ / ↻**；任意用户消息 → **✎**。详细步骤见
+[📦 Installation](#-installation).
+
+---
+
+---
+
+## 🛡️ 生产级保证（0.4.x 全部已上线）
+
+| | 能力 | 说明 |
+|---|---|---|
+| 🛡️ | **写安全** | 每次回退过三层写前契约校验；运行中的 agent 自动停止（官方 `cancel`/`whenIdle`）；轮次间 marker 用临时 step 包裹 —— **回退永不弄脏日志，/compact 永不失效** |
+| 🔍 | **深层体检** | 配套 `dsh-log-contract` 30+ 条契约规则（token-meter 配对 / 跨 step 引用 / 物理序 / inbox 重放），用真实损坏会话当测试集 —— 能找出让 /compact 永久失效的那类问题 |
+| 🔄 | **检测→修复→守护** | 看门狗在并发写入第一时间快照日志；离线 `fix` 原地中和问题 marker、裁剪跨 step 引用；写前校验在坏事件落盘前拦住 |
 
 ---
 
@@ -138,34 +80,7 @@ in the conversation — all **inside the same session**, no session-switching.
 - 🖥️ **Web + Desktop** — the same plugin covers both surfaces of DeepSeek Harness.
 - 🔒 **Removed from view & context, not from the log** — recalled/edited messages disappear from the conversation view and the model context, while the durable transcript is never rewritten or deleted; the plugin only appends valid, typed session events (the same `replace` primitive the built-in compaction uses), so the log keeps a full audit trail.
 - 🧠 **View ⇄ context in sync** — the conversation view always reflects exactly what the agent sees.
-- 🛡️ **Edits never dirty the log** — every rewind passes a three-layer pre-write contract guard; running agents are auto-stopped (official `cancel`/`whenIdle`) and turn-interval markers are wrapped in a temporary step, so rewinds stay legal for the official token meter and never break `/compact`.
-- 🔍 **Deep offline checks** — companion `dsh-log-contract` ships 30+ contract rules (token-meter pairing, cross-step references, physical order, inbox replay) validated against real corrupted-session fixtures — it finds the class of problem that makes `/compact` permanently fail.
-- 🔄 **Detect → repair → guard** — a watchdog snapshots the log at the first sign of concurrent writes; offline `fix` neutralizes problem markers and clips cross-step references in place; pre-write validation stops bad events before they land.
 - ⚡ **Try in 30 seconds** — the dynamic form installs in your current session with no rebuild.
-
----
-
-## 🚀 Quick start
-
-The one-line install is at the top of this page (**⚡ Install in one minute**).
-This section covers the same ground with more detail.
-
-> Requires DeepSeek Harness with the `dsh` CLI. Installs the plugin as a profile
-> bundle and automatically rebuilds the Web client:
-
-```sh
-# DSH Desktop (desktop profile)
-dsh plugin --profile desktop add dsh-retrace
-
-# standalone Web (`dsh web` / web profile)
-dsh plugin --profile web add dsh-retrace
-```
-
-> ⚠️ **Restart after install.** A running app keeps the previously loaded bundle
-> in memory, so **quit and reopen DSH Desktop** (or restart the `dsh` process for
-> a standalone Web deployment) before the plugin activates.
-
-After the restart, hover any assistant reply, or any user message, and use ↩ / ✎ / ↻.
 
 ---
 

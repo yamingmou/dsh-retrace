@@ -2,24 +2,8 @@
 
 # 🧭 dsh-retrace
 
-**Retrace · 回溯** —— DeepSeek Harness 会话的 **Agent 业务层**（生产级保证）实现。
-
-**现在能做什么（0.4.x，全部已上线）：**
-
-- **撤回 · 编辑重发 · 重新生成**——每次回退都过三层写前校验、编辑前自动停止运行中的
-  agent、轮次间 marker 用临时 step 包裹：**回退永不弄脏日志，/compact 永不失效**。
-- **单会话版本化**——每一次回退的时间线、产物回退（git 优先 + 快照兜底）、
-  分叉图 + 会话谱系、跳转对话任意位置。
-- **实时守护**——看门狗在并发写入第一时间快照日志。
-- **离线体检与修复**——配套 `dsh-log-contract` 30+ 条契约规则
-  （token-meter 配对 / 跨 step 引用 / 物理序 / inbox 重放…），能找出让官方
-  /compact 永久失效的深层问题，并原地修复。
-
-**未来（Agent 业务层，见 [公开路线图](./docs/ROADMAP.md)）**：运行时守护、
-中断治理、生态开放接口——把卫生 / 可回溯 / 可审计 / 可恢复作为**与平台无关的
-业务层**提供给更多 agent 形态。
-
-支持 **Web 端** 与 **桌面客户端**（两者共用同一套 Web 前端）。
+**撤回 · 编辑重发 · 重新生成**，加上**写安全**的会话版本化 —— DeepSeek Harness 的
+**Agent 业务层（生产级保证）** 实现。
 
 [![npm version](https://img.shields.io/npm/v/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-retrace)](https://www.npmjs.com/package/dsh-retrace)
@@ -31,67 +15,46 @@
 
 </div>
 
-> ## ⚡ 一分钟安装
->
-> **方式 A —— 一条命令（推荐）：** 需要带 `dsh` CLI 的 DeepSeek Harness：
->
-> ```sh
-> dsh plugin --profile desktop add dsh-retrace   # DSH 桌面版
-> # 或：dsh plugin --profile web add dsh-retrace  # 独立 Web 部署
-> ```
->
-> **方式 B —— 从 GitHub 下载了 ZIP（或把本仓库链接直接丢给 AI）？** 解压到固定位置
-> （如 `~/plugins/dsh-retrace`）后执行 `dsh plugin --profile desktop add ~/plugins/dsh-retrace`；
-> 或**直接从 GitHub 安装，无需解压**：
->
-> ```sh
-> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
-> ```
->
-> 更详细的文件级步骤见 [📦 安装](#-安装) → *手动安装*。
->
-> **方式 C —— 完全没有命令行？** 先装一次社区插件市场，再从市场 UI 一键安装
-> dsh-retrace：
->
-> ```sh
-> dsh plugin --profile desktop add dshmarket   # 只需一次
-> ```
->
-> 重启后进入 **设置 → Plugin Market** → 搜索 **dsh-retrace** → **安装**（一键）。
-> 市场收录自 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
-> 精选目录，dsh-retrace 已在其中。
->
-> > ⚠️ **安装后必须重启。** 运行中的应用不会热加载 bundle，请**退出并重新打开
-> > DSH Desktop**（独立 Web 部署则重启 `dsh` 进程）后插件才会生效。
->
-> 重启后悬停任意助手回复 → **↩ / ↻**；任意用户消息 → **✎**，即可使用。
+**撤回 / 编辑重发 / 重新生成** —— 每个会话都该有的三个操作。但回退不只是「撤掉一条
+消息」：DeepSeek Harness 把对话存在 append-only 事件日志里，撤回只回退上下文，改过的
+**产物文件不会自动还原**。dsh-retrace 把对话**和它的产物**一起版本化，并且保证
+**每次回退都合法、不弄脏日志、不破坏 /compact**。
 
-DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，本身没有撤销能力。
-`dsh-retrace` 先为对话补上聊天本该有的三个操作 —— **撤回**、**编辑重发**、
-**重新生成**；再往前一步：撤回只回退了**上下文**，而智能体已经改过的**产物文件**
-不会自动还原——retrace 把对话**和它的产物**放在一起做版本化。
+> 🛡️ **写安全** · 🔍 **深层体检** · 🔄 **检测→修复→守护** —— 详见下方「生产级保证」。
 
-**与普通「撤销 / 分叉图 / verify」插件的区别：**
+---
 
-- **编辑永远不会弄脏你的日志。** 每次回退都经过**写前契约校验**（落盘前三层校验），
-  编辑前自动用官方 `cancel`/`whenIdle` API 停止运行中的 agent，轮次间 marker 用
-  临时 step 包裹——回退对官方 token meter 始终合法，**不会破坏 /compact**
-  （这是别的工具里会静默损坏会话的一类失败）。
-- **深层离线体检，不是浅层扫描。** 配套 `dsh-log-contract` 有 30+ 条契约规则
-  （token-meter 配对、跨 step 源引用、物理序、inbox 重放…），用**真实损坏会话
-  当测试集**验证——它能找出让官方 /compact 永久失效的那类问题，而通用
-  「孤儿 tool call」扫描器看不到。
-- **检测 → 修复 → 守护 闭环。** 看门狗在并发写入第一时间快照日志；离线 `fix`
-  原地中和问题 marker、裁剪跨 step 引用；写前校验在坏事件落盘前拦住。
+## ⚡ 一分钟安装
 
-撤回/编辑后，目标消息会**从对话视图和模型上下文中移除**——你看到的「删除」正是这个
-效果。但底层的**持久化日志不会被改写或删除**：它始终保持只追加，旧事件原样保留，
-插件只是在日志末尾追加一条合法的替换事件（与内置压缩使用的 `replace` 原语一致）来
-回退对话表面，因此日志保留每一次回退的完整审计痕迹。在这条痕迹之上，retrace 记录
-版本边界、触碰文件与（可选的）git 状态，支持产物回退与跳转到对话任意位置——全部
-发生在**同一会话内**，不换会话。
+> 需要带 `dsh` CLI 的 DeepSeek Harness；装完**重启 DSH** 生效（运行中的应用不会热加载）。
 
-> ✅ **时间线 + 产物回退 + 安全编辑已上线（0.4.x）** —— 撤回/编辑/重新生成、版本时间线、产物回退（git 优先 + 快照兜底）、跳转对话、marker 写前校验、实时看门狗均已可用；分叉图（P2）按 [PLAN.md](./PLAN.md) 推进中。
+```sh
+dsh plugin --profile desktop add dsh-retrace    # DSH 桌面版
+# 或 Web 部署：dsh plugin --profile web add dsh-retrace
+# 或从 GitHub 直装：dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+# 或从 ZIP 解压后：dsh plugin --profile desktop add ~/plugins/dsh-retrace
+```
+
+**没有命令行？** 先装一次社区插件市场，再在 **设置 → Plugin Market** 搜
+**dsh-retrace** 一键安装：
+
+```sh
+dsh plugin --profile desktop add dshmarket    # 只需一次
+```
+
+重启后，悬停任意助手回复 → **↩ / ↻**；任意用户消息 → **✎**。详细步骤见
+[📦 安装](#-安装)。
+
+---
+---
+
+## 🛡️ 生产级保证（0.4.x 全部已上线）
+
+| | 能力 | 说明 |
+|---|---|---|
+| 🛡️ | **写安全** | 每次回退过三层写前契约校验；运行中的 agent 自动停止（官方 `cancel`/`whenIdle`）；轮次间 marker 用临时 step 包裹 —— **回退永不弄脏日志，/compact 永不失效** |
+| 🔍 | **深层体检** | 配套 `dsh-log-contract` 30+ 条契约规则（token-meter 配对 / 跨 step 引用 / 物理序 / inbox 重放），用真实损坏会话当测试集 —— 能找出让 /compact 永久失效的那类问题 |
+| 🔄 | **检测→修复→守护** | 看门狗在并发写入第一时间快照日志；离线 `fix` 原地中和问题 marker、裁剪跨 step 引用；写前校验在坏事件落盘前拦住 |
 
 ---
 
@@ -118,36 +81,7 @@ DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，�
   消失，但持久化日志从不被改写或删除；插件只追加合法、带类型的会话事件（与内置压缩
   使用的 `replace` 原语一致），日志保留完整审计痕迹。
 - 🧠 **视图 ⇄ 上下文同步** —— 对话视图永远反映智能体真正看到的内容。
-- 🛡️ **编辑永不弄脏日志** —— 每次回退都过三层写前契约校验；运行中的 agent 会被自动
-  停止（官方 `cancel`/`whenIdle`），轮次间 marker 用临时 step 包裹——回退对官方
-  token meter 始终合法，**/compact 永不失效**。
-- 🔍 **深层离线体检** —— 配套 `dsh-log-contract` 30+ 条契约规则（token-meter 配对、
-  跨 step 引用、物理序、inbox 重放），用真实损坏会话当测试集——能找出让 /compact
-  永久失效的那类问题。
-- 🔄 **检测 → 修复 → 守护闭环** —— 看门狗在并发写入第一时间快照日志；离线 `fix`
-  原地中和问题 marker、裁剪跨 step 引用；写前校验在坏事件落盘前拦住。
 - ⚡ **30 秒上手** —— 动态插件形式无需重建即可在当前会话试用。
-
----
-
-## 🚀 快速开始
-
-页首的 **⚡ 一分钟安装** 是最短路径；本节给出同样内容的更详细说明。
-
-> 需要带 `dsh` CLI 的 DeepSeek Harness。以 profile bundle 方式安装，并自动重建 Web 客户端：
-
-```sh
-# DSH Desktop（desktop profile）
-dsh plugin --profile desktop add dsh-retrace
-
-# 独立 Web 部署（`dsh web` / web profile）
-dsh plugin --profile web add dsh-retrace
-```
-
-> ⚠️ **安装后需要重启。** 运行中的应用仍在内存中保留之前加载的 bundle，请**退出并
-> 重新打开 DSH Desktop**（独立 Web 部署则重启 `dsh` 进程）后插件才会生效。
-
-重启后，悬停任意助手回复或用户消息，即可使用 ↩ / ✎ / ↻。
 
 ---
 
@@ -387,3 +321,27 @@ DeepSeek Harness 插件生态的精选总览见
 ## 📄 License
 
 MIT
+
+---
+
+## 🧭 会话日志考古（retrace CLI）
+
+DSH 会话日志持久化了每次工具调用的完整输入输出——数据资产与审计资产。
+`retrace` CLI 提供只读考古能力（复用 dsh-log-contract 的契约与提取）：
+
+```sh
+retrace index <session>                        # 工具调用索引（A1）
+retrace query <session> --cmd "seed-scale"     # 按命令正则查输出（A1）
+retrace extract <session> --pattern "seed-scale" --out ./found   # 导出输出（A2）
+retrace file-history <session> <path>          # 文件 write/edit 历史版本（A3）
+retrace file-diff <session> <path> 0 5         # 两版本行级 diff（A3）
+retrace lineage <session>                      # 会话 parent 链谱系（A4）
+```
+
+<session> 为完整日志路径或 sessionId（自动在 ~/.dsh/sessions 查找）。全部只读。
+
+**分叉图里的会话谱系（A4, UI）**：Fork map 视图头部展示当前会话的
+`parentSession` 接续链（当前会话 → 父 → 根,`←` 方向）。数据来自
+`GET /api/plugins/retrace/lineage?sessionId=`（只读 header 遍历,带环保护）,
+与 CLI `retrace lineage` 同一语义。这样「这个会话是从哪个会话接着干/分叉出来的」
+在界面上一眼可见——也是分叉图拓扑的元数据源。
