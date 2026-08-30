@@ -50,8 +50,6 @@ Full steps in [📦 Installation](#-installation).
 
 ---
 
----
-
 ## 🛡️ Production-grade guarantees (all live in 0.4.x)
 
 | | Capability | What it means |
@@ -72,16 +70,17 @@ Full steps in [📦 Installation](#-installation).
 
 **Versioning & rollback (live in 0.4.x)** — every rewind is also recorded as a **version**:
 
-- 🕘 **Timeline** — a **Versions** tab in the conversation view (on par with the official Chat/Trajectory tabs, since 0.4.2): every version (type, time, message count, file-change badges, summary), pushed live via `session/projection` (no polling), windowed for long histories; event inspection reuses the official Trajectory ledger.
-- ↩️ **Artifact rollback** — each version offers **context-only / artifacts-only / both** rollback with a dry-run preview; git-first (commit-free checkout of the listed paths) with content-addressed snapshot fallback. The rollback itself is recorded as a new version (`restore`) — rollback of a rollback.
-- 🧭 **Jump-to-conversation** — one click from a version to that point in the conversation (auto-loads earlier history, anchor highlight).
-- 🧹 **Bounded storage** — file snapshots keep the most recent N versions (default 50); a throttled background sweep prunes snapshots of truncated versions, keeping long sessions bounded.
+| | What | |
+|---|---|---|
+| 🕘 | **Timeline** | a **Versions** tab in the conversation view: every version (type, time, message count, file-change badges), pushed live via `session/projection` (no polling), windowed for long histories |
+| ↩️ | **Artifact rollback** | **context-only / artifacts-only / both** with dry-run preview; git-first + content-addressed snapshot fallback; the rollback is itself a new version (`restore`) |
+| 🧭 | **Jump-to-conversation** | one click from a version to that point in the conversation (auto-loads history, anchor highlight) |
+| 🧹 | **Bounded storage** | snapshots keep the most recent N versions (default 50); throttled background sweep prunes truncated ones |
 
-**Why it's different**
+**Why it's different** (the interaction layer — the guarantees above are the storage layer):
 
-- 🎯 **Whole-round recall** — one click removes the input *and* its output (including tool rows), not just a single bubble.
-- 🖥️ **Web + Desktop** — the same plugin covers both surfaces of DeepSeek Harness.
-- 🔒 **Removed from view & context, not from the log** — recalled/edited messages disappear from the conversation view and the model context, while the durable transcript is never rewritten or deleted; the plugin only appends valid, typed session events (the same `replace` primitive the built-in compaction uses), so the log keeps a full audit trail.
+- 🎯 **Whole-round recall** — removes the input *and* its output (tool rows included), not just a single bubble.
+- 🖥️ **Web + Desktop** — one plugin, both DeepSeek Harness surfaces.
 - 🧠 **View ⇄ context in sync** — the conversation view always reflects exactly what the agent sees.
 - ⚡ **Try in 30 seconds** — the dynamic form installs in your current session with no rebuild.
 
