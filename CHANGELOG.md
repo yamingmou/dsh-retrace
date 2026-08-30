@@ -1,5 +1,25 @@
 ## [Unreleased]
 
+## [0.4.11] — 2026-08-30 · 渲染卡死修复（ForkView/VersionsView O(N²)）
+
+### 修复（2026-08-30 禁用验证坐实：526f1835 打开转圈、Renderer CPU 27.7%）
+
+- **ForkView / VersionsView 窗口化渲染 O(N²) → O(1)**：`visible.map` 里
+  `nodes.indexOf(node)` / `list.indexOf(record)` 在每次渲染对每个可见节点做
+  线性查找——2047 节点 × ~15 可见行 = 每次渲染 ~30K 次比较，React 重渲染风暴
+  → 转圈、Renderer CPU 27.7% 持续高负载。大会话（526f1835 126.9 万事件、
+  forkmap 2047 节点）打开卡死，小会话不触发。
+- 修复：窗口化切片带起始索引（visibleStart），渲染用 `(visibleStart + i) * ROW_H`
+  直接算 top，去掉 indexOf。ForkView + VersionsView 两处同修。
+- 回归测试 +2：断言源码不再出现 `top: nodes/list.indexOf(...)`，且两处都用
+  索引切片（防复发）。
+
+### 备注
+
+- forkmap 投影 nodes 的 seq 乱序（compaction replace 插在遮蔽范围开头）是官方
+  foldSurface 语义，非 bug；ForkView 不依赖有序，仅渲染顺序，无碍。
+- 本版不处理「幽灵 resend 占位消息」（0.4.6 历史遗留 seed 数据，客户端渲染正常）。
+
 ## [0.4.10] — 2026-08-30 · R2 根治：轮次间编辑不再产生 turn-null marker
 
 ### 修复(刷屏事故根治 v2)
