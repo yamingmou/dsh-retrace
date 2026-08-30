@@ -1,5 +1,36 @@
 ## [Unreleased]
 
+### 新增（2026-08-31 · 会话短码铭牌）
+
+- **会话短码（identity badge）**：从 session id（唯一值）确定性导出 10 位短码
+  （FNV-1a 64 → base36），永不变（标题会变）。人机交互识别用，系统内部不需要。
+  - `lib/badge.js`（`sessionBadge` / `uuidOf` / `fnv1a64` / `toBase36`，纯函数无状态）；
+  - host 端点 `retrace.sessionBadge`（harness，agent 可查任意会话短码）；
+  - ForkView 显示「会话铭牌」+ 谱系每跳短码（`[短码]` 前缀）；
+  - 测试 +9（195 全绿）。
+
+### 新增（2026-08-31 · 快照点守卫：回档幅度保护）
+
+- **回档幅度保护（5e55100a 事故闭环，生产级运行保障）**：编辑/撤回/重发/
+  恢复写入前计算遮蔽占比（`sourceEventSeqs / surface.nodes`），
+  **> 40%（`ROLLBACK_RATIO`）拒绝落盘**，抛 `rollback-guide` 错误并引导
+  「从快照点创建会话分支」（生产基线不支持原地大幅改写）。
+  - 判定与 client 侧 `SHADOW_SAFETY_RATIO` 同源（同一阈值）；
+  - host 层强制：UI 绕过也拦得住；enabled 门控可关闭；
+  - 覆盖 recall / editAndResend / regenerate / rollback 全部写入路径
+    （lib/index.js hooks 装配 + rollback validateMarker）；
+  - `lib/prewrite-guard.js`（`ROLLBACK_RATIO` / `rollbackShareOf` /
+    `createMarkerGuard({ rollbackRatio })`），测试 +9（23）。
+  - 设计：`工程-生产级运行时/快照点与回档机制-设计-20260831.md`。
+
+### 新增（2026-08-31 · R4 中断轮次治理）
+
+- **R4 中断轮次提示**：退出/重载时检测「未闭合 turn」（有 turn/start 无
+  turn/end，或 turn/end reason 为 interrupted/aborted）并记 warning。
+  只检测不写事件（官方 finally 已保证 turn/end 写入；未闭合只出现在
+  崩溃/强杀现场）。中断轮次在时间线天然可见（官方事件流）。
+  `lib/interrupt-guard.js`，测试 +9。
+
 ## [0.4.11] — 2026-08-30 · 渲染卡死修复（ForkView/VersionsView O(N²)）
 
 ### 修复（2026-08-30 禁用验证坐实：5e551007 打开转圈、Renderer CPU 27.7%）
