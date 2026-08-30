@@ -118,6 +118,14 @@ DeepSeek Harness 的对话是「只追加（append-only）」的事件日志，�
   消失，但持久化日志从不被改写或删除；插件只追加合法、带类型的会话事件（与内置压缩
   使用的 `replace` 原语一致），日志保留完整审计痕迹。
 - 🧠 **视图 ⇄ 上下文同步** —— 对话视图永远反映智能体真正看到的内容。
+- 🛡️ **编辑永不弄脏日志** —— 每次回退都过三层写前契约校验；运行中的 agent 会被自动
+  停止（官方 `cancel`/`whenIdle`），轮次间 marker 用临时 step 包裹——回退对官方
+  token meter 始终合法，**/compact 永不失效**。
+- 🔍 **深层离线体检** —— 配套 `dsh-log-contract` 30+ 条契约规则（token-meter 配对、
+  跨 step 引用、物理序、inbox 重放），用真实损坏会话当测试集——能找出让 /compact
+  永久失效的那类问题。
+- 🔄 **检测 → 修复 → 守护闭环** —— 看门狗在并发写入第一时间快照日志；离线 `fix`
+  原地中和问题 marker、裁剪跨 step 引用；写前校验在坏事件落盘前拦住。
 - ⚡ **30 秒上手** —— 动态插件形式无需重建即可在当前会话试用。
 
 ---
@@ -346,6 +354,13 @@ npm pack --dry-run    # 校验发布文件清单
 ## 📚 生态
 
 收录于 [dsh-plugin topic](https://github.com/topics/dsh-plugin)。
+
+**Agent 业务层（生产级保证）** 的一部分——见 [公开路线图](./docs/ROADMAP.md)
+（框架无关的业务层定义，dsh-retrace 是它在 DeepSeek Harness 上的实现）。配套组件：
+
+- [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) —— 业务层的
+  「医生」：30+ 条离线契约规则 + 原地修复（`fix --neutralize` / `--clip-crossstep`）。
+  作为依赖自动安装，也独立发布供直接使用。
 
 > **直接从 GitHub 安装**（无需 npm registry —— 适合把本仓库链接丢给 AI，或想装最新提交）：
 >

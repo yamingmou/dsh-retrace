@@ -138,6 +138,9 @@ in the conversation — all **inside the same session**, no session-switching.
 - 🖥️ **Web + Desktop** — the same plugin covers both surfaces of DeepSeek Harness.
 - 🔒 **Removed from view & context, not from the log** — recalled/edited messages disappear from the conversation view and the model context, while the durable transcript is never rewritten or deleted; the plugin only appends valid, typed session events (the same `replace` primitive the built-in compaction uses), so the log keeps a full audit trail.
 - 🧠 **View ⇄ context in sync** — the conversation view always reflects exactly what the agent sees.
+- 🛡️ **Edits never dirty the log** — every rewind passes a three-layer pre-write contract guard; running agents are auto-stopped (official `cancel`/`whenIdle`) and turn-interval markers are wrapped in a temporary step, so rewinds stay legal for the official token meter and never break `/compact`.
+- 🔍 **Deep offline checks** — companion `dsh-log-contract` ships 30+ contract rules (token-meter pairing, cross-step references, physical order, inbox replay) validated against real corrupted-session fixtures — it finds the class of problem that makes `/compact` permanently fail.
+- 🔄 **Detect → repair → guard** — a watchdog snapshots the log at the first sign of concurrent writes; offline `fix` neutralizes problem markers and clips cross-step references in place; pre-write validation stops bad events before they land.
 - ⚡ **Try in 30 seconds** — the dynamic form installs in your current session with no rebuild.
 
 ---
@@ -401,6 +404,15 @@ and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 ## 📚 Ecosystem
 
 Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin).
+
+Part of the **Agent business layer (production-grade guarantees)** — see the
+[public roadmap](./docs/ROADMAP.md) for the framework-agnostic layer and how
+dsh-retrace is its DeepSeek Harness implementation. Companion components:
+
+- [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) — the
+  business layer's "doctor": 30+ offline contract rules + in-place repair
+  (`fix --neutralize` / `--clip-crossstep`). Installed automatically as a
+  dependency; also published standalone for direct use.
 
 > **Install straight from GitHub** (no npm registry needed — handy when you
 > hand this repo's link to an AI or want the latest commit):
