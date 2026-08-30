@@ -319,16 +319,21 @@ The dynamic host registers the same operations behind the package-private
 
 ## 🗺️ Roadmap
 
-Built per [PLAN.md](./PLAN.md):
+**What's in today (0.4.x):**
 
-- **P1 — Timeline & artifact rollback** ✅ *shipped in 0.4.x*: an in-session version
-  timeline (messages, thinking, touched files), artifact snapshots (git-first,
-  snapshot-fallback, opt-in), rollback with dry-run preview, and jump-to-conversation
-  navigation.
-- **P2 — Fork map** 🔨 *in progress*: a flow graph of the conversation's turns with fork
-  points at every rewind, thinking flow per turn, branch-intent cards, and version
-  comparison.
-- More locales beyond 简体中文 / English.
+- Recall / edit-and-resend / regenerate, each written through a three-layer
+  **pre-write contract guard** and a safe-edit path (auto-stop the agent, temp-step
+  markers) — rewinds never corrupt the log or break `/compact`.
+- In-session **version timeline** + **artifact rollback** (git-first, snapshot
+  fallback, dry-run preview, jump-to-conversation).
+- **Fork map + session lineage** in the conversation view.
+- **Real-time watchdog** — snapshots the log at the first sign of concurrent writes.
+- Companion **`dsh-log-contract`**: 30+ offline contract rules + in-place repair
+  (`fix --neutralize` / `--clip-crossstep`) for sessions that would fail `/compact`.
+
+**What's next** — see the [public roadmap](./docs/ROADMAP.md) for the agent
+business-layer plan (runtime guard, interruption governance, ecosystem-facing
+interfaces). This README only describes what is already shipped.
 
 ---
 
