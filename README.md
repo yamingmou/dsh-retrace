@@ -18,6 +18,44 @@ Desktop app (both share the same Web frontend).
 
 </div>
 
+> ## ⚡ Install in one minute
+>
+> **Option A — one command (recommended):** with DeepSeek Harness's `dsh` CLI:
+>
+> ```sh
+> dsh plugin --profile desktop add dsh-retrace   # DSH Desktop
+> # or: dsh plugin --profile web add dsh-retrace  # standalone Web
+> ```
+>
+> **Option B — downloaded this repo as ZIP (or handing this link to an AI):**
+> unpack it and run `dsh plugin --profile desktop add <folder>` — or install
+> straight from GitHub, no unpacking:
+>
+> ```sh
+> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+> ```
+>
+> Follow [📦 Installation](#-installation) → *Manual install* for the exact
+> file-edit steps.
+>
+> **Option C — no command line at all:** install the community plugin market
+> once, then install dsh-retrace from its UI:
+>
+> ```sh
+> dsh plugin --profile desktop add dshmarket   # one time
+> ```
+>
+> Restart, then **Settings → Plugin Market** → search **dsh-retrace** →
+> **Install** (one click). The market lists plugins from the curated
+> [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+> registry; dsh-retrace is listed there.
+>
+> > ⚠️ **Restart required after install.** Quit and reopen **DSH Desktop**
+> > (or restart the `dsh` process for a standalone Web deployment) — a running
+> > app keeps the previous bundle in memory and will not hot-reload it.
+>
+> Hover any assistant reply → **↩ / ↻**; any user message → **✎** — that's it.
+
 DeepSeek Harness stores every conversation as an **append-only event log**, so there is
 no built-in "undo". `dsh-retrace` brings back the three moves every chat deserves —
 **撤回 (recall)**, **编辑重发 (edit-and-resend)**, **重新生成 (regenerate)** — and then
@@ -68,6 +106,9 @@ in the conversation — all **inside the same session**, no session-switching.
 
 ## 🚀 Quick start
 
+The one-line install is at the top of this page (**⚡ Install in one minute**).
+This section covers the same ground with more detail.
+
 > Requires DeepSeek Harness with the `dsh` CLI. Installs the plugin as a profile
 > bundle and automatically rebuilds the Web client:
 
@@ -83,8 +124,7 @@ dsh plugin --profile web add dsh-retrace
 > in memory, so **quit and reopen DSH Desktop** (or restart the `dsh` process for
 > a standalone Web deployment) before the plugin activates.
 
-That's it — after the restart, hover any assistant reply, or any user message,
-and use ↩ / ✎ / ↻.
+After the restart, hover any assistant reply, or any user message, and use ↩ / ✎ / ↻.
 
 ---
 
@@ -105,13 +145,16 @@ dsh plugin --profile <name> add dsh-retrace
 > deployment) to load the plugin. To uninstall:
 > `dsh plugin --profile <name> remove dsh-retrace` (then restart again).
 
-It also shows up in [dsh-market](https://github.com/dsh-market/dsh-market) for
-one-click install from inside Settings (same restart applies).
-
 ### 2. Manual install (no `dsh` CLI)
 
 The same result with plain file edits and `pnpm` — exactly the steps
 `dsh plugin add` performs for you:
+
+> **Downloaded this repo as a ZIP?** Unpack it somewhere stable (e.g.
+> `~/plugins/dsh-retrace`), then either
+> `dsh plugin --profile desktop add ~/plugins/dsh-retrace`, or follow the
+> steps below with the dependency line pointing at the folder:
+> `"dsh-retrace": "file:~/plugins/dsh-retrace"`.
 
 1. Open the profile manifest (defaults: `~/.dsh/profiles/desktop` on DSH
    Desktop, `~/.dsh/profiles/web` for standalone Web) and add **both** the
@@ -148,6 +191,9 @@ The same result with plain file edits and `pnpm` — exactly the steps
 For local development, point the dependency at a checkout instead of the
 registry: `"dsh-retrace": "file:/path/to/dsh-retrace"` — or let
 `dsh` do it: `dsh plugin --profile <name> add /path/to/dsh-retrace`.
+For the latest GitHub commit without a release: use
+`"dsh-retrace": "github:yamingmou/dsh-retrace"` (standard pnpm git
+dependency syntax) in the same `dependencies` block, then `pnpm install`.
 
 ### 3. npm package + composition (classic)
 
@@ -311,10 +357,23 @@ and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 
 ## 📚 Ecosystem
 
-Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin) and
-installable from [dsh-market](https://github.com/dsh-market/dsh-market). For a
-curated overview of the DeepSeek Harness plugin ecosystem, see
-[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin).
+Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin).
+
+> **Install straight from GitHub** (no npm registry needed — handy when you
+> hand this repo's link to an AI or want the latest commit):
+>
+> ```sh
+> dsh plugin --profile desktop add github:yamingmou/dsh-retrace
+> # or with pnpm directly into a profile:
+> cd ~/.dsh/profiles/desktop && pnpm add github:yamingmou/dsh-retrace
+> ```
+>
+> Then restart DSH Desktop as usual. The `dsh-log-contract` dependency is
+> pulled in automatically.
+
+A curated overview of the DeepSeek Harness plugin ecosystem lives at
+[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+(third-party listing — verify availability before relying on it).
 
 ---
 
