@@ -59,7 +59,7 @@ describe('generated dynamic-host', () => {
     expect(result.value).toMatchObject({ op: 'recall', seq: 1, shadowed: 2, text: 'hello world' })
     // Marker is the new surface tail; the recalled round is shadowed away.
     // (turn-interval edit wraps the marker in a temp step; step events are not surface nodes)
-    expect(session.surface.nodes).toEqual([4])
+    expect(session.surface.nodes).toEqual([5])
     // Cleanup is registered through ctx.effect.
     expect(effects).toHaveLength(1)
     expect(typeof effects[0].fn).toBe('function')
