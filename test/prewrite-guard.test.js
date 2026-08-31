@@ -101,8 +101,8 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环；2026-09-01 改为
     await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('host-core 全链路:大范围 edit(编辑早期消息,遮蔽 >40)→ rollback-guide,事件零写入', async () => {
-    // 60 surface 节点 + 2000+ chunk = 大会话;编辑 u0 → shadowSpanFrom 遮蔽到尾部
+  it('host-core 全链路:edit 用轮内遮蔽(round),编辑早期消息也只遮蔽 1 轮 → 不触发守卫', async () => {
+    // 60 surface 节点 + 2000+ chunk = 大会话;编辑 u0 → roundSpanFrom 只遮蔽 u0 轮
     const session = hugeSession(60, 2200)
     const before = session.events.length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
@@ -116,6 +116,31 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环；2026-09-01 改为
     })
     const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
     const result = await api.editAndResend({ sessionId: 's1', messageId: 'u0', text: 'edited' })
+    expect(result.ok).toBe(true) // round 遮蔽(1 轮)→ 不触发守卫
+    // marker 写入,遮蔽的是 u0 轮(2 个节点)
+    let marker = null
+    for (let i = session.events.length - 1; i >= 0; i--) {
+      const e = session.events[i]
+      if (e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') { marker = e; break }
+    }
+    expect(marker).toBeTruthy()
+    expect(marker.sourceEventSeqs.length).toBeLessThanOrEqual(2)
+  })
+
+  it('host-core 全链路:fromScratch 遮蔽到尾部 → 触发 rollback-guide,事件零写入', async () => {
+    const session = hugeSession(60, 2200)
+    const before = session.events.length
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const validateMarker = vi.fn(async (s, envelope) => {
+      const share = rollbackShareOf(s, envelope)
+      if (share > 0) {
+        const error = new Error('rollback guard')
+        error.code = 'rollback-guide'
+        throw error
+      }
+    })
+    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const result = await api.editAndResend({ sessionId: 's1', messageId: 'u0', text: 'edited', fromScratch: true })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('rollback-guide')
     expect(session.events.length).toBe(before) // 零写入
@@ -136,7 +161,7 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环；2026-09-01 改为
     const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
     const result = await api.recall({ sessionId: 's1', messageId: 'u3' })
     expect(result.ok).toBe(true)
-    expect(session.events.length).toBe(before + 3) // marker + 临时 step 对
+    expect(session.events.length).toBe(before + 5) // 情形③完整 turn 信封：turn/start+step/start+marker+step/end+turn/end
   })
 
   it('restore(rollback 回档)豁免:即使遮蔽巨大也不拦(问题 A 修复)', async () => {
@@ -316,11 +341,11 @@ describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 
     expect(tokenMeterFoldOk(events)).toBe(false)
   })
 
-  it('guard 返回 t1Ok=false 但**不阻断**写入（编辑必须生效）', async () => {
+  it('guard 返回 t1Ok=false 但**不阻断**写入（编辑必须生效；调用方未传 wrapped 信封时的防御路径）', async () => {
     const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
     const log = vi.fn()
     const guard = createMarkerGuard({ log, prewriterFactory: factory })
-    // 会话事件里已有一次闭合的 step，随后追加 turn-null marker → T1 失败
+    // 会话事件里已有一次闭合的 step，随后追加裸 turn-null marker（无 wrapped 信封）→ T1 失败
     const session = {
       id: 's1',
       events: [
@@ -334,25 +359,66 @@ describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 
     expect(log).toHaveBeenCalledWith(expect.stringContaining('markerT1Broken'))
   })
 
-  it('host-core：轮次间编辑自动开临时 step，T1 通过，marker 落盘且不标注（0.4.10 根治）', async () => {
+  it('host-core：情形③完整 turn 信封（turn:null 已废弃），T1 通过，marker 落盘且不标注（0.4.17v3 P1/D8 治本）', async () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    // 临时 step 包裹后 token-meter 配对必然通过 → t1Ok=true
+    // 完整信封后 token-meter 配对必然通过 → t1Ok=true
     const validateMarker = vi.fn(async () => ({ t1Ok: true }))
     const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true) // 不阻断
     expect(result.value.markerT1Broken).toBe(false)
-    // marker 已落盘、turn 非 null、无标注
+    // marker 已落盘、真实 turn 号（铁律：不得为 null）、无标注
     let marker = null
     for (let i = session.events.length - 1; i >= 0; i--) {
       const e = session.events[i]
       if (e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') { marker = e; break }
     }
     expect(marker.type).toBe('assistant/message')
-    expect(marker.data.turn).not.toBeNull()
+    expect(marker.data.turn).toBe(1)
     expect(marker.data.step).toBe(1)
     expect(marker.data?.editor?.markerT1Broken).toBeUndefined()
+    // 校验钩子收到完整序列（turn/start → step/start → marker → step/end → turn/end）
+    expect(validateMarker).toHaveBeenCalledTimes(1)
+    const hookArgs = validateMarker.mock.calls[0]
+    expect(hookArgs[2]).toEqual({
+      wrappedBefore: [
+        { type: 'turn/start', data: { turn: 1 } },
+        { type: 'step/start', data: { turn: 1, step: 1 } },
+      ],
+      wrappedAfter: [
+        { type: 'step/end', data: { turn: 1, step: 1 } },
+        { type: 'turn/end', data: { turn: 1 } },
+      ],
+    })
+  })
+
+  it('guard：wrappedBefore/wrappedAfter 传入完整序列后 T1 自检通过（误报消除）', async () => {
+    const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
+    const log = vi.fn()
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    // 会话事件里已有一次闭合的 step，随后追加情形③ marker + 完整 turn 信封
+    const session = {
+      id: 's1',
+      events: [
+        { type: 'step/start', data: { turn: 1, step: 0 } },
+        { type: 'assistant/message', data: { turn: 1, step: 0 } },
+        { type: 'step/end', data: { turn: 1, step: 0 } },
+      ],
+    }
+    const envelope = { ...validEnvelope(), data: { ...validEnvelope().data, turn: 2, step: 1 } } // 情形③：turn=2（信封 turn），step=1
+    const result = await guard.validateMarkerAppend(session, envelope, {
+      wrappedBefore: [
+        { type: 'turn/start', data: { turn: 2 } },
+        { type: 'step/start', data: { turn: 2, step: 1 } },
+      ],
+      wrappedAfter: [
+        { type: 'step/end', data: { turn: 2, step: 1 } },
+        { type: 'turn/end', data: { turn: 2 } },
+      ],
+    })
+    expect(result).toEqual({ t1Ok: true }) // 完整序列配对通过 → 不再误报
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('markerT1Broken'))
   })
 
   it('host-core：t1Ok=true（正常）时不标注', async () => {
