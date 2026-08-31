@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.12] — 2026-08-31 · snapshot-point guard + session short code + review fixes
+
+- snapshot-point guard + session short code + review fixes
+
 ## [0.4.11] — 2026-08-30 · ForkView / VersionsView windowed list: O(N^2) indexOf to O(1) index math
 
 - ForkView / VersionsView windowed list: O(N^2) indexOf to O(1) index math
