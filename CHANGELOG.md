@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.13] — 2026-09-01 · 版本号推进（该版公开面改动见上一版说明）
+
+- 版本号推进（该版公开面改动见上一版说明）
+
 ## [0.4.12] — 2026-08-31 · snapshot-point guard + session short code + review fixes
 
 - snapshot-point guard + session short code + review fixes
