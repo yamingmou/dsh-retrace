@@ -56,7 +56,7 @@ describe('recall', () => {
     expect(result.ok).toBe(true)
     expect(result.value).toMatchObject({ op: 'recall', seq: 1, shadowed: 3, messageId: 'u1' })
     // Round [u1, a1, tool] shadowed from the surface; u2 + a2 + marker remain.
-    expect(surfaceSeqs(session)).toEqual([4, 5, 7])
+    expect(surfaceSeqs(session)).toEqual([4, 5, 8])
   })
 
   it('recalling an assistant reply removes its whole round too (input + output)', async () => {
@@ -67,7 +67,7 @@ describe('recall', () => {
 
     expect(result.ok).toBe(true)
     expect(result.value.shadowed).toBe(3)
-    expect(surfaceSeqs(session)).toEqual([4, 5, 7])
+    expect(surfaceSeqs(session)).toEqual([4, 5, 8])
   })
 
   it('appends an invisible replacement marker (empty assistant, surfaceOp replace)', async () => {
@@ -78,7 +78,7 @@ describe('recall', () => {
 
     const marker = lastMarker(session)
     expect(marker.type).toBe('assistant/message')
-    expect(marker.data.turn).not.toBeNull() // 轮次间编辑：临时 step 包裹，turn 非 null（0.4.10）
+    expect(marker.data.turn).toBe(1) // 无打开 turn → 情形③完整 turn 信封，turn = nextTurn（0.4.17v3 P1/D8 治本）
     expect(marker.data.step).toBe(1)
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 5 })
     expect(marker.sourceEventSeqs).toEqual([4, 5])
@@ -89,11 +89,14 @@ describe('recall', () => {
     })
     expect(marker.data.message.id).toMatch(/^retrace-recall-/)
     expect(marker.data.editor).toEqual({ targetSeq: 4, text: 'second question' })
-    // 临时 step 成对包裹：step/start 在 marker 前，step/end 在 marker 后
+    // 情形③完整 turn 信封：turn/start → step/start → marker → step/end → turn/end
     const idx = session.events.indexOf(marker)
+    expect(session.events[idx - 2].type).toBe('turn/start')
     expect(session.events[idx - 1].type).toBe('step/start')
     expect(session.events[idx + 1].type).toBe('step/end')
-    expect(session.events[idx - 1].data).toMatchObject({ turn: marker.data.turn, step: 1 })
+    expect(session.events[idx + 2].type).toBe('turn/end')
+    expect(session.events[idx - 2].data).toEqual({ turn: 1 })
+    expect(session.events[idx - 1].data).toEqual({ turn: 1, step: 1 })
   })
 
   it('reports the durable text of the recalled message', async () => {
@@ -218,7 +221,7 @@ describe('recall', () => {
 
       expect(result.ok).toBe(true)
       // Round is [u1, a1]; the injected context message stays in the surface.
-      expect(surfaceSeqs(session)).toEqual([1, 5])
+      expect(surfaceSeqs(session)).toEqual([1, 6])
       expect(result.value.shadowed).toBe(2)
     })
 
@@ -234,7 +237,7 @@ describe('recall', () => {
       const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
 
       expect(result.ok).toBe(true)
-      expect(surfaceSeqs(session)).toEqual([5])
+      expect(surfaceSeqs(session)).toEqual([6])
       expect(result.value.shadowed).toBe(3)
     })
   })
@@ -261,7 +264,7 @@ describe('editAndResend', () => {
       originalText: 'second question',
       fromScratch: false,
     })
-    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 7]) // [u1,a1,tool] kept; [u2,a2] shadowed + marker
+    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 8]) // [u1,a1,tool] kept; [u2,a2] shadowed + marker
     expect(agent.followup).toHaveBeenCalledTimes(1)
     const [sent] = agent.followup.mock.calls[0]
     expect(sent).toMatchObject({
@@ -287,7 +290,7 @@ describe('editAndResend', () => {
     expect(result.ok).toBe(true)
     expect(result.value.fromScratch).toBe(true)
     expect(result.value.shadowed).toBe(5)
-    expect(surfaceSeqs(session)).toEqual([7])
+    expect(surfaceSeqs(session)).toEqual([8])
     expect(agent.followup).toHaveBeenCalledTimes(1)
   })
 
@@ -342,7 +345,7 @@ describe('regenerate', () => {
 
     expect(result.ok).toBe(true)
     expect(result.value).toMatchObject({ op: 'regenerate', seq: 5, shadowed: 2 })
-    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 7])
+    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 8])
     expect(agent.followup).toHaveBeenCalledTimes(1)
     const [sent] = agent.followup.mock.calls[0]
     expect(sent.content[0].text).toBe('second question')
@@ -481,22 +484,73 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     expect(result.value.markerT1Broken).toBe(false)
   })
 
-  it('轮次间编辑（无打开 step）：自动开临时 step 包裹，marker turn 非 null，T1 通过（0.4.10 根治）', async () => {
+  it('轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', async () => {
     const { createEditorApi } = await import('../lib/host-core.js')
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
-    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    const validateMarker = vi.fn(async () => ({ t1Ok: true })) // 临时 step 后 T1 恒通过
+    // 带 phase 的 agent：lastTurn=0 → 信封消费 turn 1 → 推进到 1（重发落到 2）
+    const agent = makeAgent({ phase: { kind: 'idle', lastTurn: 0 } })
+    const { sessions, agents } = makeEnv(session, { agent })
+    // 校验钩子收到完整序列（turn/start → step/start → marker → step/end → turn/end）→ T1 恒通过
+    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
     const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
     const marker = lastMarker(session)
-    expect(marker.data.turn).not.toBeNull() // 不再 turn:null
+    expect(marker.data.turn).toBe(1) // 真实 turn 号（铁律：不得为 null——5e551001 白屏）
     expect(marker.data.step).toBe(1)
     expect(marker.data.editor?.markerT1Broken).toBeUndefined() // 不再标注
     expect(result.value.markerT1Broken).toBe(false)
-    // 临时 step 成对包裹
+    // 校验钩子收到完整序列（before + envelope + after）
+    expect(validateMarker).toHaveBeenCalledTimes(1)
+    const hookArgs = validateMarker.mock.calls[0]
+    expect(hookArgs[2]).toEqual({
+      wrappedBefore: [
+        { type: 'turn/start', data: { turn: 1 } },
+        { type: 'step/start', data: { turn: 1, step: 1 } },
+      ],
+      wrappedAfter: [
+        { type: 'step/end', data: { turn: 1, step: 1 } },
+        { type: 'turn/end', data: { turn: 1 } },
+      ],
+    })
+    // 完整 turn 信封落盘
     const idx = session.events.indexOf(marker)
+    expect(session.events[idx - 2].type).toBe('turn/start')
     expect(session.events[idx - 1].type).toBe('step/start')
     expect(session.events[idx + 1].type).toBe('step/end')
+    expect(session.events[idx + 2].type).toBe('turn/end')
+    expect(session.events[idx - 2].data).toEqual({ turn: 1 })
+    expect(session.events[idx - 1].data).toEqual({ turn: 1, step: 1 })
+    // loop 计数器已推进：重发/下一条消息落到 turn 2（防 duplicate start）
+    expect(agent.phase.lastTurn).toBe(1)
+  })
+
+  it('情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（5e551001 D8 现场）', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    // turn 5 打开着（turn/start 无 turn/end），step 1 已关
+    const session = makeSession().seed(
+      { type: 'turn/start', data: { turn: 5 } },
+      userMessage('u1', 'hi'),
+      { type: 'step/start', data: { turn: 5, step: 1 } },
+      assistantMessage('a1', 'yo'),
+      { type: 'step/end', data: { turn: 5, step: 1 } },
+    )
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
+    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    expect(result.ok).toBe(true)
+    const marker = lastMarker(session)
+    expect(marker.data.turn).toBe(5) // 用打开着的 turn 号（非 null、非 nextTurn）
+    expect(marker.data.step).toBe(2) // 新 step 号 = max step + 1（不覆盖旧 step draft）
+    // 信封 = 只有 step/start + step/end（turn/start 早已存在，无需新建）
+    const hookArgs = validateMarker.mock.calls[0]
+    expect(hookArgs[2]).toEqual({
+      wrappedBefore: [{ type: 'step/start', data: { turn: 5, step: 2 } }],
+      wrappedAfter: [{ type: 'step/end', data: { turn: 5, step: 2 } }],
+    })
+    const idx = session.events.indexOf(marker)
+    expect(session.events[idx - 1].data).toEqual({ turn: 5, step: 2 })
+    expect(session.events[idx + 1].data).toEqual({ turn: 5, step: 2 })
   })
 })

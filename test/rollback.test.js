@@ -205,9 +205,9 @@ describe('rollback execute', () => {
     )
     const { rollback, sessions } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'context' })
-    expect(result.markerSeq).toBe(6)
+    expect(result.markerSeq).toBe(7)
     expect(result.context.messages).toBe(1)
-    const marker = session.events[6] // marker 在临时 step 之后（step/start@5, marker@6）
+    const marker = session.events[7] // 情形③完整 turn 信封：turn/start@5, step/start@6, marker@7
     expect(marker.type).toBe('assistant/message')
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 4 })
     expect(marker.sourceEventSeqs).toEqual([4])
@@ -277,7 +277,7 @@ describe('rollback execute', () => {
     )
     const { rollback, writes } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'both' })
-    expect(result.markerSeq).toBe(6)
+    expect(result.markerSeq).toBe(7)
     expect(writes.length).toBe(1)
   })
 })

@@ -1,5 +1,39 @@
 ## [Unreleased]
 
+### 修复（2026-09-01 · P1 治本：marker 不再制造 D7 孤儿块 + 消除 T1 误报刷屏）
+
+**事故闭环**：5e551010 第 4 次修复后，用户再次编辑 → 又产生新孤儿 → 维护线再修 → 死循环。
+根因链（实机日志 + 官方代码逐层验证）：
+
+1. **孤儿块 = 我们的临时 step 用了真实 nextTurn**（0.4.10 引入）。轮次间编辑写
+   `step/start(241,1) → marker → step/end(241,1)`，没有 turn/start(241)；
+   随后 DSH 重发写 `turn/start(241)` —— 客户端 turn-tail 匹配器
+   （`dsh-client-runtime` `acceptMatch`）先收到 241 的 update、后收到 start →
+   抛 `conversation Context turn-tail:241 received an update before its start Match`
+   （真实会话重放 442723 处复现，与 D7 官方孤儿块同款形状，维护线反复删除的对象）。
+   官方 token-meter 只做 step 配对（不看 turn），因此离线 check 全绿 —— 体检盲区。
+2. **31 行 "marker will break /compact" = 自检误报**。prewrite-guard 的 T1 自检
+   把**裸信封** push 进 events 跑配对，而临时 step 的 step/start/step/end 是
+   校验**之后**才落盘的 → 每次轮次间编辑恒报 t1Ok=false → 刷屏 + markerT1Broken=true。
+
+**修复**：
+- 轮次间 marker 的临时 step **turn 恒 null**（`lib/host-core.js`）——客户端
+  `payloadCoordinates` 把 `data.turn === null` 映射为 SESSION_LOCATION（会话级事件，
+  不进任何 turn）：turn-tail 的 null 上下文永远等不到 start（不抛）；agent-loop
+  turn 计数器完全不受影响（重发仍用自己算的 turn 号，无碰撞）；foldSurface/
+  token-meter/location/turn-tail 四层用真实会话事件重放实测全过。
+- 临时 step 信封**先于校验构建**，经 `extra.wrapped` 传给校验钩子（`lib/prewrite-guard.js`
+  `validateMarkerAppend(session, envelope, extra)`）——T1 自检看到完整序列
+  `step/start → marker → step/end`，误报消除（不再刷屏、不再误标 markerT1Broken）。
+- 校验先于落盘的原则不变（8-25 事故闭环）；动态插件产物 `dynamic-host.js` 同步重建。
+
+**验证**：230 测试全绿（+2：wrapped 信封断言 + guard 误报消除）。真实会话
+session-5e551010 原位替换新形状重放：seq 连续 / T1=0 / M1·P=0 / S8 foldSurface ok /
+token-meter ok / **turn-tail matcher clean**。
+
+**遗留**：5e551010 中维护线第 4 次修复后、本版上线前的那次编辑仍留下旧形状孤儿块
+（442719-442721），需维护线按既有流程清理一次；本版之后的编辑不再产生新孤儿。
+
 ### 修复（2026-08-31 · 独立审查 3 项）
 
 - **rollback 豁免**：restore marker（`retrace-restore-` 前缀）不做回档幅度拦截——
