@@ -28,11 +28,10 @@ function validEnvelope(session) {
   }
 }
 
-describe('快照点守卫（2026-08-31 5e55100a 事故闭环：回档幅度保护）', () => {
-  // 10 个 surface 节点的会话:遮蔽 >4 个(40%) = 回档请求
+describe('快照点守卫（2026-08-31 5e55100a 事故闭环；2026-09-01 改为绝对遮蔽数判定）', () => {
+  // 会话工厂：n 个 surface 节点 + header(不算节点)
   function bigSession(n = 10) {
     const s = makeSession()
-    // 模型头(appendEditorMarker 需要 lastModelSource)
     s.appendRaw({ type: 'request/header', data: { header: { config: { provider: 'p', model: 'm' } } } })
     for (let i = 0; i < n; i++) {
       s.appendRaw({
@@ -47,6 +46,16 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环：回档幅度保�
     return s
   }
 
+  // 大事件数会话：events 数组直接构造(模拟大会话,绕过 surface 窗口化)
+  function hugeSession(nodeCount, eventCount) {
+    const s = bigSession(nodeCount)
+    // 填充到 eventCount(往 events 里塞非 surface 事件,如 chunk)
+    while (s.events.length < eventCount) {
+      s.appendRaw({ type: 'assistant/chunk', data: { turn: 999, step: 0, text: 'x' } })
+    }
+    return s
+  }
+
   function replaceEnvelope(sourceSeqs, start, end) {
     const env = validEnvelope()
     env.surfaceOp = { op: 'replace', start, end }
@@ -54,60 +63,52 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环：回档幅度保�
     return env
   }
 
-  it('rollbackShareOf:遮蔽占比 = sourceEventSeqs / surface 节点数', () => {
-    const s = bigSession(50) // surface.nodes = 50
-    expect(rollbackShareOf(s, replaceEnvelope([0, 1, 2, 3], 0, 3))).toBeCloseTo(0.08)
-    expect(rollbackShareOf(s, replaceEnvelope([0, 1, 2, 3, 4], 0, 4))).toBeCloseTo(0.1)
-    expect(rollbackShareOf(s, replaceEnvelope([0], 0, 0))).toBeCloseTo(0.02)
-    // 无 surface → 0(不拦截)
-    expect(rollbackShareOf({ surface: { nodes: [] } }, replaceEnvelope([0, 1], 0, 1))).toBe(0)
-    // validEnvelope 默认 sourceEventSeqs=[0]:50 节点 → 2%
-    expect(rollbackShareOf(bigSession(50), validEnvelope())).toBeCloseTo(0.02)
-    // 空 sourceEventSeqs → 0(不拦截)
-    expect(rollbackShareOf(bigSession(50), replaceEnvelope([], 0, 0))).toBe(0)
+  it('遮蔽 ≤ 40 节点(绝对阈值):即使大会话也不拦(2026-09-01 编辑最后一条修复)', async () => {
+    const factory = () => ({ validateAppend: () => ({ ok: true }) })
+    const guard = createMarkerGuard({ prewriterFactory: factory })
+    // 大会话(2500 事件)但只遮蔽 12 个节点 = 编辑最后一条 → 不拦
+    const session = hugeSession(50, 2500)
+    const envelope = replaceEnvelope(Array.from({ length: 12 }, (_, i) => i), 0, 11)
+    expect(rollbackShareOf(session, envelope)).toBe(0)
+    await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('遮蔽 > 40% → 抛 rollback-guide(回档请求拒绝落盘)', async () => {
+  it('遮蔽 > 40 节点 + 大会话(>2000 事件)→ 抛 rollback-guide(回档请求拒绝落盘)', async () => {
     const log = vi.fn()
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ log, prewriterFactory: factory })
-    const session = bigSession(50)
-    const envelope = replaceEnvelope(Array.from({ length: 25 }, (_, i) => i), 0, 24) // 25/50 = 50%
+    const session = hugeSession(60, 2500)
+    const envelope = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49) // 遮蔽 50 > 40
+    expect(rollbackShareOf(session, envelope)).toBeGreaterThan(0)
     await expect(guard.validateMarkerAppend(session, envelope)).rejects.toMatchObject({ code: 'rollback-guide' })
     expect(log).toHaveBeenCalledWith(expect.stringContaining('rollback guard'))
   })
 
-  it('遮蔽 ≤ 40% → 照常通过(不拦截,小范围编辑/撤回)', async () => {
+  it('遮蔽 > 40 节点但小会话(<2000 事件)→ 不拦(短会话豁免)', async () => {
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ prewriterFactory: factory })
-    const session = bigSession(50)
-    const envelope = replaceEnvelope(Array.from({ length: 20 }, (_, i) => i), 0, 19) // 20/50 = 40%(边界,不拦截)
-    await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
-  })
-
-  it('可覆盖阈值(rollbackRatio)', async () => {
-    const factory = () => ({ validateAppend: () => ({ ok: true }) })
-    const guard = createMarkerGuard({ prewriterFactory: factory, rollbackRatio: 0.8 })
-    const session = bigSession(50)
-    const envelope = replaceEnvelope(Array.from({ length: 30 }, (_, i) => i), 0, 29) // 60% < 80% → 通过
+    const session = bigSession(60) // events 少
+    const envelope = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49)
+    expect(rollbackShareOf(session, envelope)).toBe(0)
     await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
   })
 
   it('enabled=false 时跳过回档守卫(门控)', async () => {
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ prewriterFactory: factory, enabled: () => false })
-    const session = bigSession(50)
-    const envelope = replaceEnvelope(Array.from({ length: 40 }, (_, i) => i), 0, 39) // 80% 但门控关
+    const session = hugeSession(60, 2500)
+    const envelope = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49)
     await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('host-core 全链路:大范围 edit(编辑早期消息)→ rollback-guide,事件零写入', async () => {
-    // 22 surface 节点(>20 豁免阈值)的大会话;编辑 u1 → 遮蔽全量 → 100%
-    const session = bigSession(22)
+  it('host-core 全链路:大范围 edit(编辑早期消息,遮蔽 >40)→ rollback-guide,事件零写入', async () => {
+    // 60 surface 节点 + 2000+ chunk = 大会话;编辑 u0 → shadowSpanFrom 遮蔽到尾部
+    const session = hugeSession(60, 2200)
     const before = session.events.length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async (s, envelope) => {
-      if (Array.isArray(envelope.sourceEventSeqs) && envelope.sourceEventSeqs.length / s.surface.nodes.length > 0.4) {
+      const share = rollbackShareOf(s, envelope)
+      if (share > 0) {
         const error = new Error('rollback guard')
         error.code = 'rollback-guide'
         throw error
@@ -133,50 +134,34 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环：回档幅度保�
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async () => ({ t1Ok: true }))
     const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
-    const result = await api.recall({ sessionId: 's1', messageId: 'u3' }) // 撤 u3 轮(2/6 = 33% < 40%)
+    const result = await api.recall({ sessionId: 's1', messageId: 'u3' })
     expect(result.ok).toBe(true)
     expect(session.events.length).toBe(before + 3) // marker + 临时 step 对
   })
 
-  it('restore(rollback 回档)豁免:即使遮蔽 100% 也不拦(问题 A 修复)', async () => {
+  it('restore(rollback 回档)豁免:即使遮蔽巨大也不拦(问题 A 修复)', async () => {
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ prewriterFactory: factory })
-    const session = bigSession(50)
-    const env = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49) // 100%
+    const session = hugeSession(60, 2500)
+    const env = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49)
     env.data.message.id = 'retrace-restore-abcd1234-xyz' // restore marker
     expect(isRestoreMarker(env)).toBe(true)
     await expect(guard.validateMarkerAppend(session, env)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('非 restore 的 100% 遮蔽仍被拦(问题 A 不误伤编辑)', async () => {
+  it('非 restore 的 遮蔽 >40 节点 仍被拦(问题 A 不误伤编辑)', async () => {
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ prewriterFactory: factory })
-    const session = bigSession(50)
+    const session = hugeSession(60, 2500)
     const env = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49)
     expect(isRestoreMarker(env)).toBe(false)
     await expect(guard.validateMarkerAppend(session, env)).rejects.toMatchObject({ code: 'rollback-guide' })
   })
 
-  it('短会话豁免:≤ 20 节点(≈10 轮/20 条)即使遮蔽 100% 也不拦(用户实测调大)', async () => {
-    const factory = () => ({ validateAppend: () => ({ ok: true }) })
-    const guard = createMarkerGuard({ prewriterFactory: factory })
-    const short = bigSession(20) // 20 节点 = ROLLBACK_MIN_SURFACE
-    const env = replaceEnvelope(Array.from({ length: 20 }, (_, i) => i), 0, 19) // 100%
-    expect(rollbackShareOf(short, env)).toBe(0) // 短会话豁免
-    await expect(guard.validateMarkerAppend(short, env)).resolves.toEqual({ t1Ok: true })
-  })
-
-  it('恰好 ROLLBACK_MIN_SURFACE+1 节点(21)且遮蔽 100% → 触发守卫', async () => {
-    const factory = () => ({ validateAppend: () => ({ ok: true }) })
-    const guard = createMarkerGuard({ prewriterFactory: factory })
-    const session = bigSession(21)
-    const env = replaceEnvelope(Array.from({ length: 21 }, (_, i) => i), 0, 20) // 21/21 = 100%
-    expect(rollbackShareOf(session, env)).toBeCloseTo(1)
-    await expect(guard.validateMarkerAppend(session, env)).rejects.toMatchObject({ code: 'rollback-guide' })
-  })
-
-  it('ROLLBACK_MIN_SURFACE 导出常量 = 20', () => {
-    expect(ROLLBACK_MIN_SURFACE).toBe(20)
+  it('导出常量:ROLLBACK_MIN_SHADOWED=40, ROLLBACK_MIN_EVENTS=2000', () => {
+    const { ROLLBACK_MIN_SHADOWED, ROLLBACK_MIN_EVENTS } = require('../lib/prewrite-guard.js')
+    expect(ROLLBACK_MIN_SHADOWED).toBe(40)
+    expect(ROLLBACK_MIN_EVENTS).toBe(2000)
   })
 })
 
