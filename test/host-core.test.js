@@ -18,6 +18,7 @@ import {
   makeEnv,
   makeAgent,
   makeApi,
+  makeHooks,
 } from './helpers.js'
 
 /** header + u1 + a1 + tool + u2 + a2 — the standard two-round session. */
@@ -164,7 +165,7 @@ describe('recall', () => {
     const session = standardSession()
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const { createEditorApi } = await import('../lib/host-core.js')
-    const api = createEditorApi({}, sessions, agents, () => {})
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
     const result = await api.recall({ sessionId: 'nope', messageId: 'u1' })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('session-not-found')
@@ -191,7 +192,7 @@ describe('recall', () => {
     const flush = vi.fn()
     const { sessions, agents } = makeEnv(session, { agent: makeAgent(), flushImpl: flush })
     const { createEditorApi } = await import('../lib/host-core.js')
-    const api = createEditorApi({}, sessions, agents, () => {})
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
 
     await api.recall({ sessionId: 's1', messageId: 'u1' })
 
@@ -410,7 +411,7 @@ describe('concurrency and result envelope', () => {
       },
     })
     const { createEditorApi } = await import('../lib/host-core.js')
-    const api = createEditorApi({}, sessions, agents, () => {})
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
 
     const results = await Promise.all([
       api.recall({ sessionId: 's1', messageId: 'u1' }),
@@ -437,13 +438,13 @@ describe('concurrency and result envelope', () => {
 
 describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 事故闭环）', () => {
   it('findOpenStep：无 step/start → null（轮次间编辑）', async () => {
-    const { findOpenStep } = await import('../lib/host-core.js')
+    const { findOpenStep } = await import('../lib/adapter/dsh-writer.js')
     const session = makeSession().seed(userMessage('u1', 'hi'))
     expect(findOpenStep(session)).toBeNull()
   })
 
   it('findOpenStep：step 已关闭 → null', async () => {
-    const { findOpenStep } = await import('../lib/host-core.js')
+    const { findOpenStep } = await import('../lib/adapter/dsh-writer.js')
     const session = makeSession().seed(
       userMessage('u1', 'hi'),
       { type: 'step/start', data: { turn: 3, step: 1 } },
@@ -454,7 +455,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
   })
 
   it('findOpenStep：step 仍打开 → 返回 turn/step', async () => {
-    const { findOpenStep } = await import('../lib/host-core.js')
+    const { findOpenStep } = await import('../lib/adapter/dsh-writer.js')
     const session = makeSession().seed(
       userMessage('u1', 'hi'),
       { type: 'step/start', data: { turn: 3, step: 1 } },
@@ -473,7 +474,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     // 校验钩子：契约通过 + T1 自检通过（step 内 marker 不再破坏 token meter）
     const validateMarker = async () => ({ t1Ok: true })
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
     const marker = session.events[session.events.length - 1]
@@ -492,7 +493,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     const { sessions, agents } = makeEnv(session, { agent })
     // 校验钩子收到完整序列（turn/start → step/start → marker → step/end → turn/end）→ T1 恒通过
     const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
     const marker = lastMarker(session)
@@ -537,7 +538,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     )
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
     const marker = lastMarker(session)
@@ -552,5 +553,62 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     const idx = session.events.indexOf(marker)
     expect(session.events[idx - 1].data).toEqual({ turn: 5, step: 2 })
     expect(session.events[idx + 1].data).toEqual({ turn: 5, step: 2 })
+  })
+
+  it('情形② step = max(内存, 文件)+1：文件滞后时内存覆盖（连续编辑不冲突，独立审查 2026-09-02 处置）', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    const session = makeSession().seed(
+      { type: 'turn/start', data: { turn: 5 } },
+      { type: 'step/start', data: { turn: 5, step: 1 } },
+      userMessage('u1', 'hi'),
+      assistantMessage('a1', 'yo'),
+      { type: 'step/end', data: { turn: 5, step: 1 } },
+      { type: 'step/start', data: { turn: 5, step: 2 } },
+      userMessage('u2', 'again'),
+      assistantMessage('a2', 'more'),
+      { type: 'step/end', data: { turn: 5, step: 2 } },
+    )
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
+    // 文件滞后:readMaxStep 恒返回 2(flush 未落盘,文件看不到本进程刚写的 marker step)
+    const readMaxStep = vi.fn(async () => 2)
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker, readMaxStep }))
+    // 同一打开 turn 内连续两次情形②(编辑不同消息,避免目标被遮蔽)
+    const r1 = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    const m1 = lastMarker(session)
+    expect(r1.ok).toBe(true)
+    expect(m1.data.step).toBe(3) // max(内存2, 文件2)+1 = 3
+    const r2 = await api.recall({ sessionId: 's1', messageId: 'a2' })
+    const m2 = lastMarker(session)
+    expect(r2.ok).toBe(true)
+    expect(m2.data.step).toBe(4) // 内存已见 step 3 → max(内存3, 文件2)+1 = 4,不与 m1 冲突
+    expect(m1.data.step).not.toBe(m2.data.step) // step key 唯一
+  })
+
+  it('情形② + readMaxStep：从文件全量算 step（窗口化内存不可信，5e551001 复盘 §五）', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    // turn 5 打开着;内存视图只含 step 1,但文件全量含 step 1..45(窗口外)
+    const session = makeSession().seed(
+      { type: 'turn/start', data: { turn: 5 } },
+      userMessage('u1', 'hi'),
+      { type: 'step/start', data: { turn: 5, step: 1 } },
+      assistantMessage('a1', 'yo'),
+      { type: 'step/end', data: { turn: 5, step: 1 } },
+    )
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
+    // readMaxStep 模拟从文件读全量:turn 5 实际已有 step 45(窗口外,内存看不到);
+    // 现在经 writer 依赖注入(makeHooks),不再经 args 传递
+    const readMaxStep = vi.fn(async () => 45)
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker, readMaxStep }))
+    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    expect(result.ok).toBe(true)
+    const marker = lastMarker(session)
+    expect(marker.data.turn).toBe(5)
+    expect(marker.data.step).toBe(46) // 用文件全量 max(45)+1,不与窗口外 step 冲突
+    expect(readMaxStep).toHaveBeenCalledWith('s1', 5)
+    const idx = session.events.indexOf(marker)
+    expect(session.events[idx - 1].data).toEqual({ turn: 5, step: 46 })
+    expect(session.events[idx + 1].data).toEqual({ turn: 5, step: 46 })
   })
 })

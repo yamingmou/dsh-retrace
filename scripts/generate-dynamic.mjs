@@ -31,20 +31,33 @@ const indent = (text, spaces) =>
 // ---------------------------------------------------------------------------
 {
   const hostCore = read('lib/host-core.js')
-  // host-core.js is pure ESM with `export const/function` — strip the export
-  // keyword so the declarations live in the dynamic apply scope.
-  const inline = hostCore.replace(/^export /gm, '').trim()
+  const writerSrc = read('lib/adapter/dsh-writer.js')
+  // host-core.js / dsh-writer.js 是纯 ESM（host-core 零 import；dsh-writer 只
+  // import host-core 的符号）——strip export 与 import，声明落进动态 apply 作用域
+  // （dsh-writer 的 import 符号由 inline 后的 host-core 提供，同 scope 可见）。
+  const inlineHost = hostCore.replace(/^export /gm, '').trim()
+  const inlineWriter = writerSrc
+    .replace(/^import .* from '[^']*';?\n/gm, '') // 删 import（符号来自 inline host-core）
+    .replace(/^export /gm, '')
+    .trim()
   const dynamicHost = `/**
  * GENERATED FILE — do not edit by hand.
- * Source of truth: lib/host-core.js + the wrapper below (scripts/generate-dynamic.mjs).
+ * Source of truth: lib/host-core.js + lib/adapter/dsh-writer.js + the wrapper
+ * below (scripts/generate-dynamic.mjs).
  */
 return {
   inject: ['sessions', 'agents'],
   apply(ctx) {
     const { sessions, agents } = ctx
     const log = (line) => console.error(\`retrace: \${line}\`)
-${indent(inline, 4)}
-    const api = createEditorApi(ctx, sessions, agents, log)
+${indent(inlineHost, 4)}
+${indent(inlineWriter, 4)}
+    // 遮蔽写入器（DSH 三情形翻译）。动态路径无 prewrite guard 与文件全量
+    // readMaxStep——step 分配仅内存覆盖（maxStepInTurn），窗口外既有 step 无法
+    // 感知（5e551001 同类风险，独立审查 2026-09-02 记录）；正式装配在
+    // lib/index.js 注入 readMaxStep（文件全量）与 validateMarker。
+    const markerWriter = createDshMarkerWriter({ agents, log })
+    const api = createEditorApi(ctx, sessions, agents, log, { writeMarker: markerWriter.writeMarker })
     const disposers = [
       harness.handle('retrace.recall', (args) => api.recall(args)),
       harness.handle('retrace.editAndResend', (args) => api.editAndResend(args)),

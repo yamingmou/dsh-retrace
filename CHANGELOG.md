@@ -1,38 +1,89 @@
 ## [Unreleased]
 
-### 修复（2026-09-01 · P1 治本：marker 不再制造 D7 孤儿块 + 消除 T1 误报刷屏）
+### 重构（2026-09-02 · 抽象设计落地：遮蔽写入器下沉 adapter）
 
-**事故闭环**：5e551010 第 4 次修复后，用户再次编辑 → 又产生新孤儿 → 维护线再修 → 死循环。
-根因链（实机日志 + 官方代码逐层验证）：
+- **新增 `lib/adapter/dsh-writer.js`**：`createDshMarkerWriter`——DSH 三情形
+  turn 赋值 + 完整 turn 信封 + agent-loop 计数器推进 + step 号窗口化防御全部
+  隔离在 adapter（零 import 链，可 inline 进 dynamic-host）；
+- **host-core 纯业务化**：op 只调 `writeMarker(session, span, {op, targetSeq,
+  originalText})`（业务意图），不再感知 turn/step；DSH 几何从 host-core 删除；
+- **index.js / rollback.js**：装配 writer（validateMarker + readMaxStep 文件全量）；
+  **generate-dynamic.mjs**：inline dsh-writer，动态插件路径功能完整；
+- 对应抽象设计：`工程-生产级运行时/编辑撤销分支跳过-消息列表投影抽象-设计-20260902.md`
+  （编辑/撤销/分支/跳过 = 通用消息列表投影，DSH 翻译成本隔离 adapter）；
+- 233 测试绿。
 
-1. **孤儿块 = 我们的临时 step 用了真实 nextTurn**（0.4.10 引入）。轮次间编辑写
-   `step/start(241,1) → marker → step/end(241,1)`，没有 turn/start(241)；
-   随后 DSH 重发写 `turn/start(241)` —— 客户端 turn-tail 匹配器
-   （`dsh-client-runtime` `acceptMatch`）先收到 241 的 update、后收到 start →
-   抛 `conversation Context turn-tail:241 received an update before its start Match`
-   （真实会话重放 442723 处复现，与 D7 官方孤儿块同款形状，维护线反复删除的对象）。
-   官方 token-meter 只做 step 配对（不看 turn），因此离线 check 全绿 —— 体检盲区。
-2. **31 行 "marker will break /compact" = 自检误报**。prewrite-guard 的 T1 自检
-   把**裸信封** push 进 events 跑配对，而临时 step 的 step/start/step/end 是
-   校验**之后**才落盘的 → 每次轮次间编辑恒报 t1Ok=false → 刷屏 + markerT1Broken=true。
+### 修复（2026-09-02 · 独立审查处置：情形② step = max(内存,文件)+1 + 死代码清理）
 
-**修复**：
-- 轮次间 marker 的临时 step **turn 恒 null**（`lib/host-core.js`）——客户端
-  `payloadCoordinates` 把 `data.turn === null` 映射为 SESSION_LOCATION（会话级事件，
-  不进任何 turn）：turn-tail 的 null 上下文永远等不到 start（不抛）；agent-loop
-  turn 计数器完全不受影响（重发仍用自己算的 turn 号，无碰撞）；foldSurface/
-  token-meter/location/turn-tail 四层用真实会话事件重放实测全过。
-- 临时 step 信封**先于校验构建**，经 `extra.wrapped` 传给校验钩子（`lib/prewrite-guard.js`
-  `validateMarkerAppend(session, envelope, extra)`）——T1 自检看到完整序列
-  `step/start → marker → step/end`，误报消除（不再刷屏、不再误标 markerT1Broken）。
-- 校验先于落盘的原则不变（8-25 事故闭环）；动态插件产物 `dynamic-host.js` 同步重建。
+独立 subagent 审查（不带认知，实测 + 真实夹具）确认 3e2262a 为纯搬迁、D7/D8
+不可重演、可接受上线；处置 2 个 ⚠️ 风险与附注：
 
-**验证**：230 测试全绿（+2：wrapped 信封断言 + guard 误报消除）。真实会话
-session-5e551010 原位替换新形状重放：seq 连续 / T1=0 / M1·P=0 / S8 foldSurface ok /
-token-meter ok / **turn-tail matcher clean**。
+- **情形② step 分配改 `max(内存, 文件) + 1`**（lib/adapter/dsh-writer.js）：
+  - 内存 maxStepInTurn 覆盖**本进程连续编辑**（文件 flush 滞后时文件读不到
+    刚写的 marker——同一打开 turn 内连续两次情形② 若只信文件会取同一 step →
+    step key 冲突白屏）；文件全量 readMaxStep 覆盖**窗口外既有 step**（host
+    窗口化内存不可信）；双向取大，两类场景实测复现已修复（T3=0）；
+- **动态路径（dynamic-host inline）降级文档化**：无 readMaxStep → 仅内存覆盖，
+  窗口外 step 无法感知（5e551001 同类风险，已记录；正式装配 lib/index.js 注入
+  文件全量 readMaxStep）；
+- **死代码清理**：http.js / index.js 的 args.readMaxStep 注入已无人消费（writer
+  readMaxStep 来自装配闭包）——删除；
+- **测试 +1**：连续情形② + 文件滞后回归（m1 step 3 / m2 step 4 不冲突）。
+  234 测试绿。
 
-**遗留**：5e551010 中维护线第 4 次修复后、本版上线前的那次编辑仍留下旧形状孤儿块
-（442719-442721），需维护线按既有流程清理一次；本版之后的编辑不再产生新孤儿。
+### 修复（2026-09-02 · 情形②窗口化防御：step 号从文件全量算）
+
+- 复盘 2026-09-02（5e551001 白屏真正根因 = step 节点 key 冲突）：情形②
+  （开 turn 无 step）分配新 step 号时，host 窗口化 session.events 可能看不到
+  turn 内全部 step → 算小 → 新 step 号撞上窗口外既有 step = step key 冲突白屏
+  （与 5e551002 103:1 同型）；
+- `adapter/dsh.js` 加 `maxStepInTurnFromFile`（从文件全量事件算 turn 内最大
+  step；readEvents 拆出 readEventsFromFile 便于测试注入）；host-core 情形②
+  优先用注入的 `readMaxStep` 回调（失败 fallback 内存扫描）；index.js/http.js
+  注入（与 span 同源，读文件全量事实）；
+- 配套：dsh-log-contract T3（step key 唯一）/ T4（turn 缺失）渲染层规则已加入
+  check + prewrite（防再犯）；
+- 233 测试绿（+2：readMaxStep 优先 + adapter maxStepInTurnFromFile）；
+- 抽象设计落盘：`工程-生产级运行时/编辑撤销分支跳过-消息列表投影抽象-设计-20260902.md`
+  （编辑/撤销/分支/跳过 = 通用消息列表投影操作，DSH 翻译成本隔离在 adapter）。
+
+### 修复（2026-09-01 · P1/D8 治本 v3：三情形 turn 赋值 — 铁律不得写 turn:null + 消除 T1 误报刷屏）
+
+**两代错方案复盘（重要教训）**：
+
+| 版本 | 轮次间 marker 形状 | 后果 |
+|---|---|---|
+| 0.4.10-0.4.16 | 裸 step + 真实 nextTurn | **D7 同款孤儿块**：重发 turn/start 前先产生该 turn 的 update → 客户端 turn-tail 抛 `update before its start Match` → 维护线反复删（5e551010 第 4 次修复） |
+| 0.4.17（已废弃） | 临时 step **turn:null** | **D8 白屏死循环**（5e551001）：客户端渲染状态机对 turn=null 无法归属任何 turn → Renderer CPU 31.8% → 白屏「载入历史」；维护线把 null→95 后恢复，用户验证 |
+| **0.4.17v3（本版）** | **三情形 turn 赋值**（见下） | 五层（foldSurface/token-meter/location/turn-tail/**客户端渲染**）全绿 |
+
+**教训**：0.4.17 的四层验证漏了**客户端渲染层**——离线契约/匹配器都过不等于客户端不死循环。维护线 `tools/validate.mjs` 已把 step 包裹/消息本体的 null-turn 判为**致命**；**任何 step/marker 事件不得写 turn:null**（铁律）。
+
+**治本（三情形，`lib/host-core.js appendEditorMarker`）**：
+- ① **有打开的 step**（回合中编辑）：marker 携带该 step 的 turn/step（不变）；
+- ② **无打开 step 但有打开着的 turn**（回合内 step 间隙编辑——5e551001 现场）：
+  marker 用该 turn 号 + 新 step 号（turn 内 max step + 1）→ turn/start 早已在
+  marker 之前 → 无孤儿、无 null、不占新 turn 号（重发用 agent-loop 计数器，无碰撞）；
+- ③ **无打开 turn**（真轮次间）：开**完整 turn 信封**（turn/start → step/start →
+  marker → step/end → turn/end）用 nextTurn，并把 agent-loop 的 `lastTurn` 推进
+  一位（`advanceLoopTurn`：仅 idle 且 `lastTurn+1 === consumedTurn` 时推进，守卫
+  防误伤；信封的 turn/start 让文件 max turn 前移，**跨重启自愈**）——否则重发/
+  下一条消息复用同一 turn 号（turn-tail `more than one start`）。
+
+**实现**：
+- `lib/host-core.js`：三情形 + `findOpenTurn`/`maxStepInTurn`/`advanceLoopTurn`；
+  recall/edit/regenerate/rollback 传入 agent；
+- `lib/prewrite-guard.js`：T1 自检契约改 `wrappedBefore`/`wrappedAfter`（完整序列
+  before + envelope + after）——消除"自检只见裸信封 → 恒报 markerT1Broken"误报
+  （0.4.12-0.4.16 每次轮次间编辑刷 31 行日志的根因）；校验先于落盘原则不变；
+- `lib/rollback.js` / `lib/index.js`：传 `agents`；动态产物 `dynamic-host.js` 同步重建。
+
+**验证**：231 测试全绿（+2：情形②开 turn+新 step / 情形③信封+推进，含 loop 计数器
+推进断言）。真实会话重放：5e551001（修复前备份）case2 四层全绿；case3 合成序列
+四层全绿（对照：旧孤儿形状 THROW `update-before-start`、turn:null 形状触发白屏）。
+
+**遗留**：5e551010 旧孤儿块已被维护线清除（2026-09-01 23:32，0 marker）；5e551001
+已由维护线 null→95 修复（用户验证）；本版之后编辑不再产生孤儿块/空 turn。
 
 ### 修复（2026-08-31 · 独立审查 3 项）
 
