@@ -12,7 +12,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createMarkerGuard, rollbackShareOf, isRestoreMarker, ROLLBACK_MIN_SURFACE } from '../lib/prewrite-guard.js'
 import { createEditorApi } from '../lib/host-core.js'
-import { userMessage, assistantMessage, toolRow, headerEvent, makeSession, makeEnv, makeAgent } from './helpers.js'
+import { userMessage, assistantMessage, toolRow, headerEvent, makeSession, makeEnv, makeAgent, makeHooks } from './helpers.js'
 
 function validEnvelope(session) {
   return {
@@ -114,7 +114,7 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环；2026-09-01 改为
         throw error
       }
     })
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.editAndResend({ sessionId: 's1', messageId: 'u0', text: 'edited' })
     expect(result.ok).toBe(true) // round 遮蔽(1 轮)→ 不触发守卫
     // marker 写入,遮蔽的是 u0 轮(2 个节点)
@@ -139,7 +139,7 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环；2026-09-01 改为
         throw error
       }
     })
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.editAndResend({ sessionId: 's1', messageId: 'u0', text: 'edited', fromScratch: true })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('rollback-guide')
@@ -158,7 +158,7 @@ describe('快照点守卫（2026-08-31 5e55100a 事故闭环；2026-09-01 改为
     const before = session.events.length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'u3' })
     expect(result.ok).toBe(true)
     expect(session.events.length).toBe(before + 5) // 情形③完整 turn 信封：turn/start+step/start+marker+step/end+turn/end
@@ -277,7 +277,7 @@ describe('host-core hooks.validateMarker', () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async () => {})
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
     expect(validateMarker).toHaveBeenCalledTimes(1)
@@ -297,7 +297,7 @@ describe('host-core hooks.validateMarker', () => {
       error.code = 'marker-rejected'
       throw error
     }
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('marker-rejected')
@@ -307,7 +307,7 @@ describe('host-core hooks.validateMarker', () => {
   it('skips the hook when none is provided (dynamic-plugin path)', async () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    const api = createEditorApi({}, sessions, agents, () => {})
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
   })
@@ -364,7 +364,7 @@ describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     // 完整信封后 token-meter 配对必然通过 → t1Ok=true
     const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true) // 不阻断
     expect(result.value.markerT1Broken).toBe(false)
@@ -425,7 +425,7 @@ describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = async () => ({ t1Ok: true })
-    const api = createEditorApi({}, sessions, agents, () => {}, { validateMarker })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
     expect(result.value.markerT1Broken).toBe(false)
