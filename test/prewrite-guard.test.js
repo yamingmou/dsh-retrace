@@ -388,7 +388,7 @@ describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 
       ],
       wrappedAfter: [
         { type: 'step/end', data: { turn: 1, step: 1 } },
-        { type: 'turn/end', data: { turn: 1 } },
+        { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
       ],
     })
   })
@@ -414,7 +414,7 @@ describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 
       ],
       wrappedAfter: [
         { type: 'step/end', data: { turn: 2, step: 1 } },
-        { type: 'turn/end', data: { turn: 2 } },
+        { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } },
       ],
     })
     expect(result).toEqual({ t1Ok: true }) // 完整序列配对通过 → 不再误报
