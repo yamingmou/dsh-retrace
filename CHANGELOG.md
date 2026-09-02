@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.19] — 2026-09-02 · session short code shown for real: official rename pin + live derivation + boot batching
+
+- session short code shown for real: official rename pin + live derivation + boot batching
+
 ## [0.4.18] — 2026-09-02 · hotfix: turn/end reason.kind
 
 - hotfix: turn/end reason.kind

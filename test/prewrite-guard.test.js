@@ -18,8 +18,9 @@ function validEnvelope(session) {
   return {
     type: 'assistant/message',
     data: {
-      turn: null,
-      step: null,
+      // 新形状(0.4.17v3+):真实 turn/step——T4(turn 缺失)写前拦截拒绝 turn:null marker
+      turn: 1,
+      step: 1,
       message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
       editor: { targetSeq: 0, text: 'hi' },
     },
