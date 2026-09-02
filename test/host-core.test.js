@@ -511,7 +511,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
       ],
       wrappedAfter: [
         { type: 'step/end', data: { turn: 1, step: 1 } },
-        { type: 'turn/end', data: { turn: 1 } },
+        { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
       ],
     })
     // 完整 turn 信封落盘
