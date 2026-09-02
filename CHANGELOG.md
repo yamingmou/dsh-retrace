@@ -1,3 +1,18 @@
+## [0.4.18] — 2026-09-02 · hotfix：情形③ turn/end 补 reason.kind（5e551005 malformed）
+
+### 修复（2026-09-02 · 5e551005 malformed turn/end —— 维护线确认 + 逐字镜像官方契约）
+
+- 情形③完整 turn 信封的 `turn/end` 漏 `reason.kind` → 官方 validation 拒绝
+  （`turn/end = { turn, reason: { kind } }`，dsh-agent-loop:620）→ 会话加载失败
+  SessionPersistenceCorruptionError → **每次编辑都触发**（5e551005，维护线
+  tools/validate.mjs 固化）；
+- 修复：`lib/adapter/dsh-writer.js` 情形③ wrappedAfter 的 turn/end 带
+  `reason: { kind: 'completed' }`（信封 turn 立即完整关闭）；dynamic-host
+  regenerate；测试断言更新（信封形状 + reason.kind）；场景重演验证
+  malformed 0；234 测试绿；
+- 配套：dsh-log-contract 0.3.9 加 T5（turn/end reason.kind 缺失 = error，
+  check + prewrite 防再犯）。
+
 ## [0.4.17] — 2026-09-02 · P1/D8 三情形治本 + 窗口化防御 + 遮蔽写入器下沉 adapter
 
 ### 重构（2026-09-02 · 抽象设计落地：遮蔽写入器下沉 adapter）
