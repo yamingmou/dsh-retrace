@@ -10,6 +10,7 @@
  */
 import { vi } from 'vitest'
 import { createEditorApi } from '../lib/host-core.js'
+import { createDshMarkerWriter } from '../lib/adapter/dsh-writer.js'
 
 /** User message event factory (real user input → round boundary). */
 export function userMessage(id, text, extra = {}) {
@@ -95,6 +96,7 @@ export function makeSession() {
   const events = []
   const surface = { nodes: [] }
   const session = {
+    id: 's1',
     events,
     surface,
     seed(...descriptors) {
@@ -149,8 +151,18 @@ export function makeAgent(overrides = {}) {
   return { status: 'idle', followup, ...overrides }
 }
 
+/**
+ * 默认 hooks(2026-09-02 抽象设计落地):真实 DSH 遮蔽写入器 + 默认校验通过。
+ * 测试可覆盖 validateMarker(断言 writer→校验链路)或整体覆盖。
+ */
+export function makeHooks(agents, overrides = {}) {
+  const validateMarker = overrides.validateMarker ?? (async () => ({ t1Ok: true }))
+  const writer = createDshMarkerWriter({ agents, validateMarker, readMaxStep: overrides.readMaxStep })
+  return { validateMarker, writeMarker: writer.writeMarker, ...overrides }
+}
+
 /** Convenience: one ready-to-use host API over a seeded session. */
 export function makeApi(session, agent, { flushImpl } = {}) {
   const { sessions, agents } = makeEnv(session, { agent, flushImpl })
-  return createEditorApi({}, sessions, agents, () => {})
+  return createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
 }

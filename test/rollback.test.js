@@ -6,6 +6,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { createRollbackExecutor } from '../lib/rollback.js'
+import { makeAgent, makeHooks } from './helpers.js'
 
 /** User message event (real user input → round boundary). */
 function userMessage(id, text, extra = {}) {
@@ -148,7 +149,9 @@ function makeRollback(session, seamOverrides = {}, ctxOverrides = {}) {
   const { ctx, writes, spawns } = makeCtx()
   const seam = makeSeam(seamOverrides)
   const sessions = { get: (id) => (id === 's1' ? session : undefined), flush: vi.fn(async () => {}) }
-  const rollback = createRollbackExecutor({ ctx: { ...ctx, ...ctxOverrides }, sessions, seam, log: () => {} })
+  const agents = { get: () => makeAgent() }
+  const writeMarker = makeHooks(agents).writeMarker
+  const rollback = createRollbackExecutor({ ctx: { ...ctx, ...ctxOverrides }, sessions, seam, writeMarker, log: () => {} })
   return { rollback, seam, writes, spawns, sessions }
 }
 

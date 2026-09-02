@@ -69,5 +69,34 @@ describe('adapter/dsh dshAdapter(DSH 平台适配器)', () => {
   it('暴露 reader 接口(EventReader 契约)', () => {
     expect(typeof dshAdapter.reader.readEvents).toBe('function')
     expect(typeof dshAdapter.spanFromFile).toBe('function')
+    expect(typeof dshAdapter.maxStepInTurnFromFile).toBe('function')
+  })
+
+  it('maxStepInTurnFromFile:从全量事件算 turn 内最大 step(情形②窗口化防御)', async () => {
+    // 用临时会话文件验证(走真实 loadSessionLog 路径)
+    const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'retrace-adapter-'))
+    try {
+      const events = [
+        { type: 'session', version: 0, id: 's1', createdAt: 1, cwd: '/tmp' },
+        { type: 'user/message', seq: 1, time: 2, data: { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } } },
+        { type: 'step/start', seq: 2, time: 3, data: { turn: 5, step: 1 } },
+        { type: 'step/start', seq: 3, time: 4, data: { turn: 5, step: 45 } },
+        { type: 'step/start', seq: 4, time: 5, data: { turn: 6, step: 3 } },
+      ]
+      const file = join(dir, 'session.jsonl')
+      writeFileSync(file, events.map((e) => JSON.stringify(e)).join('\n') + '\n')
+      // 直接测函数:注入文件路径(生产走 sessionFilePath 找 ~/.dsh)
+      const max = await dshAdapter.maxStepInTurnFromFile('s1', 5, file)
+      expect(max).toBe(45)
+      const max6 = await dshAdapter.maxStepInTurnFromFile('s1', 6, file)
+      expect(max6).toBe(3)
+      const missing = await dshAdapter.maxStepInTurnFromFile('ghost', 5, '/nonexistent/session.jsonl')
+      expect(missing).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
