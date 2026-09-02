@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.18] — 2026-09-02 · hotfix: turn/end reason.kind
+
+- hotfix: turn/end reason.kind
+
 ## [0.4.17] — 2026-09-02 · edit-path fixes + windowed rendering defense + shadow writer moved into the adapter
 
 - edit-path fixes + windowed rendering defense + shadow writer moved into the adapter
