@@ -1,3 +1,27 @@
+## [0.4.19] — 2026-09-02 · 短码真正展示：官方 rename pin + 实时推导（解决"列表/标题没显示过"）
+
+### 修复（2026-09-02 · 会话短码展示 —— 用户实测"短码在列表和窗口标题没展示过"）
+
+**根因（三层）**：① 改标题的唯一机制 store.rename 只在打开 ForkView/RetraceView
+（版本/分支标签）时触发——默认对话视图/会话列表从不触发；② host 编辑时用
+session.append 写标题——不更新官方 title 投影（且被自动改名覆盖）；③ 5e551005
+这类新 fork 会话不在短码表（维护线 8-31 后未刷新）→ 只有 FNV 兜底（不可读）。
+
+**修复**：
+- **官方 rename pin**：host 用 `ctx.get('sessionTitle').rename(session, '[短码] 原标题')`
+  ——官方语义 = 写 user source title → **永久关闭自动改名**（onUserMessage 见
+  user source 不再生成）+ 标题投影立即刷新（5e551005 已 pin"项目讨论"，正是此机制）；
+  替代旧的 session.append（append 不更新投影）。edit 时 ensureBadgeTitle /
+  setBadgeTitle / setUserTitle / initBadgeTitles 全部走 rename pin；
+- **短码实时推导**：不在短码表 → 扫全部会话 header（工作区 createdAt 序号 + 父链，
+  与维护线 generate-session-codes.mjs 同规则，表的新鲜超集）——**5e551005 = member-71member-65**；
+  与维护线表 103/103 一致验证；配套 dsh-log-contract 0.3.10 readSessionHeader
+  （帧1 轻量读取，全量 109 会话 ≈ 30ms，懒加载缓存）；
+- **启动批量 pin**：host apply 后自动批量处理驻留会话（延迟重试 + 30s 补跑），
+  用户打开 DSH 侧边栏即见 `[短码] 名称`——不依赖 ForkView、不依赖先编辑；
+- 短码三级：archive 表 → 实时推导 → FNV 兜底；
+- 234 测试绿；desktop file: 挂载已含新代码。
+
 ## [0.4.18] — 2026-09-02 · hotfix：情形③ turn/end 补 reason.kind（5e551005 malformed）
 
 ### 修复（2026-09-02 · 5e551005 malformed turn/end —— 维护线确认 + 逐字镜像官方契约）
