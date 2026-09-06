@@ -10,7 +10,7 @@
     "build": "node scripts/generate-dynamic.mjs && node scripts/build-client.mjs",
     "check": "node scripts/check-syntax.mjs && node scripts/check-dynamic.mjs",
     "test": "vitest run",
-    "prepublishOnly": "pnpm check && pnpm build && pnpm test"
+    "prepublishOnly": "node scripts/check-pkg-meta.mjs && pnpm check && pnpm build && pnpm test"
   },
   "exports": {
     ".": {
