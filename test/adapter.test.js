@@ -7,15 +7,17 @@
 import { describe, it, expect } from 'vitest'
 import { createAdapter, NULL_ADAPTER } from '../lib/adapter/contract.js'
 import { computeSpan, isRoundBoundary, dshAdapter } from '../lib/adapter/dsh.js'
+import { foldSurface } from '@deepseek-ai/dsh-session'
 
-// 通用事件夹具(3 轮对话)
+// 通用事件夹具(3 轮对话)——surface 候选须带 surfaceOp:'append'(官方 foldSurface 语义,
+// computeSpan 现在重放 foldSurface 得真实 nodes,2026-09-07 修复后必需)
 const events = [
-  { seq: 0, type: 'user/message', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
-  { seq: 1, type: 'assistant/message', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: 'yo' }] } } },
-  { seq: 2, type: 'user/message', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: 'again' }] } },
-  { seq: 3, type: 'assistant/message', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: 'ok' }] } } },
-  { seq: 4, type: 'user/message', data: { id: 'u3', source: { kind: 'user' }, content: [{ type: 'text', text: 'more' }] } },
-  { seq: 5, type: 'assistant/message', data: { turn: 3, message: { id: 'a3', content: [{ type: 'text', text: 'done' }] } } },
+  { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
+  { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: 'yo' }] } } },
+  { seq: 2, type: 'user/message', surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: 'again' }] } },
+  { seq: 3, type: 'assistant/message', surfaceOp: 'append', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: 'ok' }] } } },
+  { seq: 4, type: 'user/message', surfaceOp: 'append', data: { id: 'u3', source: { kind: 'user' }, content: [{ type: 'text', text: 'more' }] } },
+  { seq: 5, type: 'assistant/message', surfaceOp: 'append', data: { turn: 3, message: { id: 'a3', content: [{ type: 'text', text: 'done' }] } } },
 ]
 
 describe('adapter/contract(适配器层契约)', () => {
@@ -98,5 +100,56 @@ describe('adapter/dsh dshAdapter(DSH 平台适配器)', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 ISSUE-20260907113201 回归）', () => {
+  // 合成:2 轮对话 + 一个 replace marker(遮蔽轮1,模拟已编辑会话)
+  function withMarker() {
+    return [
+      { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
+      { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: 'yo' }] } } },
+      // marker 遮蔽 [0..1](轮1),replace 节点 seq 2 插入位置 0 → nodes 非 seq 单调
+      { seq: 2, type: 'assistant/message', surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [0, 1], data: { turn: 1, message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 0, text: 'hi' } } },
+      { seq: 3, type: 'user/message', surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: 'again' }] } },
+      { seq: 4, type: 'assistant/message', surfaceOp: 'append', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: 'ok' }] } } },
+    ]
+  }
+
+  it('已被遮蔽的消息(marker 遮蔽过)→ null(target-shadowed,不再 not found/死锁)', () => {
+    const events = withMarker()
+    expect(computeSpan(events, 0)).toBeNull() // u1 已被 marker 遮蔽,不在官方 nodes
+    expect(computeSpan(events, 1)).toBeNull() // a1 同
+  })
+
+  it('marker 后撤回活跃消息:span 在官方 nodes 位置合法(foldSurface 写入不抛,不再倒置)', () => {
+    const events = withMarker()
+    for (const mode of ['round', 'tail']) {
+      const span = computeSpan(events, 3, mode) // u2(活跃轮)
+      expect(span).not.toBeNull()
+      const marker = {
+        type: 'assistant/message', seq: 5,
+        data: { turn: 1, message: { id: 'retrace-recall-test', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 3, text: 'x' } },
+        surfaceOp: { op: 'replace', start: span.start, end: span.end },
+        sourceEventSeqs: span.shadowedSeqs,
+      }
+      expect(() => foldSurface([...events, marker])).not.toThrow() // S4/S8 不拒
+    }
+  })
+
+  it('tail 模式:从目标所在轮首遮蔽到 surface 尾(含位置在前的 marker 段也连续)', () => {
+    const events = withMarker()
+    const span = computeSpan(events, 3, 'tail')
+    // 官方 nodes = [2(marker), 3(u2), 4(a2)];u2 轮首=自己 → 遮蔽 [3,4] + marker(2) 位置在 3 前?
+    // 位置段从 u2(index 1) 到尾 = [3, 4];marker(2) 在 index 0(3 前),不被遮蔽
+    expect(span.shadowedSeqs).toEqual([3, 4])
+    expect(span.start).toBe(3)
+    expect(span.end).toBe(4)
+  })
+
+  it('round 模式:遮蔽目标轮(官方 nodes 上,marker 不入轮)', () => {
+    const events = withMarker()
+    const span = computeSpan(events, 3, 'round')
+    expect(span.shadowedSeqs).toEqual([3, 4])
   })
 })

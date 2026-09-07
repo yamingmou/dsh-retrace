@@ -1,4 +1,31 @@
-## [0.4.19] — 2026-09-02 · 短码真正展示：官方 rename pin + 实时推导（解决"列表/标题没显示过"）
+## [Unreleased] — 0.4.20（recall 遮蔽语义修复 + 死锁根治）
+
+### 修复（2026-09-07 · ISSUE-20260907113201-5e551006 + 同族 ISSUE-20260902125219-bfb965e4）
+
+**缺陷①（遮蔽只到单轮→断层）**：recall 语义 = 遮蔽目标轮及之后全部（编辑=从此处分叉，
+bfb965e4 用户要求"撤回该消息之后的所有后续输入输出"）——recall 的 span mode 从 round 改
+**tail**（index.js withFileSpan + host-core fallback）；tail 起点回退到目标所在**轮首**
+（撤回回复连带 input，防孤立 user）。
+
+**缺陷②（有 marker 后再撤回 → 倒置范围 → 守卫拒绝 → 死锁）**：
+- 根因：`computeSpan` 用 events 顺序收集的**虚拟 nodes**（seq 递增假设），而官方 foldSurface
+  的 nodes 会被 replace marker 插入破坏 seq 单调（evidence 快照实测 710693→index 442>441；
+  6 个撤回场景 foldSurface 写入 throw：5 个 "start not found"（目标已被遮蔽）+ 1 个倒置）；
+- 修复：`computeSpan`/`spanFromFile` 改为**官方 foldSurface 重放得真实 nodes**——span 的
+  start/end 与写入端完全一致，not found/倒置不可能；目标已被遮蔽（不在 nodes）= 返回 null
+  （target-shadowed 明确提示，不再死锁）；
+- host-core `shadowSpanFrom` tail 同步位置段化（host 视图尽力，主路径 = spanFromFile）。
+
+**守卫边界（预期行为）**：撤回很旧消息遮蔽 >40 节点 → 快照点守卫拒绝并引导分支
+（bfb965e4"旧消息应禁撤/建议分支"的正式出口）；撤回最近轮正常放行。
+
+**验证**：238 测试绿（+4：官方 foldSurface nodes 回归——已遮蔽 target→null / marker 后
+撤回写入不抛 / tail 轮首起点 / round marker 不入轮）；evidence 快照 6 个失败场景全修；
+dynamic-host 重建。
+
+**遗留（bfb965e4 UX 部分，另列）**：recall 二次确认 + undo 路径（误点撤回保护）未实现。
+
+
 
 ### 修复（2026-09-02 · 会话短码展示 —— 用户实测"短码在列表和窗口标题没展示过"）
 
