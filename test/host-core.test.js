@@ -47,7 +47,7 @@ function lastMarker(session) {
 }
 
 describe('recall', () => {
-  it('removes the whole exchange round containing a user message', async () => {
+  it('removes the whole exchange round containing a user message（0.4.20:recall = tail 语义,遮蔽目标轮及之后全部）', async () => {
     const session = standardSession()
     const agent = makeAgent()
     const api = makeApi(session, agent)
@@ -55,9 +55,9 @@ describe('recall', () => {
     const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
 
     expect(result.ok).toBe(true)
-    expect(result.value).toMatchObject({ op: 'recall', seq: 1, shadowed: 3, messageId: 'u1' })
-    // Round [u1, a1, tool] shadowed from the surface; u2 + a2 + marker remain.
-    expect(surfaceSeqs(session)).toEqual([4, 5, 8])
+    expect(result.value).toMatchObject({ op: 'recall', seq: 1, shadowed: 5, messageId: 'u1' })
+    // tail:u1 轮 + u2/a2 全部遮蔽(编辑=从此处分叉,bfb965e4/5e551006);surface 只剩 marker
+    expect(surfaceSeqs(session)).toEqual([8])
   })
 
   it('recalling an assistant reply removes its whole round too (input + output)', async () => {
@@ -67,8 +67,9 @@ describe('recall', () => {
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
 
     expect(result.ok).toBe(true)
-    expect(result.value.shadowed).toBe(3)
-    expect(surfaceSeqs(session)).toEqual([4, 5, 8])
+    // 撤回回复连带所在轮 input(回退轮首 u1)+ 其后全部 = tail 语义
+    expect(result.value.shadowed).toBe(5)
+    expect(surfaceSeqs(session)).toEqual([8])
   })
 
   it('appends an invisible replacement marker (empty assistant, surfaceOp replace)', async () => {
@@ -413,9 +414,11 @@ describe('concurrency and result envelope', () => {
     const { createEditorApi } = await import('../lib/host-core.js')
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
 
+    // 0.4.20:recall 改 tail 语义(遮蔽目标及之后全部)——并发 recall 会互相遮蔽目标;
+    // 验证锁改用 editAndResend(round 轮内遮蔽,互不遮蔽),锁语义不变
     const results = await Promise.all([
-      api.recall({ sessionId: 's1', messageId: 'u1' }),
-      api.recall({ sessionId: 's1', messageId: 'u2' }),
+      api.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'x1' }),
+      api.editAndResend({ sessionId: 's1', messageId: 'u2', text: 'x2' }),
     ])
 
     expect(results.map((r) => r.ok)).toEqual([true, true])
@@ -573,12 +576,13 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     // 文件滞后:readMaxStep 恒返回 2(flush 未落盘,文件看不到本进程刚写的 marker step)
     const readMaxStep = vi.fn(async () => 2)
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker, readMaxStep }))
-    // 同一打开 turn 内连续两次情形②(编辑不同消息,避免目标被遮蔽)
-    const r1 = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    // 同一打开 turn 内连续两次情形②(recall 已改 tail 会互相遮蔽 → 用 edit 不同轮,
+    // round 轮内遮蔽互不覆盖;情形② step 分配逻辑不变)
+    const r1 = await api.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'x1' })
     const m1 = lastMarker(session)
     expect(r1.ok).toBe(true)
     expect(m1.data.step).toBe(3) // max(内存2, 文件2)+1 = 3
-    const r2 = await api.recall({ sessionId: 's1', messageId: 'a2' })
+    const r2 = await api.editAndResend({ sessionId: 's1', messageId: 'u2', text: 'x2' })
     const m2 = lastMarker(session)
     expect(r2.ok).toBe(true)
     expect(m2.data.step).toBe(4) // 内存已见 step 3 → max(内存3, 文件2)+1 = 4,不与 m1 冲突
