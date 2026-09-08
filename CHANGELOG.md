@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.20] — 2026-09-09 · recall shadowing semantics fix (tail) + deadlock fix + boot pin fix
+
+- recall shadowing semantics fix (tail) + deadlock fix + boot pin fix
+
 ## [0.4.19] — 2026-09-02 · session short code shown for real: official rename pin + live derivation + boot batching
 
 - session short code shown for real: official rename pin + live derivation + boot batching
