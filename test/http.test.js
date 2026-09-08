@@ -250,3 +250,58 @@ describe('P1 HTTP routes', () => {
     expect(JSON.parse(res.body).value.found).toBe(false)
   })
 })
+
+describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：recall tail 两入口一致）', () => {
+  it('HTTP /recall 用 tail mode 调 spanFromFile（不再 round，缺陷①断层在 HTTP 入口也修复）', async () => {
+    const { dshAdapter } = await import('../lib/adapter/dsh.js')
+    const spy = vi.spyOn(dshAdapter, 'spanFromFile').mockResolvedValue({
+      start: 1, end: 5, shadowedSeqs: [1, 2, 3, 4, 5],
+    })
+    try {
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'))
+      const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
+      const seam = makeSeam()
+      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
+        turn: 1, step: 1,
+        message: { id: `retrace-recall-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
+        editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
+      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
+      const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
+      const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'u1' })
+      expect(spy).toHaveBeenCalledTimes(1)
+      // 关键断言:HTTP 入口 recall 也用 tail mode(与 index.js harness 入口一致)
+      expect(spy.mock.calls[0][2]).toBe('tail')
+      const parsed = JSON.parse(res.body)
+      expect(parsed.ok).toBe(true)
+      expect(parsed.value.shadowed).toBe(5) // tail 遮蔽目标轮及之后全部
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('HTTP /editAndResend 非 fromScratch 保持 round（编辑语义不变）', async () => {
+    const { dshAdapter } = await import('../lib/adapter/dsh.js')
+    const spy = vi.spyOn(dshAdapter, 'spanFromFile').mockResolvedValue({
+      start: 1, end: 2, shadowedSeqs: [1, 2],
+    })
+    try {
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'))
+      const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
+      const seam = makeSeam()
+      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
+        turn: 1, step: 1,
+        message: { id: `retrace-edit-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
+        editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
+      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
+      const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
+      const res = await post(handler, `${ROUTE_PREFIX}/editAndResend`, { sessionId: 's1', messageId: 'u1', text: 'x' })
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0][2]).toBe('round')
+      expect(JSON.parse(res.body).ok).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
