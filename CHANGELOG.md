@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.21] — 2026-09-09 · windowed rendering + fold feature + close guard + review fixes
+
+- windowed rendering + fold feature + close guard + review fixes
+
 ## [0.4.20] — 2026-09-09 · recall shadowing semantics fix (tail) + deadlock fix + boot pin fix
 
 - recall shadowing semantics fix (tail) + deadlock fix + boot pin fix

@@ -616,3 +616,80 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     expect(session.events[idx + 1].data).toEqual({ turn: 5, step: 46 })
   })
 })
+
+describe('fold 完成块折叠（长会话整理窗口批1 marker 折叠承载）', () => {
+  it('fold 区间遮蔽:marker 写入,foldSurface 可重放,日志完整', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    const session = makeSession().seed(headerEvent(),
+      userMessage('u1', 'q1'), assistantMessage('a1', 'r1'), toolRow('t1'),
+      userMessage('u2', 'q2'), assistantMessage('a2', 'r2'),
+    )
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
+    // 注入 range span(模拟 index.js spanFromFile range mode)
+    const span = { start: 1, end: 5, shadowedSeqs: [1, 2, 3, 4, 5] }
+    const result = await api.fold({ sessionId: 's1', start: 1, end: 5, span })
+    expect(result.ok).toBe(true)
+    expect(result.value).toMatchObject({ op: 'fold', start: 1, end: 5, shadowed: 5 })
+    const marker = lastMarker(session)
+    expect(marker.data.message.id).toMatch(/^retrace-fold-/)
+    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 1, end: 5 })
+    expect(marker.sourceEventSeqs).toEqual([1, 2, 3, 4, 5])
+    // 日志完整(append-only):被遮蔽节点仍在 events
+    expect(session.events.map((e) => e.seq)).toContain(1)
+    expect(session.events.map((e) => e.seq)).toContain(5)
+    // surface:被遮蔽节点移除,marker 保留
+    expect(session.surface.nodes.filter((s) => s >= 1 && s <= 5)).toEqual([])
+    expect(session.surface.nodes).toContain(marker.seq)
+  })
+
+  it('fold 区间端点不在 surface(已被遮蔽)→ target-shadowed', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
+    const result = await api.fold({ sessionId: 's1', start: 1, end: 99 }) // 99 不在 surface
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('target-shadowed')
+  })
+
+  it('fold 非法区间(start>end 或非整数)→ bad-fold-range', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
+    expect((await api.fold({ sessionId: 's1', start: 5, end: 1 })).error.code).toBe('bad-fold-range')
+    expect((await api.fold({ sessionId: 's1', start: 'x', end: 2 })).error.code).toBe('bad-fold-range')
+  })
+})
+
+describe('fold 摘要 content（长会话整理批2:确定摘要进 marker）', () => {
+  it('fold 带 summary → marker content 含摘要文本(替代折叠块进模型上下文)', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    const session = makeSession().seed(headerEvent(),
+      userMessage('u1', 'q1'), assistantMessage('a1', 'r1'),
+      userMessage('u2', 'q2'), assistantMessage('a2', 'r2'),
+    )
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
+    const span = { start: 1, end: 4, shadowedSeqs: [1, 2, 3, 4] }
+    const summary = '【完成块 · 已折叠】\n轮次: 2 条用户输入\n尾输入: "q2"'
+    const result = await api.fold({ sessionId: 's1', start: 1, end: 4, span, summary })
+    expect(result.ok).toBe(true)
+    const marker = lastMarker(session)
+    expect(marker.data.message.content).toEqual([{ type: 'text', text: summary }])
+    expect(marker.data.message.id).toMatch(/^retrace-fold-/)
+  })
+
+  it('fold 无 summary → content 空(承载模式)', async () => {
+    const { createEditorApi } = await import('../lib/host-core.js')
+    const session = makeSession().seed(headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'))
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
+    const span = { start: 1, end: 2, shadowedSeqs: [1, 2] }
+    const result = await api.fold({ sessionId: 's1', start: 1, end: 2, span })
+    expect(result.ok).toBe(true)
+    const marker = lastMarker(session)
+    expect(marker.data.message.content).toEqual([])
+  })
+})

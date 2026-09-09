@@ -77,6 +77,17 @@ Full steps in [📦 Installation](#-installation).
 | 🧭 | **Jump-to-conversation** | one click from a version to that point in the conversation (auto-loads history, anchor highlight) |
 | 🧹 | **Bounded storage** | snapshots keep the most recent N versions (default 50); throttled background sweep prunes truncated ones |
 
+**Three-segment window (B track — folding = archiving, restorable, never deletes)** — proactively fold finished blocks in long sessions to protect the context cache and stay ahead of the host's auto-compaction auto-compaction:
+
+| | What | |
+|---|---|---|
+| 📊 | **Context water level** | live estimate of context usage (🟢<60% / 🟡60-85% / 🔴>85%, CJK-corrected, includes tool-call arguments); yellow-line suggests which block to fold |
+| 📦 | **Fold (trio)** | a completed block folds into **roadmap card + process summary + archive pointer**: the card extracts a one-line conclusion from decision-signal sentences (拍板/决定/结论…, deterministic — no LLM); process = rounds/actions/tool results; the full original stays in the log |
+| 📖 | **Unfold** | expand shows the roadmap card first (time + block title + one-line conclusion), then the full original verbatim; revisions append a new card (`superseded-by` points at the old one, which stays auditable) |
+| 🧭 | **Fold preview** | before folding, see the roadmap card that would be generated (what gets archived / what the conclusion is) |
+
+> Command surface: `retrace.fold` / `retrace.unfold` / `retrace.waterLevel` / `retrace.foldPreview` (host RPC + HTTP at `/api/plugins/retrace`). Folding does not depend on the host's compaction — proactive folding (before the yellow→red line) is the only way to protect the context cache when auto-compaction cannot be replaced.
+
 **Why it's different** (the interaction layer — the guarantees above are the storage layer):
 
 - 🎯 **Whole-round recall** — removes the input *and* its output (tool rows included), not just a single bubble.
@@ -271,6 +282,14 @@ The dynamic host registers the same operations behind the package-private
 - **Real-time watchdog** — snapshots the log at the first sign of concurrent writes.
 - Companion **`dsh-log-contract`**: 30+ offline contract rules + in-place repair
   (`fix --neutralize` / `--clip-crossstep`) for sessions that would fail `/compact`.
+- **Three-segment window** — context **water level** (CJK-corrected, tool-args
+  included), **fold** of completed blocks into a deterministic **trio** (roadmap
+  card + process + archive pointer), **unfold** with a read-first card layer,
+  revision chain (`superseded-by`), and fold preview — active folding protects
+  the context cache ahead of the host's auto-compaction auto-compaction.
+- **Close guard** — before exit/reload, warns when sessions still have running
+  work (agent running / queued / open turn / background jobs); queries via
+  `retrace.runningState`.
 
 **What's next** — see the [public roadmap](./docs/ROADMAP.md) for the agent
 business-layer plan (runtime guard, interruption governance, ecosystem-facing

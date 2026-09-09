@@ -434,3 +434,36 @@ describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 
     expect(marker.data?.editor?.markerT1Broken).toBeUndefined()
   })
 })
+
+describe('guard × fold(长会话整理折叠豁免 rollback guard,独立审查 ❌-1 回归)', () => {
+  it('fold 大块(>40 节点,大会话)→ 不抛 rollback-guide(折叠非回档)', async () => {
+    const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
+    const log = vi.fn()
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    const bigShadowed = Array.from({ length: 45 }, (_, i) => i + 100)
+    const session = { id: 's1', events: Array.from({ length: 5000 }, (_, i) => ({ seq: i, type: 'user/message', data: { id: `u${i}`, source: { kind: 'user' }, content: [] } })) }
+    const envelope = {
+      type: 'assistant/message',
+      data: { turn: 1, step: 1, message: { id: 'retrace-fold-x', role: 'assistant', content: [{ type: 'text', text: '摘要' }], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 100, text: '' } },
+      surfaceOp: { op: 'replace', start: 100, end: 144 },
+      sourceEventSeqs: bigShadowed,
+    }
+    await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('rollback guard'))
+  })
+
+  it('非 fold 大遮蔽仍被拦(守卫语义不变)', async () => {
+    const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
+    const log = vi.fn()
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    const bigShadowed = Array.from({ length: 45 }, (_, i) => i + 100)
+    const session = { id: 's1', events: Array.from({ length: 5000 }, (_, i) => ({ seq: i, type: 'user/message', data: { id: `u${i}`, source: { kind: 'user' }, content: [] } })) }
+    const envelope = {
+      type: 'assistant/message',
+      data: { turn: 1, step: 1, message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 100, text: 'x' } },
+      surfaceOp: { op: 'replace', start: 100, end: 144 },
+      sourceEventSeqs: bigShadowed,
+    }
+    await expect(guard.validateMarkerAppend(session, envelope)).rejects.toMatchObject({ code: 'rollback-guide' })
+  })
+})
