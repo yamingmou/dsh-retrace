@@ -398,3 +398,47 @@ describe('adapter waterLevelFromFile cacheMetrics(体检命令 A,长会话整理
     }
   })
 })
+
+describe('adapter waterLevelFromFile suggestPct(55-60% 灰区候选生成线)', () => {
+  it('默认(=黄线 0.6)green 无建议;传 suggestPct=0.55 → 灰区(green 带)也有候选', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-retrace-wl-sugpct-'))
+    try {
+      // 目标:surface 中文校正估算 pct 落在 [0.55, 0.6)(green 带)——官方 0.8 触发线
+      // 前、黄线 0.6 前的灰区。中文系数 0.94 → 640000 个 CJK 字符 ≈ 601600 token
+      // ≈ 0.574×窗口(含第二轮少量文本仍在 <0.6)。
+      const big = '文'.repeat(640000)
+      const evs = [
+        { type: 'session', version: 0, id: 's1', createdAt: 1, cwd: '/tmp' },
+        { type: 'user/message', seq: 0, surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: big }] } },
+        { type: 'assistant/message', seq: 1, surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: '答' }], source: { kind: 'model', provider: 'p', model: 'm' } } } },
+        // 第二轮 user 闭合第一轮(候选 = 第一轮完成块)
+        { type: 'user/message', seq: 2, surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: '继续' }] } },
+        { type: 'assistant/message', seq: 3, surfaceOp: 'append', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: '答二' }], source: { kind: 'model', provider: 'p', model: 'm' } } } },
+      ]
+      const file = join(dir, 'session.jsonl')
+      writeFileSync(file, evs.map((e) => JSON.stringify(e)).join('\n') + '\n')
+      // 默认口径:green(0.55-0.6 灰区)→ 无建议(报告语义不变:green = 无需动作)
+      const def = await dshAdapter.waterLevelFromFile('s1', {}, file)
+      expect(def.band).toBe('green')
+      expect(def.pct).toBeGreaterThanOrEqual(0.55)
+      expect(def.pct).toBeLessThan(0.6)
+      expect(def.suggestion).toBeNull()
+      // suggestPct=0.55(接线处自动层触发线)→ 灰区也有候选(可折完成块)
+      const sug = await dshAdapter.waterLevelFromFile('s1', { suggestPct: 0.55 }, file)
+      expect(sug.band).toBe('green')
+      expect(sug.suggestion).not.toBeNull()
+      expect(Number.isInteger(sug.suggestion.foldRange.start)).toBe(true)
+      // suggestPct 高于实际上下文用量(0.58 > ~0.574)→ 无建议(触发线硬闸)
+      const low = await dshAdapter.waterLevelFromFile('s1', { suggestPct: 0.58 }, file)
+      expect(low.suggestion).toBeNull()
+      // 非法 suggestPct → 回落默认 0.6(报告口径)
+      const bad = await dshAdapter.waterLevelFromFile('s1', { suggestPct: 'x' }, file)
+      expect(bad.suggestion).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

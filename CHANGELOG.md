@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.23] — 2026-09-09 · user-level preset for compaction behavior + scheduler fix
+
+- user-level preset for compaction behavior + scheduler fix
+
 ## [0.4.22] — 2026-09-09 · automatic folding + close guard V2 + cacheReadTokens metric
 
 - automatic folding + close guard V2 + cacheReadTokens metric
