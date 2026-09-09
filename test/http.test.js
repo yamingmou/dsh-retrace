@@ -305,3 +305,71 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
     }
   })
 })
+
+describe('关闭守卫 V2 runningState HTTP 路由(issue-176,client 轮询同步读源)', () => {
+  /** 官方形状 sessions/agents(jobs 走 ctx.jobs;缺省降级空)。 */
+  function makeGuardEnv(sessions, agents) {
+    return {
+      ctx: { jobs: { list: () => [] } },
+      sessions: { keys: () => sessions.keys(), get: (id) => sessions.get(id) },
+      agents: { get: (id) => agents.get(id) },
+    }
+  }
+  const openTurnSession = () => ({ id: 's1', events: [
+    { type: 'turn/start', seq: 0, data: { turn: 1 } },
+    { type: 'user/message', seq: 1, data: { id: 'u1', source: { kind: 'user' } } },
+    { type: 'assistant/message', seq: 2, data: { message: { id: 'a1' } } },
+  ] }) // 尾部无 turn/end = 未闭合轮(崩溃/强杀现场)
+
+  it('GET /runningState 返回全会话运行中清单 { running: [...] }(纯读)', async () => {
+    const sessions = new Map([['s1', openTurnSession()], ['s2', { id: 's2', events: [] }]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }], ['s2', { id: 's2', status: 'idle' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const res = await get(handler, `${ROUTE_PREFIX}/runningState`)
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(true)
+    expect(Array.isArray(parsed.value.running)).toBe(true)
+    const ids = parsed.value.running.map((r) => r.sessionId).sort()
+    expect(ids).toEqual(['s1']) // s2 静止不出现;未闭合轮/agent-running 归 s1
+    expect(parsed.value.running[0].reasons.some((r) => r.startsWith('unclosed-turn-'))).toBe(true)
+  })
+
+  it('GET /runningState?sessionId= 返回单会话状态;全静止 → 空清单', async () => {
+    // s1 干净闭合(尾部 turn/end)→ 静止;单会话查返回 running:false
+    const cleanSession = () => ({ id: 's1', events: [
+      { type: 'turn/start', seq: 0, data: { turn: 1 } },
+      { type: 'user/message', seq: 1, data: { id: 'u1', source: { kind: 'user' } } },
+      { type: 'assistant/message', seq: 2, data: { message: { id: 'a1' } } },
+      { type: 'turn/end', seq: 3, data: { turn: 1, reason: { kind: 'completed' } } },
+    ] })
+    const sessions = new Map([['s1', cleanSession()], ['s2', { id: 's2', events: [] }]])
+    const agents = new Map([['s1', { id: 's1', status: 'idle' }], ['s2', { id: 's2', status: 'idle' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const single = await get(handler, `${ROUTE_PREFIX}/runningState?sessionId=s1`)
+    expect(JSON.parse(single.body).value.running).toBe(false) // 干净会话静止
+    const all = await get(handler, `${ROUTE_PREFIX}/runningState`)
+    expect(JSON.parse(all.body).value.running).toEqual([])
+  })
+
+  it('POST /runningState 与 GET 同形状(dynamic 桥 retrace.runningState 对齐)', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const res = await post(handler, `${ROUTE_PREFIX}/runningState`, {})
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(true)
+    expect(parsed.value.running).toHaveLength(1)
+    expect(parsed.value.running[0].sessionId).toBe('s1')
+  })
+
+  it('jobs 服务缺失(旧 ctx)→ 降级不抛,agent-running 仍报', async () => {
+    const sessions = new Map([['s1', { id: 's1', events: [] }]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const handler = createRetraceHttpHandler({}, { sessions: { keys: () => sessions.keys(), get: (id) => sessions.get(id) }, agents: { get: (id) => agents.get(id) }, seam: makeSeam(), rollback: {}, log: () => {} })
+    const res = await get(handler, `${ROUTE_PREFIX}/runningState`)
+    expect(JSON.parse(res.body).value.running).toHaveLength(1)
+  })
+})
