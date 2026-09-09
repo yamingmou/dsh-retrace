@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.22] — 2026-09-09 · automatic folding + close guard V2 + cacheReadTokens metric
+
+- automatic folding + close guard V2 + cacheReadTokens metric
+
 ## [0.4.21] — 2026-09-09 · windowed rendering + fold feature + close guard + review fixes
 
 - windowed rendering + fold feature + close guard + review fixes

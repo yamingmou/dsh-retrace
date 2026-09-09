@@ -340,3 +340,61 @@ describe('adapter unfold B2 修订链读侧(supersededByNewer,N-2)', () => {
     }
   })
 })
+
+describe('adapter waterLevelFromFile cacheMetrics(体检命令 A,长会话整理防线度量)', () => {
+  it('报告带 cacheMetrics:缓存前缀读数 + 官方压缩史(合成会话:前置 usage → compaction/start → 后置 usage)', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-retrace-wl-cm-'))
+    try {
+      // 合成会话(模拟真实日志形态):压缩前 usage(cacheReadTokens 500000)→
+      // 官方 compaction/start(summary/end)→ 压缩后首请求 usage(9000)
+      const evs = [
+        { type: 'session', version: 0, id: 's1', createdAt: 1, cwd: '/tmp' },
+        { type: 'user/message', seq: 0, surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: '问题一' }] } },
+        { type: 'assistant/message', seq: 1, surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: '回答一' }], source: { kind: 'model', provider: 'p', model: 'm' } }, usage: { inputTokens: 10, cacheReadTokens: 500000, outputTokens: 5 } } },
+        { type: 'compaction/start', seq: 2, data: { compactionId: 'c1' } },
+        { type: 'compaction/summary', seq: 3, data: {} },
+        { type: 'compaction/end', seq: 4, data: {} },
+        { type: 'user/message', seq: 5, surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: '压缩后继续问' }] } },
+        { type: 'assistant/message', seq: 6, surfaceOp: 'append', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: '继续答' }], source: { kind: 'model', provider: 'p', model: 'm' } }, usage: { inputTokens: 10, cacheReadTokens: 9000, outputTokens: 5 } } },
+      ]
+      const file = join(dir, 'session.jsonl')
+      writeFileSync(file, evs.map((e) => JSON.stringify(e)).join('\n') + '\n')
+      const level = await dshAdapter.waterLevelFromFile('s1', {}, file)
+      expect(level).not.toBeNull()
+      // 既有上下文用量字段不破坏
+      expect(typeof level.pct).toBe('number')
+      expect(typeof level.caveat).toBe('string')
+      expect(level.suggestion).toBeNull() // 文本少 → green 无建议
+      // cacheMetrics:最新缓存前缀 = 压缩后 usage(seq 6)
+      const cm = level.cacheMetrics
+      expect(cm).not.toBeNull()
+      expect(cm.latestCacheReadTokens).not.toBeNull()
+      expect(cm.latestCacheReadTokens.seq).toBe(6)
+      expect(cm.latestCacheReadTokens.cacheReadTokens).toBe(9000)
+      // 压缩史:1 次/可测/代价 = 500000-9000
+      expect(cm.compactionHistory.count).toBe(1)
+      expect(cm.compactionHistory.measured).toBe(1)
+      expect(cm.compactionHistory.totalCostTokens).toBe(500000 - 9000)
+      expect(cm.compactionHistory.items).toHaveLength(1)
+      expect(cm.compactionHistory.items[0].startSeq).toBe(2)
+      expect(cm.compactionHistory.items[0].cost.costTokens).toBe(500000 - 9000)
+      expect(cm.compactionHistory.items[0].cost.deltaTokens).toBe(9000 - 500000)
+      // 无 usage 会话:cacheMetrics 字段在,读数为 null、压缩 0 次
+      const bare = join(dir, 'bare.jsonl')
+      writeFileSync(bare, [
+        { type: 'session', version: 0, id: 's2', createdAt: 1, cwd: '/tmp' },
+        { type: 'user/message', seq: 0, surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
+        { type: 'assistant/message', seq: 1, surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: 'yo' }], source: { kind: 'model', provider: 'p', model: 'm' } } } },
+      ].map((e) => JSON.stringify(e)).join('\n') + '\n')
+      const bareLevel = await dshAdapter.waterLevelFromFile('s2', {}, bare)
+      expect(bareLevel.cacheMetrics.latestCacheReadTokens).toBeNull()
+      expect(bareLevel.cacheMetrics.compactionHistory.count).toBe(0)
+      expect(bareLevel.cacheMetrics.compactionHistory.totalCostTokens).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
