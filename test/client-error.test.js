@@ -62,4 +62,16 @@ describe('client 操作失败文案(issue-200/199)', () => {
       expect(en[key].length).toBeGreaterThan(0)
     }
   })
+
+  it('zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;issue-230:文案行声称的机械兜底)', () => {
+    const zhKeys = Object.keys(zh).sort()
+    expect(Object.keys(en).sort()).toEqual(zhKeys)
+    const blank = zhKeys.filter((key) => !String(zh[key] ?? '').trim() || !String(en[key] ?? '').trim())
+    expect(blank).toEqual([])
+    // 被登记的文案行:两边都必须有(键在 → 英文界面不会漏成空/中文)
+    for (const key of ['marker.referenceHint', 'fork.badgeHint']) {
+      expect(zh[key]).toBeTruthy()
+      expect(en[key]).toBeTruthy()
+    }
+  })
 })
