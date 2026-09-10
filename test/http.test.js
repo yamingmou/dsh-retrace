@@ -251,7 +251,7 @@ describe('P1 HTTP routes', () => {
   })
 })
 
-describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：recall tail 两入口一致；L-1 单次 probe）', () => {
+describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口一致；单次 probe）', () => {
   it('HTTP /recall 用 tail mode 单次 spanProbeFromFile（不再 round，缺陷①断层在 HTTP 入口也修复）', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
     // 与 index.js harness 入口对齐——单次 probe(span+facts
@@ -313,7 +313,7 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
     }
   })
 
-  it('HTTP /recall probe 显式状态逐档生效(issue-229;独立审查阻断项回归:两入口/两线同一判定)', async () => {
+  it('HTTP /recall probe 显式状态逐档生效(两入口/两线同一判定)', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
     const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
     // 曾因"行级吃掉 else if 的括号"把这条链路整条变成死代码(状态判定全塌成
@@ -347,7 +347,7 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
     }
   })
 
-  it('HTTP /recall 文件快照未含目标(文件 flush 滞后)→ 同一份快照的 facts → message-pending 而非 target-shadowed(issue-200)', async () => {
+  it('HTTP /recall 文件快照未含目标(文件 flush 滞后)→ 同一份快照的 facts → message-pending 而非 target-shadowed', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
     // 文件读成功但快照未含目标(刚 commit 未 flush):单次 probe → span null + fileMaxSeq < 目标 seq
     const spanSpy = vi.spyOn(dshAdapter, 'spanFromFile')
@@ -374,7 +374,7 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
     }
   })
 
-  it('HTTP /regenerate 注入文件侧 prompt → 重发该轮 user 原文(M-1 端到端)', async () => {
+  it('HTTP /regenerate 注入文件侧 prompt → 重发该轮 user 原文(端到端)', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
     const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
       span: { start: 3, end: 4, shadowedSeqs: [3, 4] },
@@ -425,7 +425,7 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
   })
 })
 
-describe('关闭守卫 V2 runningState HTTP 路由(issue-176,client 轮询同步读源)', () => {
+describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', () => {
   /** 官方形状 sessions/agents(jobs 走 ctx.jobs;缺省降级空)。 */
   function makeGuardEnv(sessions, agents) {
     return {

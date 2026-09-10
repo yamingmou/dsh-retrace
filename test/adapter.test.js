@@ -70,7 +70,7 @@ describe('adapter/dsh computeSpan(业务逻辑,与平台无关)', () => {
   })
 })
 
-describe('adapter/dsh computeSpan · 显式状态枚举(issue-229 第 1 项:null 不再承载四种语义)', () => {
+describe('adapter/dsh computeSpan · 显式状态枚举(null 不再承载四种语义)', () => {
   const spanOf = (result) => {
     expect(result.status).toBe('ok')
     return result.span
@@ -109,7 +109,7 @@ describe('adapter/dsh computeSpan · 显式状态枚举(issue-229 第 1 项:null
     expect(99 > result.facts.fileMaxSeq).toBe(true)
   })
 
-  it('not-found:消息 id 不在快照里 —— 文件层只给事实,不臆断"未落盘"(独立审查中-6)', () => {
+  it('not-found:消息 id 不在快照里 —— 文件层只给事实,不臆断"未落盘"', () => {
     const result = computeSpan(events, 'ghost-id')
     expect(result.status).toBe('not-found')
     expect(result.span).toBeNull()
@@ -145,7 +145,7 @@ describe('adapter/dsh computeSpan · 显式状态枚举(issue-229 第 1 项:null
     expect(typeof result.facts.message).toBe('string')
   })
 
-  it('replay-failed(issue-230 ):面重放正常但节点为空(合法空面)→ cause=empty-surface 与抛错可区分', () => {
+  it('replay-failed:面重放正常但节点为空(合法空面)→ cause=empty-surface 与抛错可区分', () => {
     // 日志里只有非 surface 事件(如 step/start):foldSurface 正常返回 nodes=[] ——
     // 旧实现与「重放抛错」共用同一个 replay-failed 且 facts 无差异 → 用户只看到"内部错误"。
     const emptySurface = [{ seq: 0, type: 'step/start', data: { turn: 1 } }]
@@ -179,7 +179,7 @@ describe('adapter/dsh dshAdapter(DSH 平台适配器)', () => {
     expect(typeof dshAdapter.maxStepInTurnFromFile).toBe('function')
   })
 
-  it('readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"(issue-229 中-4)', async () => {
+  it('readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"', async () => {
     const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')
     const { join } = await import('node:path')
@@ -311,7 +311,7 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 ISSUE
   })
 })
 
-describe('adapter/dsh computeSpanProbe(issue-200 文件快照事实)', () => {
+describe('adapter/dsh computeSpanProbe(文件快照事实)', () => {
   it('span 命中 → facts 报文件快照最大 seq 与目标 seq', () => {
     const probe = computeSpanProbe(events, 2) // 编辑 u2(轮2)的全量夹具 seq 0..5
     expect(probe.status).toBe(SPAN_STATUS.OK)
@@ -325,7 +325,7 @@ describe('adapter/dsh computeSpanProbe(issue-200 文件快照事实)', () => {
     expect(probe.span).not.toBeNull()
   })
 
-  it('目标超出文件快照(文件 flush 滞后/刚 commit 未落盘)→ not-persisted(issue-229 显式状态)', () => {
+  it('目标超出文件快照(文件 flush 滞后/刚 commit 未落盘)→ not-persisted(显式状态)', () => {
     const probe = computeSpanProbe(events, 99, 'round')
     expect(probe.status).toBe(SPAN_STATUS.NOT_PERSISTED)
     expect(probe.span).toBeNull()
@@ -357,7 +357,7 @@ describe('adapter/dsh computeSpanProbe(issue-200 文件快照事实)', () => {
   })
 })
 
-describe('adapter/dsh computeSpanProbe · prompt(round 起点 user 原文,M-1 独立审查 74e580d 后续)', () => {
+describe('adapter/dsh computeSpanProbe · prompt(round 起点 user 原文)', () => {
   it('round 模式:prompt = span 起点 user 的原文(目标同一轮的前置 user)', () => {
     const probe = computeSpanProbe(events, 5) // 目标 a3(轮3)
     expect(probe.span).toEqual({ start: 4, end: 5, shadowedSeqs: [4, 5] })

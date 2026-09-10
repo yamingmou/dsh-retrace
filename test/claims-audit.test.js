@@ -98,9 +98,9 @@ const CLAIM_REGISTRY = [
     claims: ['绝不静默', '确保 agent 空闲', '绝不冒充"已遮蔽"', '绝不直扫稀疏', '绝不越过遮蔽区重发更早轮'],
     evidence: [
       { test: 'test/contract-runtime.test.js', title: '适配器返回坏 marker → host-core 边界抛 contract-violation(经 op 信封成 code)', claim: '绝不静默' },
-      { test: 'test/host-core.test.js', title: 'running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 事故闭环)', claim: '确保 agent 空闲' },
-      { test: 'test/host-core.test.js', title: 'issue-229 显式状态:spanStatus=replay-failed → span-replay-failed(内部错误,绝不冒充遮蔽)', claim: '绝不冒充"已遮蔽"' },
-      { test: 'test/host-core.test.js', title: '文件侧 prompt 注入(probe.prompt)→ 重发该轮 user 原文 + marker targetSeq 指向该轮', claim: '绝不直扫稀疏', note: 'M-1:重发原文一律取文件侧,不直扫 host 稀疏 events' },
+      { test: 'test/host-core.test.js', title: 'running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 事故修复)', claim: '确保 agent 空闲' },
+      { test: 'test/host-core.test.js', title: '显式状态:spanStatus=replay-failed → span-replay-failed(内部错误,绝不冒充遮蔽)', claim: '绝不冒充"已遮蔽"' },
+      { test: 'test/host-core.test.js', title: '文件侧 prompt 注入(probe.prompt)→ 重发该轮 user 原文 + marker targetSeq 指向该轮', claim: '绝不直扫稀疏', note: '重发原文一律取文件侧,不直扫 host 稀疏 events' },
       { test: 'test/host-core.test.js', title: '跨遮蔽区(更早轮已被 fold 遮蔽成幽灵) + 当前轮 user 是洞 → 只重发当前轮原文', claim: '绝不越过遮蔽区重发更早轮' },
     ],
   },
@@ -128,7 +128,7 @@ const CLAIM_REGISTRY = [
       // 该声称的 evidence = **结构断言**(不是行为用例)——
       // 行为一致不排除冒出第三份实现;该断言在 lib/ 里机械搜索第二份回退/切片实现。
       // (这条声称过去连"被审集合"都没进:它不含任何声称词,靠 CLAIM_DECLARED 声明。)
-      { test: 'test/span-single-truth.test.js', title: 'issue-230 :lib/ 下除 lib/span-semantics.js 外,不存在第二份轮首回退/尾部切片实现', claim: '两种模式共用同一条轮首回退规则', note: '结构断言:规则只有一份实现(不只是行为一致);轮首回退原语 roundStartIndex 亦被 host-core regenerate 回退路径复用' },
+      { test: 'test/span-single-truth.test.js', title: 'lib/ 下除 lib/span-semantics.js 外,不存在第二份轮首回退/尾部切片实现', claim: '两种模式共用同一条轮首回退规则', note: '结构断言:规则只有一份实现(不只是行为一致);轮首回退原语 roundStartIndex 亦被 host-core regenerate 回退路径复用' },
       // related(非声称行的设计属性,同样有校验:两层同一实现):
       { test: 'test/span-semantics.test.js', title: 'tail 回退轮首(审计指出的分叉点):目标是轮内 assistant → 起点=该轮 user' },
       { test: 'test/span-semantics.test.js', title: 'tail 模式:两模式语义统一后逐字一致(旧业务层"从目标自身切到尾"已废弃)' },
@@ -201,14 +201,14 @@ const CLAIM_REGISTRY = [
       '*   - 必须从持久化层读',
     ],
     evidence: [
-      { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"(issue-229 中-4)', claim: '成本可控:大日志(百万级事件' },
+      { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"', claim: '成本可控:大日志(百万级事件' },
       { test: 'test/contract-runtime.test.js', title: '非法 status → 报错并列全合法取值', claim: 'SPAN_STATUS 成员' },
       { test: 'test/contract-runtime.test.js', title: '非 ok 状态带 span → 报错(状态显式,不允许自相矛盾)', claim: '\'status ≠ ok 时' },
       { test: 'test/contract-runtime.test.js', title: '合法(含无 seq 的 header 帧)通过;非数组报错', claim: '元素必须是非 null 对象' },
-      { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"(issue-229 中-4)', claim: 'n) 断言,成本必须可忽略)' },
+      { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"', claim: 'n) 断言,成本必须可忽略)' },
       { test: 'test/contract-runtime.test.js', title: '非对象/空段/首尾≠start,end/元素非法 → 明确报错', claim: ' 首尾一致(否则重放面与写入' },
       { test: 'test/contract-runtime.test.js', title: '缺 reader.readEvents / writer.writeReplace → 组装即报错(不再运行到一半才炸)', claim: '两个角色都必须实现各自方法)' },
-      { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"(issue-229 中-4)', claim: '*   - 必须从持久化层读' },
+      { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"', claim: '*   - 必须从持久化层读' },
     ],
   },
   {
@@ -224,12 +224,12 @@ const CLAIM_REGISTRY = [
       'nextTurn+1，不会复用',
     ],
     evidence: [
-      { test: 'test/host-core.test.js', title: '情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（5e551001 D8 现场）', claim: '官方 token-meter' },
-      { test: 'test/host-core.test.js', title: '情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（5e551001 D8 现场）', claim: ' marker 必须落在合法' },
+      { test: 'test/host-core.test.js', title: '情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（D8 现场）', claim: '官方 token-meter' },
+      { test: 'test/host-core.test.js', title: '情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（D8 现场）', claim: ' marker 必须落在合法' },
       { test: 'test/contract-runtime.test.js', title: '适配器返回坏 marker → host-core 边界抛 contract-violation(经 op 信封成 code)', claim: '都必须在边界处形状合规(违规' },
       { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: '620）：turn/end 必须带' },
       { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: '残留 fallback 标注' },
-      { test: 'test/contract-runtime.test.js', title: '出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态,独立审查 issue-229 中-3)', claim: '契约边界:**可抛断言必须在任何' },
+      { test: 'test/contract-runtime.test.js', title: '出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态)', claim: '契约边界:**可抛断言必须在任何' },
       { test: 'test/contract-runtime.test.js', title: '传入坏 span 时**任何写入都不发生**(断言先于 append;不留半关闭 turn)', claim: '日志里留下"半关闭 turn' },
       { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: 'nextTurn+1，不会复用' },
     ],
@@ -244,7 +244,7 @@ const CLAIM_REGISTRY = [
     ],
     evidence: [
       { test: 'test/adapter.test.js', title: '位置序 ≠ seq 数值序:marker 插在中间时 span 的 start 数值可 > end(官方只认位置)', claim: '遮蔽移除节点 → nodes' },
-      { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"(issue-229 中-4)', claim: '// 违规**必须往上抛**' },
+      { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"', claim: '// 违规**必须往上抛**' },
       { test: 'test/adapter.test.js', title: '跨遮蔽区(中间 fold marker 遮蔽更早轮)→ prompt 取当前轮 user,绝不被遮蔽轮的更早 user', claim: 'session.events' },
       { test: 'test/adapter.test.js', title: 'maxStepInTurnFromFile:从全量事件算 turn 内最大 step(情形②窗口化防御)', claim: '// dsh-writer 的' },
     ],
@@ -258,8 +258,8 @@ const CLAIM_REGISTRY = [
       '2026-08-31）：短码',
     ],
     evidence: [
-      { test: 'test/client-error.test.js', title: 'zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;issue-230:文案行声称的机械兜底)', claim: '点击展开查看原提问（仅作对照', note: '文案行:由字典键完整性用例兜底(两边都有键、非空);逐字文案不在此断言' },
-      { test: 'test/client-error.test.js', title: 'zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;issue-230:文案行声称的机械兜底)', claim: 'fork.badgeHint', note: '文案行:同上(会话铭牌短码提示),短码确定性另由 test/badge.test.js 覆盖' },
+      { test: 'test/client-error.test.js', title: 'zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;文案行声称的机械兜底)', claim: '点击展开查看原提问（仅作对照', note: '文案行:由字典键完整性用例兜底(两边都有键、非空);逐字文案不在此断言' },
+      { test: 'test/client-error.test.js', title: 'zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;文案行声称的机械兜底)', claim: 'fork.badgeHint', note: '文案行:同上(会话铭牌短码提示),短码确定性另由 test/badge.test.js 覆盖' },
       { test: 'test/prewrite-guard.test.js', title: '遮蔽 > 40 节点但小会话(<2000 事件)→ 不拦(短会话豁免)', claim: '用户实测调大至 20）：行数', note: '阈值注释(client 侧短会话豁免 20 行):行为面同族阈值由 prewrite-guard 用例覆盖;client 侧渲染阈值本身暂无用例 —— 登记以免静默改动' },
       { test: 'test/badge.test.js', title: '同一 id 确定性：两次调用结果相同', claim: '2026-08-31）：短码' },
     ],
@@ -275,7 +275,7 @@ const CLAIM_REGISTRY = [
     evidence: [
       { test: 'test/contract-runtime.test.js', title: '传入坏 span 时**任何写入都不发生**(断言先于 append;不留半关闭 turn)', claim: '传出去的 span 必须先合规' },
       { test: 'test/contract-runtime.test.js', title: '适配器返回坏 marker → host-core 边界抛 contract-violation(经 op 信封成 code)', claim: '// 出口自检:适配器返回的' },
-      { test: 'test/host-core.test.js', title: 'running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 事故闭环)', claim: '编辑/重发发生在 agent' },
+      { test: 'test/host-core.test.js', title: 'running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 事故修复)', claim: '编辑/重发发生在 agent' },
       { test: 'test/client-error.test.js', title: 'agent-busy 仍映射 error.busy;未映射 code → 透传 host message(已中文直接用);无 message → error.generic', claim: '不会被 details 覆盖' },
     ],
   },
@@ -333,7 +333,7 @@ const CLAIM_REGISTRY = [
   },
 ]
 
-describe('声称 = 有校验(issue-229 第 3 项)', () => {
+describe('声称 = 有校验', () => {
   const files = listLibFiles()
   const keywordLines = []
   for (const rel of files) {

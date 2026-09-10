@@ -105,7 +105,7 @@ function banHits(rel) {
 }
 
 describe('单一真相(第 2 项)· 结构断言:轮首回退/尾部切片只有一份实现', () => {
-  it('issue-230 :lib/ 下除 lib/span-semantics.js 外,不存在第二份轮首回退/尾部切片实现', () => {
+  it('lib/ 下除 lib/span-semantics.js 外,不存在第二份轮首回退/尾部切片实现', () => {
     const scanned = libFiles().filter((rel) => rel !== SINGLE_TRUTH && !GENERATED.test(rel))
     expect(scanned.length).toBeGreaterThan(15) // 扫描面非空(防规则失效导致"假绿")
     const hits = scanned.flatMap(banHits)
