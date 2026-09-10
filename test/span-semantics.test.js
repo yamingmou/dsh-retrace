@@ -1,5 +1,5 @@
 /**
- * span-semantics 单元 + **跨层一致性**(issue-229 第 2 项,复核)。
+ * span-semantics 单元 + **跨层一致性**。
  *
  * 审计原话:"业务层 shadowSpanOf(host-core,直接 slice 到结尾)与适配层 computeSpan
  * (起点回退到轮首)语义不一致 → 预览与写入迟早对不上"。

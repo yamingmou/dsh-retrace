@@ -1,6 +1,6 @@
 /**
  * dsh-retrace — test/close-guard-client.test.js
- * 关闭守卫 V2(issue-176)客户端纯逻辑层:reason 解析/本地化文案/快照判定/
+ * 关闭守卫 V2客户端纯逻辑层:reason 解析/本地化文案/快照判定/
  * 运行中清单/放行标记。
  */
 import { describe, it, expect } from 'vitest'

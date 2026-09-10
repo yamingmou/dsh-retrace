@@ -1,5 +1,5 @@
 /**
- * issue-200/issue-199 — client 操作失败文案映射。
+ * — client 操作失败文案映射。
  *
  * 修复前:client 只对 agent-busy 做本地化,其余 code 原样透传 host 英文
  * ("This message is no longer part of the active conversation.")——把「提交中
