@@ -240,6 +240,34 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 ISSUE
     const span = computeSpan(events, 3, 'round').span
     expect(span.shadowedSeqs).toEqual([3, 4])
   })
+
+  it('位置序 ≠ seq 数值序:marker 插在中间时 span 的 start 数值可 > end(官方只认位置)', () => {
+    // 真实数据实测(2026-09-10):位置连续段 [7000011 … 7000009] 是正常写入——
+    // 官方 replacementRange 只判 indexOf(start) <= indexOf(end)(位置),不比较 seq 数值。
+    const events = [
+      { seq: 0, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a0', content: [] } } },
+      { seq: 1, type: 'tool/result', surfaceOp: 'append', data: { message: { id: 't1', content: [] } } },
+      { seq: 2, type: 'tool/result', surfaceOp: 'append', data: { message: { id: 't2', content: [] } } },
+      { seq: 3, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a3', content: [] } } },
+      { seq: 4, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a4', content: [] } } },
+      // marker seq 5 插到 [1..2] 的位置 → nodes = [0, 5, 3, 4](非 seq 单调)
+      { seq: 5, type: 'assistant/message', surfaceOp: { op: 'replace', start: 1, end: 2 }, sourceEventSeqs: [1, 2], data: { turn: 1, message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 1, text: '' } } },
+    ]
+    const result = computeSpan(events, 5, 'round') // 目标 = marker 自身(位置 1;向前无轮边界)
+    expect(result.status).toBe(SPAN_STATUS.OK)
+    expect(result.span).toEqual({ start: 5, end: 4, shadowedSeqs: [5, 3, 4] })
+    expect(result.span.start).toBeGreaterThan(result.span.end) // seq 数值非单调(位置序才是真相)
+    // 契约不因此报错(assertSpanShape 只认位置连续段)
+    expect(() => assertSpanShape(result.span, 'test')).not.toThrow()
+    // 官方重放接受该区间(按位置 startIdx=1 <= endIdx=3)
+    const marker = {
+      type: 'assistant/message', seq: 6,
+      data: { turn: 1, message: { id: 'retrace-recall-y', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 5, text: '' } },
+      surfaceOp: { op: 'replace', start: result.span.start, end: result.span.end },
+      sourceEventSeqs: result.span.shadowedSeqs,
+    }
+    expect(() => foldSurface([...events, marker])).not.toThrow()
+  })
 })
 
 describe('adapter/dsh computeSpanProbe(issue-200 文件快照事实)', () => {
