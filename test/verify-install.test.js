@@ -1,7 +1,7 @@
 /**
  * dsh-retrace · test/verify-install.test.js
  *
- * verify-install.mjs 版本比较逻辑测试（2026-08-31 独立审查发现：
+ * verify-install.mjs 版本比较逻辑测试（2026-08-31 发现：
  * ^0.x.y 分支忽略 patch 导致 0.3.2 vs ^0.3.6 报 PASS——事故场景漏网）。
  *
  * 通过提取脚本中的 satisfiesRange 函数体做纯函数测试（脚本本身无导出）。

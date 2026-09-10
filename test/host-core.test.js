@@ -38,7 +38,7 @@ function surfaceSeqs(session) {
 }
 
 /** 找最后一个 retrace marker（surfaceOp replace 的 assistant/message；step 边界不算）。
- *  洞容忍：M-1 夹具把 host 内存 events 造成稀疏数组（窗口化视图的 undefined 洞）→
+ * 洞容忍夹具把 host 内存 events 造成稀疏数组（窗口化视图的 undefined 洞）→
  *  裸下标访问会抛 TypeError，这里按存在性判断。 */
 function lastMarker(session) {
   for (let i = session.events.length - 1; i >= 0; i--) {
@@ -58,7 +58,7 @@ describe('recall', () => {
 
     expect(result.ok).toBe(true)
     expect(result.value).toMatchObject({ op: 'recall', seq: 1, shadowed: 5, messageId: 'u1' })
-    // tail:u1 轮 + u2/a2 全部遮蔽(编辑=从此处分叉,bfb965e4/5e551006);surface 只剩 marker
+    // tail:u1 轮 + u2/a2 全部遮蔽(编辑=从此处分叉);surface 只剩 marker
     expect(surfaceSeqs(session)).toEqual([8])
   })
 
@@ -502,7 +502,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
     const marker = lastMarker(session)
-    expect(marker.data.turn).toBe(1) // 真实 turn 号（铁律：不得为 null——5e551001 白屏）
+    expect(marker.data.turn).toBe(1) // 真实 turn 号（铁律：不得为 null——白屏）
     expect(marker.data.step).toBe(1)
     expect(marker.data.editor?.markerT1Broken).toBeUndefined() // 不再标注
     expect(result.value.markerT1Broken).toBe(false)
@@ -623,7 +623,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
   /**
    * 「提交中」会话:目标消息已进内存 events(findMessageSeq 可见),但 surface.nodes
    * 尚未纳入(刚 commit/文件 flush 滞后,本次 span 快照看不到)——模拟用户点击落在
-   * turn 收尾窗口(真实会话 5e55100f seq 7000018 与 step/end、turn/end 同一毫秒,
+   * turn 收尾窗口(真实会话 seq 7000018 与 step/end、turn/end 同一毫秒,
    * turn/end reason=aborted-user;文件尚未 flush 刚 commit 消息)。
    * lastType='assistant' → 尾部最新 assistant 回复(a2,seq 4)提交中;
    * lastType='user' → 尾部最新 user 输入(u3,seq 4)刚发出、尚未进快照。
@@ -649,7 +649,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('message-pending')
     expect(result.error.message).toBe('消息生成中,完成后可编辑')
-    // 排查信息透传(issue-200 建议 3):messageId/seq 随 wire 错误携带
+    // 排查信息透传(建议 3):messageId/seq 随 wire 错误携带
     expect(result.error).toMatchObject({ messageId: 'a2', seq: 4 })
     // 未误伤:无 marker 写入,surface 保持原样
     expect(surfaceSeqs(session)).toEqual([1, 2, 3])
@@ -804,7 +804,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
       expect(result.error.code).toBe('span-replay-failed')
       expect(result.error.message).toMatch(/内部错误/)
       expect(result.error.code).not.toBe('target-shadowed') // 不冒充"历史只读"
-      // issue-230 :错误 details 必须带判因 facts(面为空 vs 重放抛错共用同一状态)
+      // 错误 details 必须带判因 facts(面为空 vs 重放抛错共用同一状态)
       expect(result.error.spanFacts).toMatchObject({ fileMaxSeq: 8, targetSeq: 1 })
     }
     // 带 cause 的判因细节透传到 wire(空面:nodes=0 + cause)
@@ -844,7 +844,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.ok).toBe(true) // 文件 span 优先:不再因内存 idx===-1 抛 target-shadowed
     expect(result.value.op).toBe('regenerate')
     expect(agent.followup).toHaveBeenCalledTimes(1)
-    // M-1:重发文本必须是该轮(span 起点 seq 3 = u2)的原文
+    // 重发文本必须是该轮(span 起点 seq 3 = u2)的原文
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('second')
     const marker = lastMarker(session)
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })

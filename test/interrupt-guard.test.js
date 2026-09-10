@@ -1,7 +1,7 @@
 /**
  * dsh-retrace · test/interrupt-guard.test.js
  *
- * R4 中断轮次治理测试（需求文档 §4）：
+ * R4 中断轮次治理测试：
  * 1. 正常闭合轮次 → 无未闭合；
  * 2. 有 turn/start 无 turn/end（崩溃/强杀现场）→ open；
  * 3. turn/end reason interrupted/aborted → 官方正常闭合，不计未闭合；

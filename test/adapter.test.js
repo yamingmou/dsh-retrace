@@ -35,7 +35,7 @@ describe('adapter/contract(适配器层契约)', () => {
 })
 
 describe('adapter/dsh computeSpan(业务逻辑,与平台无关)', () => {
-  // issue-229 第 1 项:computeSpan 返回**显式状态** {status, span, facts}(SPAN_STATUS
+  // computeSpan 返回**显式状态** {status, span, facts}(SPAN_STATUS
   // 五态,见 lib/span-semantics.js),不再用 null 承载四种语义。测试里 spanOf 断言
   // status=ok 并取 span;states 相关用例见下方「显式状态枚举」段。
   const spanOf = (result) => {
@@ -140,7 +140,7 @@ describe('adapter/dsh computeSpan · 显式状态枚举(issue-229 第 1 项:null
     expect(result.status).toBe('replay-failed')
     expect(result.span).toBeNull()
     expect(result.facts).toMatchObject({ fileMaxSeq: 1, targetSeq: 0 })
-    // issue-230 :同一状态两种原因必须可判因(details 里带 cause/message)
+    // 同一状态两种原因必须可判因(details 里带 cause/message)
     expect(result.facts.cause).toBe('fold-surface-threw')
     expect(typeof result.facts.message).toBe('string')
   })
