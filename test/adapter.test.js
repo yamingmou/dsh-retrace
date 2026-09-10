@@ -230,12 +230,12 @@ describe('adapter/dsh computeSpanProbe · prompt(round 起点 user 原文,M-1 �
     expect(probe.prompt).toBeNull()
   })
 
-  it('跨遮蔽区(中间 fold marker 遮蔽更早轮)→ prompt 取当前轮 user,绝不被遮蔽轮的更早 user', () => {
-    // 轮1(u1/a1)被 fold marker(seq 2)遮蔽 → surface 只剩 marker + 轮2(u2/a2)
+  it('跨遮蔽区(中间 replace marker 遮蔽更早轮)→ prompt 取当前轮 user,绝不被遮蔽轮的更早 user', () => {
+    // 轮1(u1/a1)被 replace marker(seq 2)遮蔽 → surface 只剩 marker + 轮2(u2/a2)
     const evts = [
       { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: '影子轮旧输入' }] } },
       { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: '影子轮回复' }] } } },
-      { seq: 2, type: 'assistant/message', surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [0, 1], data: { turn: 1, message: { id: 'retrace-fold-x', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 0, text: '', trio: {} } } },
+      { seq: 2, type: 'assistant/message', surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [0, 1], data: { turn: 1, message: { id: 'retrace-recall-x', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 0, text: '' } } },
       { seq: 3, type: 'user/message', surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: '当前轮真实输入' }] } },
       { seq: 4, type: 'assistant/message', surfaceOp: 'append', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: '当前轮回复' }] } } },
     ]
