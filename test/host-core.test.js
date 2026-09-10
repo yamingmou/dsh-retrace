@@ -37,11 +37,13 @@ function surfaceSeqs(session) {
   return session.surface.nodes.slice()
 }
 
-/** 找最后一个 retrace marker（surfaceOp replace 的 assistant/message；step 边界不算）。 */
+/** 找最后一个 retrace marker（surfaceOp replace 的 assistant/message；step 边界不算）。
+ *  洞容忍：M-1 夹具把 host 内存 events 造成稀疏数组（窗口化视图的 undefined 洞）→
+ *  裸下标访问会抛 TypeError，这里按存在性判断。 */
 function lastMarker(session) {
   for (let i = session.events.length - 1; i >= 0; i--) {
     const e = session.events[i]
-    if (e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') return e
+    if (e && e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') return e
   }
   return null
 }
@@ -614,5 +616,264 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     const idx = session.events.indexOf(marker)
     expect(session.events[idx - 1].data).toEqual({ turn: 5, step: 46 })
     expect(session.events[idx + 1].data).toEqual({ turn: 5, step: 46 })
+  })
+})
+
+describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」判定', () => {
+  /**
+   * 「提交中」会话:目标消息已进内存 events(findMessageSeq 可见),但 surface.nodes
+   * 尚未纳入(刚 commit/文件 flush 滞后,本次 span 快照看不到)——模拟用户点击落在
+   * turn 收尾窗口(真实会话 5e55100f seq 7000018 与 step/end、turn/end 同一毫秒,
+   * turn/end reason=aborted-user;文件尚未 flush 刚 commit 消息)。
+   * lastType='assistant' → 尾部最新 assistant 回复(a2,seq 4)提交中;
+   * lastType='user' → 尾部最新 user 输入(u3,seq 4)刚发出、尚未进快照。
+   */
+  function pendingTailSession({ lastType = 'assistant' } = {}) {
+    const session = makeSession().seed(
+      headerEvent(),
+      userMessage('u1', 'first'),
+      assistantMessage('a1', 'answer one'),
+      userMessage('u2', 'second'),
+    )
+    session.appendRaw(lastType === 'assistant' ? assistantMessage('a2', 'answer two') : userMessage('u3', 'third'))
+    session.surface.nodes.pop() // 模拟:本次 span 快照尚未纳入最后 append
+    return session
+  }
+
+  it('recall 尾部最近 append(提交中)的回复 → message-pending,非 target-shadowed(issue-200)', async () => {
+    const session = pendingTailSession() // a2(seq 4)在 events 尾、不在 surface
+    const api = makeApi(session, makeAgent())
+
+    const result = await api.recall({ sessionId: 's1', messageId: 'a2' })
+
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('message-pending')
+    expect(result.error.message).toBe('消息生成中,完成后可编辑')
+    // 排查信息透传(issue-200 建议 3):messageId/seq 随 wire 错误携带
+    expect(result.error).toMatchObject({ messageId: 'a2', seq: 4 })
+    // 未误伤:无 marker 写入,surface 保持原样
+    expect(surfaceSeqs(session)).toEqual([1, 2, 3])
+    expect(lastMarker(session)).toBeNull()
+  })
+
+  it('editAndResend「刚发送还没进快照」的 user 消息 → message-pending(可重试,issue-200)', async () => {
+    const session = pendingTailSession({ lastType: 'user' }) // u3(seq 4)提交中
+    const api = makeApi(session, makeAgent())
+
+    const result = await api.editAndResend({ sessionId: 's1', messageId: 'u3', text: 'third, edited' })
+
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('message-pending')
+    expect(result.error).toMatchObject({ messageId: 'u3', seq: 4 })
+    expect(surfaceSeqs(session)).toEqual([1, 2, 3])
+  })
+
+  it('regenerate 提交中的回复 → message-pending(判定与 recall/edit 一致,issue-200)', async () => {
+    const session = pendingTailSession() // a2(seq 4)提交中
+    const api = makeApi(session, makeAgent())
+
+    const result = await api.regenerate({ sessionId: 's1', messageId: 'a2' })
+
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('message-pending')
+    expect(result.error).toMatchObject({ messageId: 'a2', seq: 4 })
+  })
+
+  it('文件层事实注入:fileMaxSeq < 目标 seq(文件 flush 滞后)→ message-pending(withFileSpan/http 同路)', async () => {
+    const session = pendingTailSession() // a2 seq 4 在内存,文件快照只到 3
+    const api = makeApi(session, makeAgent())
+    // withFileSpan/http.js 在 spanFromFile null 时注入 spanFacts = { fileMaxSeq, targetSeq }
+    const result = await api.recall({ sessionId: 's1', messageId: 'a2', spanFacts: { fileMaxSeq: 3, targetSeq: -1 } })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('message-pending')
+  })
+
+  it('真被遮蔽(fold/recall 已移除)→ target-shadowed,中文可操作文案(issue-199)', async () => {
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    const first = await api.recall({ sessionId: 's1', messageId: 'u1' })
+    expect(first.ok).toBe(true)
+
+    const second = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+    expect(second.ok).toBe(false)
+    expect(second.error.code).toBe('target-shadowed')
+    expect(second.error.message).toBe('该消息位于已折叠块(历史只读):展开该块后编辑,或追加新消息修订')
+    expect(second.error).toMatchObject({ messageId: 'u1', seq: 1 })
+  })
+
+  it('文件层事实已覆盖目标(seq ≤ fileMaxSeq)且算不出 span → 真被遮蔽 target-shadowed', async () => {
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    await api.recall({ sessionId: 's1', messageId: 'u1' }) // marker seq 8 遮蔽 [1..5]
+    // 文件快照已含 marker(最大 seq 8)仍算不出 u1 的 span → 遮蔽终判
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1', spanFacts: { fileMaxSeq: 8, targetSeq: 1 } })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('target-shadowed')
+  })
+
+  it('三 op 判定一致:提交中 → 全 message-pending;真遮蔽 → 全 target-shadowed(issue-200)', async () => {
+    const session = pendingTailSession() // a2 提交中
+    const api = makeApi(session, makeAgent())
+    const pending = [
+      await api.recall({ sessionId: 's1', messageId: 'a2' }),
+      await api.regenerate({ sessionId: 's1', messageId: 'a2' }),
+    ]
+    expect(pending.map((r) => r.error.code)).toEqual(['message-pending', 'message-pending'])
+
+    // editAndResend 需 user 目标:同一「提交中」形态(尾部 user 未进快照)
+    const s2 = pendingTailSession({ lastType: 'user' })
+    const api2 = makeApi(s2, makeAgent())
+    const pendingEdit = await api2.editAndResend({ sessionId: 's1', messageId: 'u3', text: 'x' })
+    expect(pendingEdit.error.code).toBe('message-pending')
+
+    // 真遮蔽形态:u1 被 recall 后,recall/edit/regenerate 全部 target-shadowed
+    const s3 = standardSession()
+    const api3 = makeApi(s3, makeAgent())
+    await api3.recall({ sessionId: 's1', messageId: 'u1' })
+    const shadowed = [
+      await api3.recall({ sessionId: 's1', messageId: 'u1' }),
+      await api3.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'x' }),
+      await api3.regenerate({ sessionId: 's1', messageId: 'a1' }),
+    ]
+    expect(shadowed.map((r) => r.error.code)).toEqual(['target-shadowed', 'target-shadowed', 'target-shadowed'])
+  })
+
+  it('文件注入 span(文件含目标)→ 不再被内存 surface 滞后误伤(issue-200)', async () => {
+    const session = makeSession().seed(
+      headerEvent(),
+      userMessage('u1', 'first'),
+      assistantMessage('a1', 'answer one'),
+      userMessage('u2', 'second'),
+    )
+    // 内存 surface 滞后:a2 已在文件(文件算好 span 注入),但内存 nodes 还没有它
+    session.appendRaw(assistantMessage('a2', 'answer two'))
+    session.surface.nodes.pop()
+    const span = { start: 3, end: 4, shadowedSeqs: [3, 4] } // 文件 round span(轮2 u2+a2)
+    const agent = makeAgent()
+    const api = makeApi(session, agent)
+
+    const result = await api.regenerate({ sessionId: 's1', messageId: 'a2', span })
+
+    expect(result.ok).toBe(true) // 文件 span 优先:不再因内存 idx===-1 抛 target-shadowed
+    expect(result.value.op).toBe('regenerate')
+    expect(agent.followup).toHaveBeenCalledTimes(1)
+    // M-1:重发文本必须是该轮(span 起点 seq 3 = u2)的原文
+    expect(agent.followup.mock.calls[0][0].content[0].text).toBe('second')
+    const marker = lastMarker(session)
+    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+    expect(marker.data.editor).toEqual({ targetSeq: 3, text: 'second' })
+  })
+})
+
+describe('M-1(独立审查 74e580d 后续):regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区选更早轮', () => {
+  /**
+   * 文件含目标(span 注入,host 内存 surface 滞后)且 host 内存 events 是窗口化
+   * 视图:该轮 user(seq 3)是 undefined 洞,更早轮 user(seq 1)仍在内存——
+   * 旧实现「直扫稀疏 events 找前置 user」会越过洞选中 seq 1 → 重发错文本 +
+   * marker targetSeq 指向错轮。
+   */
+  function sparseHoleSession() {
+    const session = makeSession().seed(
+      headerEvent(), // seq 0
+      userMessage('u1', 'OLDER ROUND PROMPT'), // seq 1(更早轮 user,内存里在)
+      assistantMessage('a1', 'older answer'), // seq 2
+      userMessage('u2', 'SAME ROUND PROMPT'), // seq 3(该轮 user → 洞)
+      assistantMessage('a2', 'current answer'), // seq 4(目标,内存 events 有)
+    )
+    delete session.events[3] // 洞:该轮 user 未被 materialize(窗口化视图)
+    session.surface.nodes.pop() // 内存 surface 滞后:目标 seq 4 未纳入 → idx === -1
+    return session
+  }
+  const fileSpan = { start: 3, end: 4, shadowedSeqs: [3, 4] } // 文件 round span(轮2)
+
+  it('文件侧 prompt 注入(probe.prompt)→ 重发该轮 user 原文 + marker targetSeq 指向该轮', async () => {
+    const session = sparseHoleSession()
+    const agent = makeAgent()
+    const api = makeApi(session, agent)
+
+    const result = await api.regenerate({
+      sessionId: 's1',
+      messageId: 'a2',
+      span: fileSpan,
+      // index.js/http.js 由 spanProbeFromFile().prompt 注入(文件全量 events 取原文)
+      regeneratePrompt: { seq: 3, text: 'SAME ROUND PROMPT' },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(agent.followup).toHaveBeenCalledTimes(1)
+    // 关键断言:重发该轮 user 原文,绝不是更早轮(seq 1)的文本
+    expect(agent.followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
+    const marker = lastMarker(session)
+    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 }) // 遮蔽范围 = 该轮
+    expect(marker.data.editor).toEqual({ targetSeq: 3, text: 'SAME ROUND PROMPT' }) // targetSeq = 该轮 user
+  })
+
+  it('文件 span 注入但 probe 带不出 prompt(内存该点也是洞)→ 保守 no-prompt,不重发错文本', async () => {
+    const session = sparseHoleSession()
+    const agent = makeAgent()
+    const api = makeApi(session, agent)
+
+    const result = await api.regenerate({ sessionId: 's1', messageId: 'a2', span: fileSpan }) // 无 regeneratePrompt
+
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('no-prompt') // 可理解的错误,不是内部错误
+    expect(agent.followup).not.toHaveBeenCalled() // 绝不越过洞重发更早轮文本
+    expect(lastMarker(session)).toBeNull() // 无 marker 落盘(会话未被改)
+  })
+
+  it('文件 span + 内存无洞(调用方自有 span)→ 原文从 span 起点单点读取(不扫描)', async () => {
+    const session = makeSession().seed(
+      headerEvent(),
+      userMessage('u1', 'OLDER ROUND PROMPT'),
+      assistantMessage('a1', 'older answer'),
+      userMessage('u2', 'SAME ROUND PROMPT'),
+      assistantMessage('a2', 'current answer'),
+    )
+    session.surface.nodes.pop() // 内存 surface 滞后(events 齐全)
+    const agent = makeAgent()
+    const api = makeApi(session, agent)
+
+    const result = await api.regenerate({ sessionId: 's1', messageId: 'a2', span: fileSpan })
+
+    expect(result.ok).toBe(true)
+    expect(agent.followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
+    expect(lastMarker(session).data.editor.targetSeq).toBe(3)
+  })
+
+  it('跨遮蔽区(更早轮已被 fold 遮蔽成幽灵) + 当前轮 user 是洞 → 只重发当前轮原文', async () => {
+    const session = makeSession().seed(
+      headerEvent(),
+      userMessage('u1', 'SHADOWED OLD PROMPT'), // seq 1(被 fold 遮蔽 → 幽灵)
+      assistantMessage('a1', 'old answer'), // seq 2
+      userMessage('u2', 'CURRENT PROMPT'), // seq 3(当前轮 user → 洞)
+      assistantMessage('a2', 'current answer'), // seq 4(regenerate 目标)
+    )
+    const agent = makeAgent()
+    const api = makeApi(session, agent)
+    // 轮1 被 marker 遮蔽(replace 区间 1..2,与 index.js 注入 span 后的落盘同形)——
+    // 日志 append-only,u1/a1 仍是 events(幽灵),旧实现的稀疏扫描会选中它们。
+    session.append('assistant/message', {
+      turn: 1, step: 1,
+      message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
+      editor: { targetSeq: 1, text: '' },
+    }, { surfaceOp: { op: 'replace', start: 1, end: 2 }, sourceEventSeqs: [1, 2] })
+    session.surface.nodes.pop() // 内存 surface 滞后:目标 a2 未纳入
+    delete session.events[3] // 当前轮 user 是洞
+
+    const result = await api.regenerate({
+      sessionId: 's1',
+      messageId: 'a2',
+      span: fileSpan,
+      regeneratePrompt: { seq: 3, text: 'CURRENT PROMPT' },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(agent.followup.mock.calls[0][0].content[0].text).toBe('CURRENT PROMPT')
+    expect(agent.followup.mock.calls[0][0].content[0].text).not.toBe('SHADOWED OLD PROMPT')
+    const marker = lastMarker(session)
+    expect(marker.data.message.id).toMatch(/^retrace-regenerate-/)
+    expect(marker.data.editor.targetSeq).toBe(3) // 不是被遮蔽幽灵轮的 seq 1
+    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
   })
 })

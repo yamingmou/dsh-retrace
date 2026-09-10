@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { createAdapter, NULL_ADAPTER } from '../lib/adapter/contract.js'
-import { computeSpan, isRoundBoundary, dshAdapter } from '../lib/adapter/dsh.js'
+import { computeSpan, computeSpanProbe, isRoundBoundary, roundPromptOf, dshAdapter } from '../lib/adapter/dsh.js'
 import { foldSurface } from '@deepseek-ai/dsh-session'
 
 // 通用事件夹具(3 轮对话)——surface 候选须带 surfaceOp:'append'(官方 foldSurface 语义,
@@ -151,5 +151,97 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 ISSUE
     const events = withMarker()
     const span = computeSpan(events, 3, 'round')
     expect(span.shadowedSeqs).toEqual([3, 4])
+  })
+})
+
+describe('adapter/dsh computeSpanProbe(issue-200 文件快照事实)', () => {
+  it('span 命中 → facts 报文件快照最大 seq 与目标 seq', () => {
+    const probe = computeSpanProbe(events, 2) // 编辑 u2(轮2)的全量夹具 seq 0..5
+    expect(probe.span).toEqual({ start: 2, end: 3, shadowedSeqs: [2, 3] })
+    expect(probe.facts).toEqual({ fileMaxSeq: 5, targetSeq: 2 })
+  })
+
+  it('messageId 定位:facts.targetSeq 从文件反向找到', () => {
+    const probe = computeSpanProbe(events, 'u2')
+    expect(probe.facts.targetSeq).toBe(2)
+    expect(probe.span).not.toBeNull()
+  })
+
+  it('目标超出文件快照(文件 flush 滞后/刚 commit 未落盘)→ span null 且 fileMaxSeq < 目标 seq(pending 签名)', () => {
+    const probe = computeSpanProbe(events, 99, 'round')
+    expect(probe.span).toBeNull()
+    expect(probe.facts.fileMaxSeq).toBe(5)
+    // host-core 判据:seq > fileMaxSeq → message-pending(提交中),非 target-shadowed
+    expect(99 > probe.facts.fileMaxSeq).toBe(true)
+  })
+
+  it('文件里没有该 messageId → facts.targetSeq -1 + fileMaxSeq(文件存在,快照已覆盖到尾部)', () => {
+    const probe = computeSpanProbe(events, 'ghost')
+    expect(probe.span).toBeNull()
+    expect(probe.facts).toEqual({ fileMaxSeq: 5, targetSeq: -1 })
+  })
+
+  it('不可读/空 events → facts.fileMaxSeq -1(不携带判定力,host-core 落内存判)', () => {
+    const probe = computeSpanProbe(null, 2)
+    expect(probe.span).toBeNull()
+    expect(probe.facts.fileMaxSeq).toBe(-1) // <0 → withFileSpan/http 不注入,host-core 落内存判
+    const empty = computeSpanProbe([], 2)
+    expect(empty.span).toBeNull()
+    expect(empty.facts.fileMaxSeq).toBe(-1)
+    const ghostId = computeSpanProbe(null, 'u2')
+    expect(ghostId.span).toBeNull()
+    expect(ghostId.facts).toEqual({ fileMaxSeq: -1, targetSeq: -1 })
+  })
+})
+
+describe('adapter/dsh computeSpanProbe · prompt(round 起点 user 原文,M-1 独立审查 74e580d 后续)', () => {
+  it('round 模式:prompt = span 起点 user 的原文(目标同一轮的前置 user)', () => {
+    const probe = computeSpanProbe(events, 5) // 目标 a3(轮3)
+    expect(probe.span).toEqual({ start: 4, end: 5, shadowedSeqs: [4, 5] })
+    expect(probe.prompt).toEqual({ seq: 4, text: 'more' }) // 轮3 user u3,不是更早轮
+    // 目标是轮首 user 本身(edit 语义)时,prompt = 该 user 自己
+    const editProbe = computeSpanProbe(events, 2)
+    expect(editProbe.prompt).toEqual({ seq: 2, text: 'again' })
+  })
+
+  it('roundPromptOf 直测:round span 起点为轮边界 user 才返回原文', () => {
+    const span = { start: 2, end: 3, shadowedSeqs: [2, 3] }
+    expect(roundPromptOf(events, span, 'round')).toEqual({ seq: 2, text: 'again' })
+    // 非 user 起点(孤儿回复:c1 assistant 起点)→ null
+    expect(roundPromptOf(events, { start: 1, end: 3, shadowedSeqs: [1, 2, 3] }, 'round')).toBeNull()
+    // 非 round 模式(tail/range 无「前置 user」语义)→ null
+    expect(roundPromptOf(events, span, 'tail')).toBeNull()
+    expect(roundPromptOf(events, span, 'range')).toBeNull()
+    expect(roundPromptOf(events, null, 'round')).toBeNull()
+    expect(roundPromptOf(null, span, 'round')).toBeNull()
+  })
+
+  it('tail / range 模式 → prompt null(非 round 轮语义)', () => {
+    expect(computeSpanProbe(events, 2, 'tail').prompt).toBeNull()
+    expect(computeSpanProbe(events, 0, 'range', { endSeq: 3 }).prompt).toBeNull()
+  })
+
+  it('孤儿回复(向前无 user 轮边界)→ span 起点是回复本身,prompt null(host-core 报 no-prompt)', () => {
+    const orphan = [
+      { seq: 0, type: 'assistant/message', surfaceOp: 'append', data: { message: { id: 'a1', content: [{ type: 'text', text: 'orphan' }] } } },
+    ]
+    const probe = computeSpanProbe(orphan, 0)
+    expect(probe.span).not.toBeNull()
+    expect(probe.prompt).toBeNull()
+  })
+
+  it('跨遮蔽区(中间 fold marker 遮蔽更早轮)→ prompt 取当前轮 user,绝不被遮蔽轮的更早 user', () => {
+    // 轮1(u1/a1)被 fold marker(seq 2)遮蔽 → surface 只剩 marker + 轮2(u2/a2)
+    const evts = [
+      { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: '影子轮旧输入' }] } },
+      { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: '影子轮回复' }] } } },
+      { seq: 2, type: 'assistant/message', surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [0, 1], data: { turn: 1, message: { id: 'retrace-fold-x', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 0, text: '', trio: {} } } },
+      { seq: 3, type: 'user/message', surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: '当前轮真实输入' }] } },
+      { seq: 4, type: 'assistant/message', surfaceOp: 'append', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: '当前轮回复' }] } } },
+    ]
+    const probe = computeSpanProbe(evts, 4) // regenerate 目标 a2
+    expect(probe.span).toEqual({ start: 3, end: 4, shadowedSeqs: [3, 4] })
+    // 关键断言:原文是当前轮 user(seq 3),不是被遮蔽的更早轮 u1(seq 0)
+    expect(probe.prompt).toEqual({ seq: 3, text: '当前轮真实输入' })
   })
 })

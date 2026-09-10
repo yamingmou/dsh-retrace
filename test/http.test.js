@@ -251,12 +251,17 @@ describe('P1 HTTP routes', () => {
   })
 })
 
-describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：recall tail 两入口一致）', () => {
-  it('HTTP /recall 用 tail mode 调 spanFromFile（不再 round，缺陷①断层在 HTTP 入口也修复）', async () => {
+describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：recall tail 两入口一致；L-1 单次 probe）', () => {
+  it('HTTP /recall 用 tail mode 单次 spanProbeFromFile（不再 round，缺陷①断层在 HTTP 入口也修复）', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    const spy = vi.spyOn(dshAdapter, 'spanFromFile').mockResolvedValue({
-      start: 1, end: 5, shadowedSeqs: [1, 2, 3, 4, 5],
+    // L-1(独立审查 74e580d 后续):与 index.js harness 入口对齐——单次 probe(span+facts
+    // 同一份快照);spanFromFile 不再被主路径调用(消除双读 TOCTOU)。
+    const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
+      span: { start: 1, end: 5, shadowedSeqs: [1, 2, 3, 4, 5] },
+      facts: { fileMaxSeq: 5, targetSeq: 1 },
+      prompt: null,
     })
+    const spanSpy = vi.spyOn(dshAdapter, 'spanFromFile')
     try {
       const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
       const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'))
@@ -269,21 +274,24 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'u1' })
-      expect(spy).toHaveBeenCalledTimes(1)
+      expect(probeSpy).toHaveBeenCalledTimes(1) // L-1:单次 probe
+      expect(spanSpy).not.toHaveBeenCalled() // L-1:主路径不再 spanFromFile 双读
       // 关键断言:HTTP 入口 recall 也用 tail mode(与 index.js harness 入口一致)
-      expect(spy.mock.calls[0][2]).toBe('tail')
+      expect(probeSpy.mock.calls[0][2]).toBe('tail')
       const parsed = JSON.parse(res.body)
       expect(parsed.ok).toBe(true)
       expect(parsed.value.shadowed).toBe(5) // tail 遮蔽目标轮及之后全部
     } finally {
-      spy.mockRestore()
+      probeSpy.mockRestore(); spanSpy.mockRestore()
     }
   })
 
   it('HTTP /editAndResend 非 fromScratch 保持 round（编辑语义不变）', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    const spy = vi.spyOn(dshAdapter, 'spanFromFile').mockResolvedValue({
-      start: 1, end: 2, shadowedSeqs: [1, 2],
+    const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
+      span: { start: 1, end: 2, shadowedSeqs: [1, 2] },
+      facts: { fileMaxSeq: 5, targetSeq: 1 },
+      prompt: { seq: 1, text: 'hi' },
     })
     try {
       const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
@@ -297,11 +305,88 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/editAndResend`, { sessionId: 's1', messageId: 'u1', text: 'x' })
-      expect(spy).toHaveBeenCalledTimes(1)
-      expect(spy.mock.calls[0][2]).toBe('round')
+      expect(probeSpy).toHaveBeenCalledTimes(1)
+      expect(probeSpy.mock.calls[0][2]).toBe('round')
       expect(JSON.parse(res.body).ok).toBe(true)
     } finally {
-      spy.mockRestore()
+      probeSpy.mockRestore()
+    }
+  })
+
+  it('HTTP /recall 文件快照未含目标(文件 flush 滞后)→ 同一份快照的 facts → message-pending 而非 target-shadowed(issue-200)', async () => {
+    const { dshAdapter } = await import('../lib/adapter/dsh.js')
+    // 文件读成功但快照未含目标(刚 commit 未 flush):单次 probe → span null + fileMaxSeq < 目标 seq
+    const spanSpy = vi.spyOn(dshAdapter, 'spanFromFile')
+    const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({ span: null, facts: { fileMaxSeq: 3, targetSeq: -1 }, prompt: null })
+    try {
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+      // a2(seq 4)已进内存 events 但 surface 滞后未纳入 —— 用户点击落在提交窗口
+      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'))
+      session.appendRaw(assistantMessage('a2', 'more'))
+      session.surface.nodes.pop()
+      const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
+      const seam = makeSeam()
+      const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: {}, log: () => {} })
+      const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'a2' })
+      expect(probeSpy).toHaveBeenCalledTimes(1) // L-1:span 与 facts 来自同一次 probe(同一份快照)
+      expect(spanSpy).not.toHaveBeenCalled() // L-1:不再主调 + 补读的双读
+      const parsed = JSON.parse(res.body)
+      expect(parsed.ok).toBe(false)
+      expect(parsed.error.code).toBe('message-pending')
+      expect(parsed.error.message).toBe('消息生成中,完成后可编辑')
+      expect(parsed.error).toMatchObject({ messageId: 'a2', seq: 4 }) // 排查信息透传
+    } finally {
+      spanSpy.mockRestore(); probeSpy.mockRestore()
+    }
+  })
+
+  it('HTTP /regenerate 注入文件侧 prompt → 重发该轮 user 原文(M-1 端到端)', async () => {
+    const { dshAdapter } = await import('../lib/adapter/dsh.js')
+    const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
+      span: { start: 3, end: 4, shadowedSeqs: [3, 4] },
+      facts: { fileMaxSeq: 4, targetSeq: 4 },
+      prompt: { seq: 3, text: 'SAME ROUND PROMPT' },
+    })
+    try {
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+      const session = makeSession().seed(
+        headerEvent(),
+        userMessage('u1', 'OLDER ROUND PROMPT'),
+        assistantMessage('a1', 'older answer'),
+        userMessage('u2', 'SAME ROUND PROMPT'),
+      )
+      // 内存 surface 滞后:目标 a2 已进 events 但未进 nodes
+      session.appendRaw(assistantMessage('a2', 'current answer'))
+      session.surface.nodes.pop()
+      // M-1 陷阱:该轮 user(seq 3)在内存 events 里是洞,更早轮 user(seq 1)仍在
+      // ——旧实现直扫稀疏 events 会选中 seq 1(重发更早轮文本)。
+      delete session.events[3]
+      const followup = vi.fn()
+      const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup } })
+      const seam = makeSeam()
+      const markers = []
+      const fakeWriter = async (session, span, intent) => {
+        const marker = await session.append('assistant/message', {
+          turn: 1, step: 1,
+          message: { id: `retrace-regenerate-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
+          editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
+        }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
+        markers.push(marker)
+        return marker
+      }
+      const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
+      const res = await post(handler, `${ROUTE_PREFIX}/regenerate`, { sessionId: 's1', messageId: 'a2' })
+      const parsed = JSON.parse(res.body)
+      expect(parsed.ok).toBe(true)
+      // 重发文本 = 该轮 user(seq 3)原文,绝不是更早轮(seq 1)的
+      expect(followup).toHaveBeenCalledTimes(1)
+      expect(followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
+      // marker:遮蔽该轮 + targetSeq 指向该轮 user(不是更早轮)
+      expect(markers[0].surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+      expect(markers[0].data.editor.targetSeq).toBe(3)
+      expect(markers[0].data.editor.text).toBe('SAME ROUND PROMPT')
+    } finally {
+      probeSpy.mockRestore()
     }
   })
 })
