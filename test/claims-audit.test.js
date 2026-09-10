@@ -125,7 +125,7 @@ const CLAIM_REGISTRY = [
     claims: ['绝不冒充遮蔽', '两种模式共用同一条轮首回退规则'],
     evidence: [
       { test: 'test/adapter.test.js', title: 'replay-failed:foldSurface 重放抛错 → 内部错误状态(不冒充 already-shadowed)', claim: '绝不冒充遮蔽' },
-      // issue-230 :第 2 项头号声称的 evidence = **结构断言**(不是行为用例)——
+      // 该声称的 evidence = **结构断言**(不是行为用例)——
       // 行为一致不排除冒出第三份实现;该断言在 lib/ 里机械搜索第二份回退/切片实现。
       // (这条声称过去连"被审集合"都没进:它不含任何声称词,靠 CLAIM_DECLARED 声明。)
       { test: 'test/span-single-truth.test.js', title: 'issue-230 :lib/ 下除 lib/span-semantics.js 外,不存在第二份轮首回退/尾部切片实现', claim: '两种模式共用同一条轮首回退规则', note: '结构断言:规则只有一份实现(不只是行为一致);轮首回退原语 roundStartIndex 亦被 host-core regenerate 回退路径复用' },
@@ -185,7 +185,7 @@ const CLAIM_REGISTRY = [
       { test: 'test/http.test.js', title: 'GET /runningState 返回全会话运行中清单 { running: [...] }(纯读)', claim: '绝不中断/写事件' },
     ],
   },
-  // ── issue-230 :弱声称词扩面(必须 / 不会 / 永不 / 禁止 / 恒通过)后的逐行登记 ──
+  // ── 弱声称词扩面(必须 / 不会 / 永不 / 禁止 / 恒通过)后的逐行登记 ──
   // 每个文件一条:claims 片段**只命中该文件里的这一行**(片段通配 → 红),evidence 指向覆盖它的用例
   // (标题精确匹配 + 用例体内有断言);无法逐字断言的注释/文案行在 note 里写明覆盖边界。
   {
