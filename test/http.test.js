@@ -313,6 +313,40 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
     }
   })
 
+  it('HTTP /recall probe 显式状态逐档生效(issue-229;独立审查阻断项回归:两入口/两线同一判定)', async () => {
+    const { dshAdapter } = await import('../lib/adapter/dsh.js')
+    const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+    // 公开线曾因"行级投影标记吃掉 else if 的括号"把这条链路整条变成死代码(状态判定全塌成
+    // message-pending)→ 本用例按**状态**逐档断言,在任一线上失效都会红。
+    const cases = [
+      { status: 'already-shadowed', code: 'target-shadowed' },
+      { status: 'not-found', code: 'message-not-found' },
+      { status: 'replay-failed', code: 'span-replay-failed' },
+      { status: 'not-persisted', code: 'message-pending' },
+    ]
+    for (const c of cases) {
+      const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
+        status: c.status,
+        span: null,
+        facts: { fileMaxSeq: 5, targetSeq: 4, mode: 'tail', nodes: 5 },
+        prompt: null,
+      })
+      try {
+        const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+        // 内存侧也算不出 span(目标已被移出内存 surface)→ 走状态判定分支
+        session.surface.nodes = session.surface.nodes.filter((s) => s !== 2)
+        const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
+        const handler = createRetraceHttpHandler({}, { sessions, agents, seam: makeSeam(), rollback: {}, hooks: {}, log: () => {} })
+        const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'a1' })
+        const parsed = JSON.parse(res.body)
+        expect(parsed.ok).toBe(false)
+        expect({ status: c.status, got: parsed.error.code }).toEqual({ status: c.status, got: c.code })
+      } finally {
+        probeSpy.mockRestore()
+      }
+    }
+  })
+
   it('HTTP /recall 文件快照未含目标(文件 flush 滞后)→ 同一份快照的 facts → message-pending 而非 target-shadowed(issue-200)', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
     // 文件读成功但快照未含目标(刚 commit 未 flush):单次 probe → span null + fileMaxSeq < 目标 seq
