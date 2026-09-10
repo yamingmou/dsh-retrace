@@ -32,7 +32,7 @@ const indent = (text, spaces) =>
 {
   const hostCore = read('lib/host-core.js')
   const writerSrc = read('lib/adapter/dsh-writer.js')
-  // issue-229:host-core 现在依赖两个**纯模块**(span 语义单一真相 + 契约运行时校验)——
+  // host-core 现在依赖两个**纯模块**(span 语义单一真相 + 契约运行时校验)——
   // 动态插件 realm 不能 import,故一并 inline(声明顺序 = 依赖顺序):
   //   span-semantics.js(零依赖)→ adapter/contract.js(只引 span-semantics)
   //   → host-core → dsh-writer
@@ -62,7 +62,7 @@ ${indent(inlineHost, 4)}
 ${indent(inlineWriter, 4)}
     // 遮蔽写入器（DSH 三情形翻译）。动态路径无 prewrite guard 与文件全量
     // readMaxStep——step 分配仅内存覆盖（maxStepInTurn），窗口外既有 step 无法
-    // 感知（5e551001 同类风险，独立审查 2026-09-02 记录）；正式装配在
+    // 感知（同类风险）；正式装配在
     // lib/index.js 注入 readMaxStep（文件全量）与 validateMarker。
     const markerWriter = createDshMarkerWriter({ agents, log })
     const api = createEditorApi(ctx, sessions, agents, log, { writeMarker: markerWriter.writeMarker })

@@ -254,7 +254,7 @@ describe('P1 HTTP routes', () => {
 describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：recall tail 两入口一致；L-1 单次 probe）', () => {
   it('HTTP /recall 用 tail mode 单次 spanProbeFromFile（不再 round，缺陷①断层在 HTTP 入口也修复）', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    // L-1(独立审查 74e580d 后续):与 index.js harness 入口对齐——单次 probe(span+facts
+    // 与 index.js harness 入口对齐——单次 probe(span+facts
     // 同一份快照);spanFromFile 不再被主路径调用(消除双读 TOCTOU)。
     const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
       span: { start: 1, end: 5, shadowedSeqs: [1, 2, 3, 4, 5] },
@@ -274,8 +274,8 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'u1' })
-      expect(probeSpy).toHaveBeenCalledTimes(1) // L-1:单次 probe
-      expect(spanSpy).not.toHaveBeenCalled() // L-1:主路径不再 spanFromFile 双读
+      expect(probeSpy).toHaveBeenCalledTimes(1) // 单次 probe
+      expect(spanSpy).not.toHaveBeenCalled() // 主路径不再 spanFromFile 双读
       // 关键断言:HTTP 入口 recall 也用 tail mode(与 index.js harness 入口一致)
       expect(probeSpy.mock.calls[0][2]).toBe('tail')
       const parsed = JSON.parse(res.body)
@@ -316,7 +316,7 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
   it('HTTP /recall probe 显式状态逐档生效(issue-229;独立审查阻断项回归:两入口/两线同一判定)', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
     const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-    // 公开线曾因"行级投影标记吃掉 else if 的括号"把这条链路整条变成死代码(状态判定全塌成
+    // 曾因"行级吃掉 else if 的括号"把这条链路整条变成死代码(状态判定全塌成
     // message-pending)→ 本用例按**状态**逐档断言,在任一线上失效都会红。
     const cases = [
       { status: 'already-shadowed', code: 'target-shadowed' },
@@ -362,8 +362,8 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       const seam = makeSeam()
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: {}, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'a2' })
-      expect(probeSpy).toHaveBeenCalledTimes(1) // L-1:span 与 facts 来自同一次 probe(同一份快照)
-      expect(spanSpy).not.toHaveBeenCalled() // L-1:不再主调 + 补读的双读
+      expect(probeSpy).toHaveBeenCalledTimes(1) // span 与 facts 来自同一次 probe(同一份快照)
+      expect(spanSpy).not.toHaveBeenCalled() // 不再主调 + 补读的双读
       const parsed = JSON.parse(res.body)
       expect(parsed.ok).toBe(false)
       expect(parsed.error.code).toBe('message-pending')
@@ -392,7 +392,7 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       // 内存 surface 滞后:目标 a2 已进 events 但未进 nodes
       session.appendRaw(assistantMessage('a2', 'current answer'))
       session.surface.nodes.pop()
-      // M-1 陷阱:该轮 user(seq 3)在内存 events 里是洞,更早轮 user(seq 1)仍在
+      // 陷阱:该轮 user(seq 3)在内存 events 里是洞,更早轮 user(seq 1)仍在
       // ——旧实现直扫稀疏 events 会选中 seq 1(重发更早轮文本)。
       delete session.events[3]
       const followup = vi.fn()

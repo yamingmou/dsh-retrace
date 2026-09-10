@@ -1,5 +1,5 @@
 /**
- * 声称 = 有校验(issue-229 第 3 项,复核)。
+ * 声称 = 有校验。
  *
  * 问题:代码里到处写着"保证…""绝不…"(行为承诺),但没有任何机制保证这些承诺
  * 真的有对应校验——承诺随重构腐坏,只能靠人读。
@@ -8,7 +8,7 @@
  *   1. 扫描 lib/**\/*.js(排除生成件)里所有含强/弱声称词
  *      (`保证|确保|guarantee|绝不|恒通过|必须|不会|禁止|永不`)的行;
  *      **外加**显式声明的声称(CLAIM_DECLARED)——关键词扫不到的写法(如第 2 项的
- *      「两种模式共用同一条轮首回退规则」)过去**根本不在被审集合里**(issue-230 );
+ * 「两种模式共用同一条轮首回退规则」)过去**根本不在被审集合里**;
  *   2. **每条声称行**必须命中登记表里的一个片段,且**每个片段只能命中一条声称行**
  *      (一一对应:新增一条声称而片段恰好与旧行相同 → 片段命中 2 行 → 红);
  *   3. 每条片段必须有 evidence,且 evidence 必须指向**真实存在**的测试:
@@ -24,8 +24,8 @@
  * 弱声称词(必须/不会/永不…)在注释与文案里出现频繁,扩面后逐行登记;其中"文案/阈值
  * 注释"类声称的证据是**同族行为用例**(note 写明边界),不是逐字断言。
  *
- * 能力分层:仅本仓私有侧存在的模块,其登记项以**投影标记块**包住(生成公开产物时
- * 整体剥离);对应 lib 文件/声称行不在时,登记项也不在清单里。
+ * 能力分层:仅本仓私有侧存在的模块,其登记项以块**包住(生成公开产物时
+ * );对应 lib 文件/声称行不在时,登记项也不在清单里。
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
@@ -34,12 +34,12 @@ import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 /**
- * 声称词(issue-230  扩面):强词(保证/确保/绝不)+ 弱词(恒通过/必须/不会/禁止/永不)。
+ * 声称词(扩面):强词(保证/确保/绝不)+ 弱词(恒通过/必须/不会/禁止/永不)。
  * 扩面前弱词不入集 → 「必须/永不」类声称可以无声新增。
  */
 const CLAIM_RE = /保证|确保|guarantee|绝不|恒通过|必须|不会|禁止|永不/
 /**
- * **关键词扫不到的声称**(显式声明)。机制盲区(issue-230 ):第 2 项的头号声称
+ * **关键词扫不到的声称**(显式声明)。机制盲区:第 2 项的头号声称
  * 「两种模式共用同一条轮首回退规则」用的是「共用同一条」,不在 CLAIM_RE 命中集里——
  * 它此前**根本不在被审的声称集合中**。这里按「文件 + 片段」显式登记:片段必须**恰好
  * 命中一行**(与关键词声称同等强制),该行同样必须有登记项与证据。
@@ -219,7 +219,7 @@ const CLAIM_REGISTRY = [
       '都必须在边界处形状合规(违规',
       '620）：turn/end 必须带',
       '残留 fallback 标注',
-      '中-3):**可抛断言必须在任何',
+      '契约边界:**可抛断言必须在任何',
       '日志里留下"半关闭 turn',
       'nextTurn+1，不会复用',
     ],
@@ -229,7 +229,7 @@ const CLAIM_REGISTRY = [
       { test: 'test/contract-runtime.test.js', title: '适配器返回坏 marker → host-core 边界抛 contract-violation(经 op 信封成 code)', claim: '都必须在边界处形状合规(违规' },
       { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: '620）：turn/end 必须带' },
       { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: '残留 fallback 标注' },
-      { test: 'test/contract-runtime.test.js', title: '出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态,独立审查 issue-229 中-3)', claim: '中-3):**可抛断言必须在任何' },
+      { test: 'test/contract-runtime.test.js', title: '出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态,独立审查 issue-229 中-3)', claim: '契约边界:**可抛断言必须在任何' },
       { test: 'test/contract-runtime.test.js', title: '传入坏 span 时**任何写入都不发生**(断言先于 append;不留半关闭 turn)', claim: '日志里留下"半关闭 turn' },
       { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: 'nextTurn+1，不会复用' },
     ],
@@ -282,12 +282,12 @@ const CLAIM_REGISTRY = [
   {
     file: 'lib/index.js',
     claims: [
-      '后续):regenerate',
+      'regenerate 的重发原文必须来自',
       ':`bootPin(99)`',
       '24s 窗口内会话未驻留 →',
     ],
     evidence: [
-      { test: 'test/host-core.test.js', title: 'rewinds to the preceding user prompt and re-sends its text', claim: '后续):regenerate' },
+      { test: 'test/host-core.test.js', title: 'rewinds to the preceding user prompt and re-sends its text', claim: 'regenerate 的重发原文必须来自' },
       { test: 'test/badge.test.js', title: '同一 id 确定性：两次调用结果相同', claim: ':`bootPin(99)`', note: '缺陷复盘注释(0.4.19 启动重试窗口):该启动重试逻辑本身无用例;短码依据的确定性由 badge 用例覆盖,此行的回归保护靠 review 兜底' },
       { test: 'test/badge.test.js', title: '同一 id 确定性：两次调用结果相同', claim: '24s 窗口内会话未驻留 →', note: '同上(短码永不显示的症候):启动窗口重试无用例,登记以免静默改动' },
     ],
@@ -366,7 +366,7 @@ describe('声称 = 有校验(issue-229 第 3 项)', () => {
   it('扫描到声称(清单非空,防止扫描规则失效导致"假绿")', () => {
     expect(files.length).toBeGreaterThan(20) // 各层 lib 文件数不同(部分模块只在私有侧)
     expect(claimLines.length).toBeGreaterThan(10)
-    // issue-230 :扩面后弱声称词必须真的在命中集里(否则"扩面"是假的)
+    // 扩面后弱声称词必须真的在命中集里(否则"扩面"是假的)
     expect(claimLines.some((h) => /必须|不会|永不|禁止|恒通过/.test(h.text))).toBe(true)
   })
 
