@@ -141,6 +141,28 @@ describe('业务层与适配层同一实现(审计第 2 项:同一输入 → 同
     expect(shadowSpanOf(messages, [], 3, { mode: 'tail' }).shadowedSeqs).toEqual([2, 3, 4, 5])
     expect(computeSpan(events, 3, 'tail').span.shadowedSeqs).toEqual([2, 3, 4, 5])
   })
+
+  it('注入上下文(user/message 但 source.kind=context)两层都不当轮边界(谓词同义)', () => {
+    // 事件侧:ctx 注入插在轮1 中间;消息侧带同样的 source → 两层都必须无视它
+    const events = [
+      { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
+      { seq: 1, type: 'user/message', surfaceOp: 'append', data: { id: 'ctx', source: { kind: 'context' }, content: [{ type: 'text', text: 'env' }] } },
+      { seq: 2, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', source: { kind: 'model', provider: 'p', model: 'm' }, content: [] } } },
+      { seq: 3, type: 'user/message', surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: 'again' }] } },
+    ]
+    const messages = [
+      { seq: 0, role: 'user', source: { kind: 'user' } },
+      { seq: 1, role: 'user', source: { kind: 'context' } },
+      { seq: 2, role: 'assistant' },
+      { seq: 3, role: 'user', source: { kind: 'user' } },
+    ]
+    // 轮1 的回复(seq 2)在轮内;注入节点不切轮 → round 遮蔽 [0,1,2](不含轮2 的 u2)
+    expect(computeSpan(events, 2, 'round').span.shadowedSeqs).toEqual([0, 1, 2])
+    expect(shadowSpanOf(messages, [], 2, { mode: 'round' }).shadowedSeqs).toEqual([0, 1, 2])
+    // 目标 = 轮2 user 自身:round/tail 都从它起
+    expect(computeSpan(events, 3, 'tail').span.shadowedSeqs).toEqual([3])
+    expect(shadowSpanOf(messages, [], 3, { mode: 'tail' }).shadowedSeqs).toEqual([3])
+  })
 })
 
 /** 写入侧 marker(三情形翻译会追加 step/turn 包裹事件 → 按 surfaceOp 找,不靠"最后一个")。 */
