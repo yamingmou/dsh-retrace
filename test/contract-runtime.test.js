@@ -182,6 +182,34 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
     expect(result.error.message).toMatch(/契约违规\[host-core\.writeMarker\.marker\]/)
   })
 
+  it('出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态,独立审查 issue-229 中-3)', async () => {
+    const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+    const flushed = []
+    const sessions = { get: () => session, flush: async (s) => { flushed.push(s.events.length) } }
+    const agents = { get: () => makeAgent() }
+    const badWriter = async (s, span) => s.append('assistant/message', { turn: 1, message: { id: 'retrace-recall-bad', content: [] } }) // 缺 surfaceOp/editor
+    const api = createEditorApi({}, sessions, agents, () => {}, { writeMarker: badWriter })
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe(CONTRACT_VIOLATION)
+    expect(flushed.length).toBe(1) // 已写内容先落盘(拒绝半状态)
+    expect(flushed[0]).toBe(session.events.length)
+  })
+
+  it('传入坏 span 时**任何写入都不发生**(断言先于 append;不留半关闭 turn)', async () => {
+    const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+    const before = session.events.length
+    const sessions = { get: () => session, flush: async () => {} }
+    const agents = { get: () => makeAgent() }
+    // 写入器本身合规,但业务层传了坏 span(空 shadowedSeqs)→ 必须在任何 append 前拦住
+    const writer = createDshMarkerWriter({ agents: { get: () => undefined } })
+    const api = createEditorApi({}, sessions, agents, () => {}, { writeMarker: (s, span, meta) => writer.writeMarker(s, { ...span, shadowedSeqs: [] }, meta) })
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe(CONTRACT_VIOLATION)
+    expect(session.events.length).toBe(before) // 零写入(无半关闭 turn/信封残留)
+  })
+
   it('正常路径不受断言影响(真 writer + 真 api 全绿)', async () => {
     const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const api = makeApi(session, makeAgent())
