@@ -32,14 +32,20 @@ const indent = (text, spaces) =>
 {
   const hostCore = read('lib/host-core.js')
   const writerSrc = read('lib/adapter/dsh-writer.js')
-  // host-core.js / dsh-writer.js 是纯 ESM（host-core 零 import；dsh-writer 只
-  // import host-core 的符号）——strip export 与 import，声明落进动态 apply 作用域
-  // （dsh-writer 的 import 符号由 inline 后的 host-core 提供，同 scope 可见）。
-  const inlineHost = hostCore.replace(/^export /gm, '').trim()
-  const inlineWriter = writerSrc
-    .replace(/^import .* from '[^']*';?\n/gm, '') // 删 import（符号来自 inline host-core）
-    .replace(/^export /gm, '')
-    .trim()
+  // issue-229:host-core 现在依赖两个**纯模块**(span 语义单一真相 + 契约运行时校验)——
+  // 动态插件 realm 不能 import,故一并 inline(声明顺序 = 依赖顺序):
+  //   span-semantics.js(零依赖)→ adapter/contract.js(只引 span-semantics)
+  //   → host-core → dsh-writer
+  const spanSemanticsSrc = read('lib/span-semantics.js')
+  const contractSrc = read('lib/adapter/contract.js')
+  // 这四个文件都是纯 ESM(host-core/span-semantics 零平台 import;contract 只引
+  // span-semantics;dsh-writer 只引 host-core 与 contract 的符号)——strip export 与
+  // import,声明落进动态 apply 作用域(inline 顺序保证符号先声明后使用)。
+  const strip = (src) => src.replace(/^import .* from '[^']*';?\n/gm, '').replace(/^export /gm, '').trim()
+  const inlineSpanSemantics = strip(spanSemanticsSrc)
+  const inlineContract = strip(contractSrc)
+  const inlineHost = strip(hostCore)
+  const inlineWriter = strip(writerSrc)
   const dynamicHost = `/**
  * GENERATED FILE — do not edit by hand.
  * Source of truth: lib/host-core.js + lib/adapter/dsh-writer.js + the wrapper
@@ -50,6 +56,8 @@ return {
   apply(ctx) {
     const { sessions, agents } = ctx
     const log = (line) => console.error(\`retrace: \${line}\`)
+${indent(inlineSpanSemantics, 4)}
+${indent(inlineContract, 4)}
 ${indent(inlineHost, 4)}
 ${indent(inlineWriter, 4)}
     // 遮蔽写入器（DSH 三情形翻译）。动态路径无 prewrite guard 与文件全量

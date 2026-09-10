@@ -85,19 +85,26 @@ describe('activeMessages / activeTurnCount', () => {
 })
 
 describe('shadowSpanOf（业务层遮蔽计算，不依赖宿主 surface）', () => {
-  it('tail 模式：从目标遮蔽到当前活跃尾部', () => {
+  it('tail 模式：从目标轮首遮蔽到当前活跃尾部（issue-229：轮首回退统一，与适配层同实现）', () => {
     const span = shadowSpanOf(conv, [], 2)
     expect(span).toEqual({ start: 2, end: 5, shadowedSeqs: [2, 3, 4, 5] })
   })
 
-  it('tail 模式：编辑最后一条 → 只遮蔽自己（2026-09-01 长对话修复语义）', () => {
+  it('tail 模式：目标是轮内 assistant → 回退到该轮 user（审计指出的分叉点，已统一）', () => {
+    // 旧业务层语义会从 seq 1 起切到尾([1,2,3,4,5]);适配层 tail 回退轮首 user → 现在一致
+    expect(shadowSpanOf(conv, [], 1)).toEqual({ start: 0, end: 5, shadowedSeqs: [0, 1, 2, 3, 4, 5] })
+    expect(shadowSpanOf(conv, [], 3)).toEqual({ start: 2, end: 5, shadowedSeqs: [2, 3, 4, 5] })
+  })
+
+  it('tail 模式：编辑最后一条 → 轮首即自己 → 遮蔽整轮（含回复）', () => {
     const span = shadowSpanOf(conv, [], 4)
     expect(span).toEqual({ start: 4, end: 5, shadowedSeqs: [4, 5] })
   })
 
-  it('round 模式：只遮蔽目标轮', () => {
-    const span = shadowSpanOf(conv, [], 2, { mode: 'round' })
-    expect(span).toEqual({ start: 2, end: 3, shadowedSeqs: [2, 3] })
+  it('round 模式：只遮蔽目标轮（含轮内非 user 目标）', () => {
+    expect(shadowSpanOf(conv, [], 2, { mode: 'round' })).toEqual({ start: 2, end: 3, shadowedSeqs: [2, 3] })
+    expect(shadowSpanOf(conv, [], 3, { mode: 'round' })).toEqual({ start: 2, end: 3, shadowedSeqs: [2, 3] })
+    expect(shadowSpanOf(conv, [], 5, { mode: 'round' })).toEqual({ start: 4, end: 5, shadowedSeqs: [4, 5] })
   })
 
   it('已有遮蔽后：目标在被遮区间 → null', () => {
