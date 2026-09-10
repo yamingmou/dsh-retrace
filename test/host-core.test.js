@@ -804,7 +804,16 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
       expect(result.error.code).toBe('span-replay-failed')
       expect(result.error.message).toMatch(/内部错误/)
       expect(result.error.code).not.toBe('target-shadowed') // 不冒充"历史只读"
+      // issue-230 :错误 details 必须带判因 facts(面为空 vs 重放抛错共用同一状态)
+      expect(result.error.spanFacts).toMatchObject({ fileMaxSeq: 8, targetSeq: 1 })
     }
+    // 带 cause 的判因细节透传到 wire(空面:nodes=0 + cause)
+    const detailed = await api.recall({
+      sessionId: 's1', messageId: 'u1', spanStatus: 'replay-failed',
+      spanFacts: { fileMaxSeq: 8, targetSeq: 1, nodes: 0, cause: 'empty-surface' },
+    })
+    expect(detailed.error.spanFacts).toMatchObject({ nodes: 0, cause: 'empty-surface' })
+    expect(detailed.error.nodes).toBeUndefined() // 判因细节收在一个 spanFacts 字段里,不污染 wire 顶层
   })
 
   it('issue-229 状态优先于内存兜底:显式 not-persisted 压过内存"看起来已遮蔽"的形态', async () => {
