@@ -35,10 +35,18 @@ describe('close-guard runningState(关闭守卫检测,issue-146)', () => {
     expect(s.reasons).toEqual([])
   })
 
-  it('status=idle 但 inbox 有 queued → 运行中(排队 work 也算)', () => {
-    const s = runningState('s1', { agent: makeAgent('idle', { queued: [{ id: 'q1' }] }) })
+  it('P0-2:status=idle 但 inbox.hasPending(官方形状)→ 运行中(排队 work 也算)', () => {
+    // 官方 Inbox:hasPending + nextStep/nextTurn 数组;无 queued/pending 字段
+    const s = runningState('s1', { agent: makeAgent('idle', { hasPending: true, nextStep: [{ id: 'q1' }], nextTurn: [] }) })
     expect(s.running).toBe(true)
     expect(s.reasons).toContain('queued-1')
+    // hasPending=true 但数组不可读 → queued-1(兜底)
+    const s2 = runningState('s1', { agent: makeAgent('idle', { hasPending: true }) })
+    expect(s2.running).toBe(true)
+    expect(s2.reasons).toContain('queued-1')
+    // 旧形状 queued/pending(非官方)→ 不再误报
+    const s3 = runningState('s1', { agent: makeAgent('idle', { queued: [{ id: 'x' }] }) })
+    expect(s3.running).toBe(false)
   })
 
   it('未闭合轮(崩溃现场)→ unclosed-turn;interrupted 正常闭合不算', () => {
@@ -53,14 +61,20 @@ describe('close-guard runningState(关闭守卫检测,issue-146)', () => {
     expect(interrupted.running).toBe(false) // interrupted 是官方正常闭合
   })
 
-  it('关联后台任务 → jobs-N', () => {
-    const s = runningState('s1', { agent: makeAgent('idle'), session: cleanSession(), jobs: [{ id: 'j1', sessionId: 's1' }] })
+  it('P0-2:关联后台任务(官方 owner.id 形状)→ jobs-N', () => {
+    const s = runningState('s1', { agent: makeAgent('idle'), session: cleanSession(), jobs: [{ id: 'j1', owner: { id: 's1' } }] })
     expect(s.running).toBe(true)
     expect(s.reasons).toContain('jobs-1')
+    // owner 为字符串 id 也认(部分快照形状)
+    const s2 = runningState('s1', { agent: makeAgent('idle'), session: cleanSession(), jobs: [{ id: 'j2', owner: 's1' }] })
+    expect(s2.running).toBe(true)
+    // 旧形状 sessionId(非官方)→ 不再误报
+    const s3 = runningState('s1', { agent: makeAgent('idle'), session: cleanSession(), jobs: [{ id: 'j3', sessionId: 's1' }] })
+    expect(s3.running).toBe(false)
   })
 
   it('他人会话的 jobs 不算', () => {
-    const s = runningState('s1', { agent: makeAgent('idle'), session: cleanSession(), jobs: [{ id: 'j1', sessionId: 'other' }] })
+    const s = runningState('s1', { agent: makeAgent('idle'), session: cleanSession(), jobs: [{ id: 'j1', owner: { id: 'other' } }] })
     expect(s.running).toBe(false)
   })
 })
