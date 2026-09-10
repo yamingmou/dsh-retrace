@@ -77,21 +77,6 @@ Full steps in [📦 Installation](#-installation).
 | 🧭 | **Jump-to-conversation** | one click from a version to that point in the conversation (auto-loads history, anchor highlight) |
 | 🧹 | **Bounded storage** | snapshots keep the most recent N versions (default 50); throttled background sweep prunes truncated ones |
 
-**Close guard (don't lose work by accident)** — before you exit or reload, know what is still running:
-
-| | What | |
-|---|---|---|
-| 🛡️ | **Running-work detection** | every session is scanned for live work: agent running, queued inbox items, background jobs, unclosed turns |
-| 📋 | **Running banner** | sessions with live work show a persistent in-page banner (short session code + reasons), so you can see it before quitting |
-| ⚠️ | **Exit prompt** | on plugin dispose (app exit / reload) a Chinese notice lists each running session and why it is considered busy — it only warns, it never cancels your running agent |
-| 🔒 | **Page-close interception (Web)** | `beforeunload` interception: a strong confirm when work is running (details modal, `[仍关闭]` = confirm-and-go), a light confirm otherwise |
-| 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports |
-
-> Desktop note: the Electron shell destroys the window on quit, so the page-level
-> `beforeunload` hook cannot fire there and the host exposes no plugin quit-veto seam —
-> Desktop is covered by the running banner plus the dispose notice; Web gets the full
-> interception.
-
 **Why it's different** (the interaction layer — the guarantees above are the storage layer):
 
 - 🎯 **Whole-round recall** — removes the input *and* its output (tool rows included), not just a single bubble.
@@ -286,6 +271,22 @@ The dynamic host registers the same operations behind the package-private
 - **Real-time watchdog** — snapshots the log at the first sign of concurrent writes.
 - Companion **`dsh-log-contract`**: 30+ offline contract rules + in-place repair
   (`fix --neutralize` / `--clip-crossstep`) for sessions that would fail `/compact`.
+**Close guard (don't lose work by accident)** — before you exit or reload, know what is still running:
+
+| | What | |
+|---|---|---|
+| 🛡️ | **Running-work detection** | every session is scanned for live work: agent running, queued inbox items, background jobs, unclosed turns |
+| 📋 | **Running banner** | sessions with live work show a persistent in-page banner (short session code + reasons), so you can see it before quitting |
+| ⚠️ | **Exit prompt** | on plugin dispose (app exit / reload) a Chinese notice lists each running session and why it is considered busy — it only warns, it never cancels your running agent |
+| 🔒 | **Page-close interception (Web)** | `beforeunload` interception: a strong confirm when work is running (details modal, `[仍关闭]` = confirm-and-go), a light confirm otherwise |
+| 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports |
+
+> Desktop note: the Electron shell destroys the window on quit, so the page-level
+> `beforeunload` hook cannot fire there and the host exposes no plugin quit-veto seam —
+> Desktop is covered by the running banner plus the dispose notice; Web gets the full
+> interception.
+
+> Command surface: `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP).
 
 **What's next** — see the [public roadmap](./docs/ROADMAP.md) for the agent
 business-layer plan (runtime guard, interruption governance, ecosystem-facing
