@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { zh, en, opFailureText } from '../lib/client.js'
-import { SHADOWED_TARGET_MESSAGE, PENDING_TARGET_MESSAGE } from '../lib/host-core.js'
+import { SHADOWED_TARGET_MESSAGE, PENDING_TARGET_MESSAGE, SPAN_REPLAY_FAILED_MESSAGE, TARGET_NOT_FOUND_MESSAGE } from '../lib/host-core.js'
 
 const tOf = (dict) => (key) => dict[key]
 
@@ -40,8 +40,22 @@ describe('client 操作失败文案(issue-200/199)', () => {
     expect(opFailureText(undefined, null, t)).toBe(zh['error.generic'])
   })
 
-  it('字典键完整:en 与 zh 都含两个新 error 键(zh 为键集源头)', () => {
-    for (const key of ['error.targetShadowed', 'error.messagePending']) {
+  it('issue-229:message-not-found / span-replay-failed → 本地化(中英齐备,与 host 文案同源)', () => {
+    expect(opFailureText('message-not-found', 'host 中文', tOf(zh))).toBe(TARGET_NOT_FOUND_MESSAGE)
+    expect(zh['error.messageNotFound']).toBe(TARGET_NOT_FOUND_MESSAGE)
+    expect(opFailureText('message-not-found', TARGET_NOT_FOUND_MESSAGE, tOf(en))).toMatch(/not in the session log/i)
+
+    expect(opFailureText('span-replay-failed', 'host 中文', tOf(zh))).toBe(SPAN_REPLAY_FAILED_MESSAGE)
+    expect(zh['error.spanReplayFailed']).toBe(SPAN_REPLAY_FAILED_MESSAGE)
+    expect(opFailureText('span-replay-failed', SPAN_REPLAY_FAILED_MESSAGE, tOf(en))).toMatch(/internal error/i)
+
+    // 契约违规:技术细节(契约名/期望/实际)只进日志,用户看通用文案
+    expect(opFailureText('contract-violation', '契约违规[host-core.writeMarker.marker]:期望 …;实际 …', tOf(zh))).toBe(zh['error.generic'])
+    expect(opFailureText('contract-violation', '契约违规[…]', tOf(en))).toBe(en['error.generic'])
+  })
+
+  it('字典键完整:en 与 zh 都含新 error 键(zh 为键集源头)', () => {
+    for (const key of ['error.targetShadowed', 'error.messagePending', 'error.messageNotFound', 'error.spanReplayFailed']) {
       expect(typeof zh[key]).toBe('string')
       expect(typeof en[key]).toBe('string')
       expect(zh[key].length).toBeGreaterThan(0)

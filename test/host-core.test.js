@@ -771,6 +771,25 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error).toMatchObject({ messageId: 'u1', seq: 1 })
   })
 
+  it('issue-229 状态 + 文件事实联合定证:not-found 且内存 seq 超出快照 → message-pending(未落盘的证据)', async () => {
+    const session = pendingTailSession() // a2(seq 4)已进内存,文件快照只到 3
+    const api = makeApi(session, makeAgent())
+    // 文件层对 id 目标只给"快照里没有" + 事实;内存 seq 4 > fileMaxSeq 3 = 未落盘证据
+    const result = await api.recall({ sessionId: 's1', messageId: 'a2', spanStatus: 'not-found', spanFacts: { fileMaxSeq: 3, targetSeq: -1 } })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('message-pending')
+  })
+
+  it('issue-229 状态 + 文件事实联合定证:not-found 且快照已覆盖该 seq → message-not-found(永久不存在,不报可重试)', async () => {
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    await api.recall({ sessionId: 's1', messageId: 'u1' }) // 内存里 u1 已遮蔽,span 算不出
+    // 快照覆盖到 8 > 目标 seq 1 → 不是"未落盘",是快照里就没有这个 id
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1', spanStatus: 'not-found', spanFacts: { fileMaxSeq: 8, targetSeq: -1 } })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('message-not-found')
+  })
+
   it('issue-229 显式状态:spanStatus=replay-failed → span-replay-failed(内部错误,绝不冒充遮蔽)', async () => {
     const session = standardSession()
     const api = makeApi(session, makeAgent())

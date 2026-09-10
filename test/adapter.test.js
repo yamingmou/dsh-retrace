@@ -5,8 +5,8 @@
  * EventReader/ReplaceWriter 即可,业务逻辑零改动。
  */
 import { describe, it, expect } from 'vitest'
-import { createAdapter, NULL_ADAPTER, assertSpanShape, assertSpanResult, assertMarkerShape, assertEventListShape } from '../lib/adapter/contract.js'
-import { computeSpan, computeSpanProbe, isRoundBoundary, roundPromptOf, dshAdapter } from '../lib/adapter/dsh.js'
+import { createAdapter, NULL_ADAPTER, assertSpanShape, assertSpanResult, assertMarkerShape, assertEventListShape, CONTRACT_VIOLATION } from '../lib/adapter/contract.js'
+import { computeSpan, computeSpanProbe, isRoundBoundary, roundPromptOf, readEventsFromFile, dshAdapter } from '../lib/adapter/dsh.js'
 import { SPAN_STATUS, spanMissArgsOf, spanAt, spanForSeq } from '../lib/span-semantics.js'
 import { foldSurface } from '@deepseek-ai/dsh-session'
 
@@ -109,11 +109,12 @@ describe('adapter/dsh computeSpan · 显式状态枚举(issue-229 第 1 项:null
     expect(99 > result.facts.fileMaxSeq).toBe(true)
   })
 
-  it('not-persisted:消息 id 不在 append-only 日志里(同因:尚未落盘)', () => {
+  it('not-found:消息 id 不在快照里 —— 文件层只给事实,不臆断"未落盘"(独立审查中-6)', () => {
     const result = computeSpan(events, 'ghost-id')
-    expect(result.status).toBe('not-persisted')
+    expect(result.status).toBe('not-found')
     expect(result.span).toBeNull()
     expect(result.facts).toMatchObject({ fileMaxSeq: 5, targetSeq: -1 })
+    // 原因(未落盘 vs 不存在)由业务层用内存 seq 与 fileMaxSeq 比出证据 → host-core 用例
   })
 
   it('already-shadowed:目标在日志里但已被更早 replace 移出当前面', () => {
@@ -158,6 +159,28 @@ describe('adapter/dsh dshAdapter(DSH 平台适配器)', () => {
     expect(typeof dshAdapter.reader.readEvents).toBe('function')
     expect(typeof dshAdapter.spanFromFile).toBe('function')
     expect(typeof dshAdapter.maxStepInTurnFromFile).toBe('function')
+  })
+
+  it('readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"(issue-229 中-4)', async () => {
+    const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'retrace-contract-'))
+    try {
+      const file = join(dir, 'session.jsonl')
+      // 中间一行是数字(不是事件记录)→ loadSessionLog.events.map(r => r.event) 出现 undefined 洞
+      writeFileSync(file, [
+        JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 1, cwd: '/tmp' }),
+        JSON.stringify({ type: 'user/message', seq: 1, time: 2, data: { id: 'u1' } }),
+        '42',
+        JSON.stringify({ type: 'assistant/message', seq: 2, time: 3, data: { message: { id: 'a1' } } }),
+      ].join('\n') + '\n')
+      await expect(readEventsFromFile(file)).rejects.toMatchObject({ code: CONTRACT_VIOLATION })
+      // 消费方按**自身契约**降级:step 号读取失败 → null(调用方回退内存扫描,不拖垮编辑)
+      expect(await dshAdapter.maxStepInTurnFromFile('s1', 5, file)).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('maxStepInTurnFromFile:从全量事件算 turn 内最大 step(情形②窗口化防御)', async () => {
@@ -293,9 +316,9 @@ describe('adapter/dsh computeSpanProbe(issue-200 文件快照事实)', () => {
     expect(99 > probe.facts.fileMaxSeq).toBe(true)
   })
 
-  it('文件里没有该 messageId → not-persisted + facts.targetSeq -1(文件存在,快照已覆盖到尾部)', () => {
+  it('文件里没有该 messageId → not-found + facts.targetSeq -1(文件存在,快照已覆盖到尾部)', () => {
     const probe = computeSpanProbe(events, 'ghost')
-    expect(probe.status).toBe(SPAN_STATUS.NOT_PERSISTED)
+    expect(probe.status).toBe(SPAN_STATUS.NOT_FOUND)
     expect(probe.span).toBeNull()
     expect(probe.facts).toMatchObject({ fileMaxSeq: 5, targetSeq: -1 })
   })
@@ -331,16 +354,14 @@ describe('adapter/dsh computeSpanProbe · prompt(round 起点 user 原文,M-1 �
     expect(roundPromptOf(events, span, 'round')).toEqual({ seq: 2, text: 'again' })
     // 非 user 起点(孤儿回复:c1 assistant 起点)→ null
     expect(roundPromptOf(events, { start: 1, end: 3, shadowedSeqs: [1, 2, 3] }, 'round')).toBeNull()
-    // 非 round 模式(tail/range 无「前置 user」语义)→ null
+    // 非 round 模式(tail 无「前置 user」轮语义)→ null
     expect(roundPromptOf(events, span, 'tail')).toBeNull()
-    expect(roundPromptOf(events, span, 'range')).toBeNull()
     expect(roundPromptOf(events, null, 'round')).toBeNull()
     expect(roundPromptOf(null, span, 'round')).toBeNull()
   })
 
-  it('tail / range 模式 → prompt null(非 round 轮语义)', () => {
+  it('tail 模式 → prompt null(非 round 轮语义)', () => {
     expect(computeSpanProbe(events, 2, 'tail').prompt).toBeNull()
-    expect(computeSpanProbe(events, 0, 'range', { endSeq: 3 }).prompt).toBeNull()
   })
 
   it('孤儿回复(向前无 user 轮边界)→ span 起点是回复本身,prompt null(host-core 报 no-prompt)', () => {
