@@ -140,6 +140,24 @@ describe('adapter/dsh computeSpan · 显式状态枚举(issue-229 第 1 项:null
     expect(result.status).toBe('replay-failed')
     expect(result.span).toBeNull()
     expect(result.facts).toMatchObject({ fileMaxSeq: 1, targetSeq: 0 })
+    // issue-230 :同一状态两种原因必须可判因(details 里带 cause/message)
+    expect(result.facts.cause).toBe('fold-surface-threw')
+    expect(typeof result.facts.message).toBe('string')
+  })
+
+  it('replay-failed(issue-230 ):面重放正常但节点为空(合法空面)→ cause=empty-surface 与抛错可区分', () => {
+    // 日志里只有非 surface 事件(如 step/start):foldSurface 正常返回 nodes=[] ——
+    // 旧实现与「重放抛错」共用同一个 replay-failed 且 facts 无差异 → 用户只看到"内部错误"。
+    const emptySurface = [{ seq: 0, type: 'step/start', data: { turn: 1 } }]
+    const result = computeSpan(emptySurface, 0)
+    expect(result.status).toBe('replay-failed')
+    expect(result.facts).toMatchObject({ nodes: 0, cause: 'empty-surface' })
+    // 抛错路径的 cause 不同 → 两个原因在 facts 上可分
+    const threw = computeSpan([
+      { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
+      { seq: 1, type: 'assistant/message', surfaceOp: { op: 'replace', start: 42, end: 43 }, sourceEventSeqs: [42, 43], data: { turn: 1, message: { id: 'x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 42, text: '' } } },
+    ], 0)
+    expect(threw.facts.cause).toBe('fold-surface-threw')
   })
 
   it('spanMissArgsOf:只在文件侧确有快照证据时下传状态(无证据 → 业务层落内存判,行为不变)', () => {
