@@ -85,7 +85,7 @@ describe('activeMessages / activeTurnCount', () => {
 })
 
 describe('shadowSpanOf（业务层遮蔽计算，不依赖宿主 surface）', () => {
-  it('tail 模式：从目标轮首遮蔽到当前活跃尾部（issue-229：轮首回退统一，与适配层同实现）', () => {
+  it('tail 模式：从目标轮首遮蔽到当前活跃尾部（轮首回退统一，与适配层同实现）', () => {
     const span = shadowSpanOf(conv, [], 2)
     expect(span).toEqual({ start: 2, end: 5, shadowedSeqs: [2, 3, 4, 5] })
   })

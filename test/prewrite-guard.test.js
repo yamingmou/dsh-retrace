@@ -29,7 +29,7 @@ function validEnvelope(session) {
   }
 }
 
-describe('快照点守卫（2026-08-31 5e55100a 事故闭环；2026-09-01 改为绝对遮蔽数判定）', () => {
+describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮蔽数判定）', () => {
   // 会话工厂：n 个 surface 节点 + header(不算节点)
   function bigSession(n = 10) {
     const s = makeSession()
