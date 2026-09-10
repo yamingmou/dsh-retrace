@@ -48,13 +48,27 @@ describe('Span.shape(跨层 span 结构契约)', () => {
     expect(assertSpanShape(s)).toBe(s)
   })
 
-  it('非对象/空段/start>end/shadowedSeqs 首尾≠start,end → 明确报错', () => {
+  it('非对象/空段/首尾≠start,end/元素非法 → 明确报错', () => {
     expect(() => assertSpanShape(null)).toThrow(/Span\.shape.*期望 span 为对象/)
     expect(() => assertSpanShape({ start: 0, end: 2, shadowedSeqs: [] })).toThrow(/shadowedSeqs 为非空数组/)
-    expect(() => assertSpanShape({ start: 3, end: 1, shadowedSeqs: [3, 1] })).toThrow(/span\.end 为安全整数且 >= start/)
     expect(() => assertSpanShape({ start: 0, end: 2, shadowedSeqs: [0, 9] })).toThrow(/shadowedSeqs 首尾 === span\.start\/end/)
     expect(() => assertSpanShape({ start: -1, end: 0, shadowedSeqs: [-1, 0] })).toThrow(/span\.start 为非负安全整数/)
+    expect(() => assertSpanShape({ start: 0, end: -1, shadowedSeqs: [0, -1] })).toThrow(/span\.end 为非负安全整数/)
     expect(() => assertSpanShape({ start: 0, end: 1, shadowedSeqs: [0, 'x'] })).toThrow(/元素全为非负安全整数/)
+  })
+
+  it('**不断言 start <= end**:位置序 span 的 seq 数值可非单调(marker 插入 → 合法)', () => {
+    // 官方 replacementRange 只按 indexOf(start) <= indexOf(end) 的**位置**判定;
+    // 真实会话实测:位置连续段 [7000011 … 7000009](start 数值 > end)是正常写入。
+    const positional = { start: 7000011, end: 7000009, shadowedSeqs: [7000011, 7000010, 7000009] }
+    expect(assertSpanShape(positional)).toBe(positional)
+    expect(() => assertMarkerShape({
+      seq: 9,
+      type: 'assistant/message',
+      surfaceOp: { op: 'replace', start: 7000011, end: 7000009 },
+      sourceEventSeqs: [7000011, 7000010, 7000009],
+      data: { editor: { targetSeq: 7000011, text: '' } },
+    })).not.toThrow()
   })
 
   it('契约名可定制(报错指认调用点)', () => {
@@ -141,11 +155,18 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
   it('业务层传入坏 span → dsh-writer 边界抛 contract-violation(带契约名)', async () => {
     const writer = createDshMarkerWriter({ agents: { get: () => null } })
     const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
-    await expect(writer.writeMarker(session, { start: 2, end: 0, shadowedSeqs: [2, 0] }, { op: 'recall', targetSeq: 0, originalText: '' }))
-      .rejects.toThrow(/契约违规\[dshAdapter\.writeMarker\.span\].*span\.end/)
+    // 首尾与 start/end 不一致(位置连续段被破坏)
+    await expect(writer.writeMarker(session, { start: 0, end: 5, shadowedSeqs: [0, 1, 9] }, { op: 'recall', targetSeq: 0, originalText: '' }))
+      .rejects.toThrow(/契约违规\[dshAdapter\.writeMarker\.span\].*shadowedSeqs 首尾/)
+    // start 非整数
+    await expect(writer.writeMarker(session, { start: '0', end: 1, shadowedSeqs: [0, 1] }, { op: 'recall', targetSeq: 0, originalText: '' }))
+      .rejects.toThrow(/span\.start 为非负安全整数/)
     // 空 span 同样拦下(写出去就是"遮蔽零条"的诡异 marker)
     await expect(writer.writeMarker(session, { start: 0, end: 0, shadowedSeqs: [] }, { op: 'recall', targetSeq: 0, originalText: '' }))
       .rejects.toThrow(/shadowedSeqs 为非空数组/)
+    // 注意:**start 数值 > end 数值不是违规**(位置序;官方只判 indexOf(start) <= indexOf(end))
+    const positional = await writer.writeMarker(session, { start: 4, end: 1, shadowedSeqs: [4, 3, 1] }, { op: 'recall', targetSeq: 1, originalText: '' })
+    expect(positional.surfaceOp).toEqual({ op: 'replace', start: 4, end: 1 })
   })
 
   it('适配器返回坏 marker → host-core 边界抛 contract-violation(经 op 信封成 code)', async () => {
