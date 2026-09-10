@@ -149,7 +149,7 @@ describe('recall', () => {
     expect(surfaceSeqs(session)).toEqual([1, 2, 3, 4, 5]) // untouched
   })
 
-  it('running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 事故闭环)', async () => {
+  it('running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 事故修复)', async () => {
     const session = standardSession()
     const cancel = vi.fn()
     const whenIdle = vi.fn(async () => {})
@@ -441,7 +441,7 @@ describe('concurrency and result envelope', () => {
   })
 })
 
-describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 事故闭环）', () => {
+describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 事故修复）', () => {
   it('findOpenStep：无 step/start → null（轮次间编辑）', async () => {
     const { findOpenStep } = await import('../lib/adapter/dsh-writer.js')
     const session = makeSession().seed(userMessage('u1', 'hi'))
@@ -531,7 +531,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     expect(agent.phase.lastTurn).toBe(1)
   })
 
-  it('情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（5e551001 D8 现场）', async () => {
+  it('情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（D8 现场）', async () => {
     const { createEditorApi } = await import('../lib/host-core.js')
     // turn 5 打开着（turn/start 无 turn/end），step 1 已关
     const session = makeSession().seed(
@@ -560,7 +560,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     expect(session.events[idx + 1].data).toEqual({ turn: 5, step: 2 })
   })
 
-  it('情形② step = max(内存, 文件)+1：文件滞后时内存覆盖（连续编辑不冲突，独立审查 2026-09-02 处置）', async () => {
+  it('情形② step = max(内存,文件)+1：文件滞后时内存覆盖（连续编辑不冲突，2026-09-02 处置）', async () => {
     const { createEditorApi } = await import('../lib/host-core.js')
     const session = makeSession().seed(
       { type: 'turn/start', data: { turn: 5 } },
@@ -591,7 +591,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
     expect(m1.data.step).not.toBe(m2.data.step) // step key 唯一
   })
 
-  it('情形② + readMaxStep：从文件全量算 step（窗口化内存不可信，5e551001 复盘 §五）', async () => {
+  it('情形② + readMaxStep：从文件全量算 step（窗口化内存不可信，事故复盘）', async () => {
     const { createEditorApi } = await import('../lib/host-core.js')
     // turn 5 打开着;内存视图只含 step 1,但文件全量含 step 1..45(窗口外)
     const session = makeSession().seed(
@@ -619,7 +619,7 @@ describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 �
   })
 })
 
-describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」判定', () => {
+describe('「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」判定', () => {
   /**
    * 「提交中」会话:目标消息已进内存 events(findMessageSeq 可见),但 surface.nodes
    * 尚未纳入(刚 commit/文件 flush 滞后,本次 span 快照看不到)——模拟用户点击落在
@@ -640,7 +640,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     return session
   }
 
-  it('recall 尾部最近 append(提交中)的回复 → message-pending,非 target-shadowed(issue-200)', async () => {
+  it('recall 尾部最近 append(提交中)的回复 → message-pending,非 target-shadowed', async () => {
     const session = pendingTailSession() // a2(seq 4)在 events 尾、不在 surface
     const api = makeApi(session, makeAgent())
 
@@ -656,7 +656,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(lastMarker(session)).toBeNull()
   })
 
-  it('editAndResend「刚发送还没进快照」的 user 消息 → message-pending(可重试,issue-200)', async () => {
+  it('editAndResend「刚发送还没进快照」的 user 消息 → message-pending(可重试)', async () => {
     const session = pendingTailSession({ lastType: 'user' }) // u3(seq 4)提交中
     const api = makeApi(session, makeAgent())
 
@@ -668,7 +668,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(surfaceSeqs(session)).toEqual([1, 2, 3])
   })
 
-  it('regenerate 提交中的回复 → message-pending(判定与 recall/edit 一致,issue-200)', async () => {
+  it('regenerate 提交中的回复 → message-pending(判定与 recall/edit 一致)', async () => {
     const session = pendingTailSession() // a2(seq 4)提交中
     const api = makeApi(session, makeAgent())
 
@@ -688,7 +688,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error.code).toBe('message-pending')
   })
 
-  it('真被遮蔽(fold/recall 已移除)→ target-shadowed,中文可操作文案(issue-199)', async () => {
+  it('真被遮蔽(fold/recall 已移除)→ target-shadowed,中文可操作文案', async () => {
     const session = standardSession()
     const api = makeApi(session, makeAgent())
     const first = await api.recall({ sessionId: 's1', messageId: 'u1' })
@@ -712,7 +712,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error.code).toBe('target-shadowed')
   })
 
-  it('三 op 判定一致:提交中 → 全 message-pending;真遮蔽 → 全 target-shadowed(issue-200)', async () => {
+  it('三 op 判定一致:提交中 → 全 message-pending;真遮蔽 → 全 target-shadowed', async () => {
     const session = pendingTailSession() // a2 提交中
     const api = makeApi(session, makeAgent())
     const pending = [
@@ -739,7 +739,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(shadowed.map((r) => r.error.code)).toEqual(['target-shadowed', 'target-shadowed', 'target-shadowed'])
   })
 
-  it('issue-229 显式状态:spanStatus=not-persisted → message-pending(架构级状态,不再靠 null+facts 猜)', async () => {
+  it('显式状态:spanStatus=not-persisted → message-pending(架构级状态,不再靠 null+facts 猜)', async () => {
     const session = pendingTailSession()
     const api = makeApi(session, makeAgent())
     const result = await api.recall({ sessionId: 's1', messageId: 'a2', spanStatus: 'not-persisted', spanFacts: { fileMaxSeq: 3, targetSeq: -1 } })
@@ -748,7 +748,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error.message).toBe('消息生成中,完成后可编辑')
   })
 
-  it('issue-229 显式状态:spanStatus=already-shadowed → target-shadowed(历史只读)', async () => {
+  it('显式状态:spanStatus=already-shadowed → target-shadowed(历史只读)', async () => {
     const session = standardSession()
     const api = makeApi(session, makeAgent())
     await api.recall({ sessionId: 's1', messageId: 'u1' }) // 内存里 u1 已被遮蔽(span 算不出)
@@ -758,7 +758,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error.message).toBe('该消息位于已折叠块(历史只读):展开该块后编辑,或追加新消息修订')
   })
 
-  it('issue-229 显式状态优先:not-found 压过内存兜底(不再一律 target-shadowed)', async () => {
+  it('显式状态优先:not-found 压过内存兜底(不再一律 target-shadowed)', async () => {
     const session = standardSession()
     const api = makeApi(session, makeAgent())
     await api.recall({ sessionId: 's1', messageId: 'u1' })
@@ -771,7 +771,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error).toMatchObject({ messageId: 'u1', seq: 1 })
   })
 
-  it('issue-229 状态 + 文件事实联合定证:not-found 且内存 seq 超出快照 → message-pending(未落盘的证据)', async () => {
+  it('状态 + 文件事实联合定证:not-found 且内存 seq 超出快照 → message-pending(未落盘的证据)', async () => {
     const session = pendingTailSession() // a2(seq 4)已进内存,文件快照只到 3
     const api = makeApi(session, makeAgent())
     // 文件层对 id 目标只给"快照里没有" + 事实;内存 seq 4 > fileMaxSeq 3 = 未落盘证据
@@ -780,7 +780,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error.code).toBe('message-pending')
   })
 
-  it('issue-229 状态 + 文件事实联合定证:not-found 且快照已覆盖该 seq → message-not-found(永久不存在,不报可重试)', async () => {
+  it('状态 + 文件事实联合定证:not-found 且快照已覆盖该 seq → message-not-found(永久不存在,不报可重试)', async () => {
     const session = standardSession()
     const api = makeApi(session, makeAgent())
     await api.recall({ sessionId: 's1', messageId: 'u1' }) // 内存里 u1 已遮蔽,span 算不出
@@ -790,7 +790,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error.code).toBe('message-not-found')
   })
 
-  it('issue-229 显式状态:spanStatus=replay-failed → span-replay-failed(内部错误,绝不冒充遮蔽)', async () => {
+  it('显式状态:spanStatus=replay-failed → span-replay-failed(内部错误,绝不冒充遮蔽)', async () => {
     const session = standardSession()
     const api = makeApi(session, makeAgent())
     await api.recall({ sessionId: 's1', messageId: 'u1' })
@@ -816,7 +816,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(detailed.error.nodes).toBeUndefined() // 判因细节收在一个 spanFacts 字段里,不污染 wire 顶层
   })
 
-  it('issue-229 状态优先于内存兜底:显式 not-persisted 压过内存"看起来已遮蔽"的形态', async () => {
+  it('状态优先于内存兜底:显式 not-persisted 压过内存"看起来已遮蔽"的形态', async () => {
     // 内存里目标看似被遮蔽(marker 命中),但文件侧显式状态是 not-persisted → 可重试
     const session = standardSession()
     const api = makeApi(session, makeAgent())
@@ -825,7 +825,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(result.error.code).toBe('message-pending')
   })
 
-  it('文件注入 span(文件含目标)→ 不再被内存 surface 滞后误伤(issue-200)', async () => {
+  it('文件注入 span(文件含目标)→ 不再被内存 surface 滞后误伤', async () => {
     const session = makeSession().seed(
       headerEvent(),
       userMessage('u1', 'first'),
@@ -852,7 +852,7 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
   })
 })
 
-describe('M-1(独立审查 74e580d 后续):regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区选更早轮', () => {
+describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区选更早轮', () => {
   /**
    * 文件含目标(span 注入,host 内存 surface 滞后)且 host 内存 events 是窗口化
    * 视图:该轮 user(seq 3)是 undefined 洞,更早轮 user(seq 1)仍在内存——

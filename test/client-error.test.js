@@ -13,7 +13,7 @@ import { SHADOWED_TARGET_MESSAGE, PENDING_TARGET_MESSAGE, SPAN_REPLAY_FAILED_MES
 
 const tOf = (dict) => (key) => dict[key]
 
-describe('client 操作失败文案(issue-200/199)', () => {
+describe('client 操作失败文案', () => {
   it('message-pending → 中文「消息生成中,完成后可编辑」,不再透传 host 英文', () => {
     expect(opFailureText('message-pending', 'This message is no longer part of the active conversation.', tOf(zh)))
       .toBe(PENDING_TARGET_MESSAGE)
@@ -40,7 +40,7 @@ describe('client 操作失败文案(issue-200/199)', () => {
     expect(opFailureText(undefined, null, t)).toBe(zh['error.generic'])
   })
 
-  it('issue-229:message-not-found / span-replay-failed → 本地化(中英齐备,与 host 文案同源)', () => {
+  it('message-not-found / span-replay-failed → 本地化(中英齐备,与 host 文案同源)', () => {
     expect(opFailureText('message-not-found', 'host 中文', tOf(zh))).toBe(TARGET_NOT_FOUND_MESSAGE)
     expect(zh['error.messageNotFound']).toBe(TARGET_NOT_FOUND_MESSAGE)
     expect(opFailureText('message-not-found', TARGET_NOT_FOUND_MESSAGE, tOf(en))).toMatch(/not in the session log/i)
@@ -63,7 +63,7 @@ describe('client 操作失败文案(issue-200/199)', () => {
     }
   })
 
-  it('zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;issue-230:文案行声称的机械兜底)', () => {
+  it('zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;文案行声称的机械兜底)', () => {
     const zhKeys = Object.keys(zh).sort()
     expect(Object.keys(en).sort()).toEqual(zhKeys)
     const blank = zhKeys.filter((key) => !String(zh[key] ?? '').trim() || !String(en[key] ?? '').trim())

@@ -22,7 +22,7 @@ const cleanSession = () => sessionWith([
   { type: 'turn/end', seq: 3, data: { turn: 1, reason: { kind: 'completed' } } },
 ])
 
-describe('close-guard runningState(关闭守卫检测,issue-146)', () => {
+describe('close-guard runningState(关闭守卫检测)', () => {
   it('agent running → agent-running', () => {
     const s = runningState('s1', { agent: makeAgent('running') })
     expect(s.running).toBe(true)
@@ -35,7 +35,7 @@ describe('close-guard runningState(关闭守卫检测,issue-146)', () => {
     expect(s.reasons).toEqual([])
   })
 
-  it('P0-2:status=idle 但 inbox.hasPending(官方形状)→ 运行中(排队 work 也算)', () => {
+  it('status=idle 但 inbox.hasPending(官方形状)→ 运行中(排队 work 也算)', () => {
     // 官方 Inbox:hasPending + nextStep/nextTurn 数组;无 queued/pending 字段
     const s = runningState('s1', { agent: makeAgent('idle', { hasPending: true, nextStep: [{ id: 'q1' }], nextTurn: [] }) })
     expect(s.running).toBe(true)
@@ -61,7 +61,7 @@ describe('close-guard runningState(关闭守卫检测,issue-146)', () => {
     expect(interrupted.running).toBe(false) // interrupted 是官方正常闭合
   })
 
-  it('P0-2:关联后台任务(官方 owner.id 形状)→ jobs-N', () => {
+  it('关联后台任务(官方 owner.id 形状)→ jobs-N', () => {
     const s = runningState('s1', { agent: makeAgent('idle'), session: cleanSession(), jobs: [{ id: 'j1', owner: { id: 's1' } }] })
     expect(s.running).toBe(true)
     expect(s.reasons).toContain('jobs-1')

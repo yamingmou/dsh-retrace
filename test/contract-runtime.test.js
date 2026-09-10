@@ -182,7 +182,7 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
     expect(result.error.message).toMatch(/契约违规\[host-core\.writeMarker\.marker\]/)
   })
 
-  it('出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态,独立审查 issue-229 中-3)', async () => {
+  it('出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态)', async () => {
     const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const flushed = []
     const sessions = { get: () => session, flush: async (s) => { flushed.push(s.events.length) } }

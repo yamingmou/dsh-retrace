@@ -17,7 +17,7 @@ import {
   GUARD_POLL_MS,
 } from '../lib/close-guard-client.js'
 
-describe('close-guard-client parseReason(host reason 形状,issue-146 对齐)', () => {
+describe('close-guard-client parseReason(host reason 形状,对齐)', () => {
   it('识别四种官方 reason', () => {
     expect(parseReason('agent-running')).toEqual({ code: 'agent-running' })
     expect(parseReason('queued-2')).toEqual({ code: 'queued', count: 2 })
@@ -101,7 +101,7 @@ describe('close-guard-client classifySnapshot/isStale(beforeunload 同步判定)
   })
 })
 
-describe('close-guard-client buildRunningCopy(A 文案,规格草案 §二可微调)', () => {
+describe('close-guard-client buildRunningCopy(A 文案,规格草案可微调)', () => {
   const snapshot = {
     running: [
       { sessionId: 's1', reasons: ['agent-running'] },
