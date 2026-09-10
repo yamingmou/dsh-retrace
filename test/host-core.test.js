@@ -739,6 +739,64 @@ describe('issue-200/199:「提交中(message-pending)」vs「真被遮蔽(target
     expect(shadowed.map((r) => r.error.code)).toEqual(['target-shadowed', 'target-shadowed', 'target-shadowed'])
   })
 
+  it('issue-229 显式状态:spanStatus=not-persisted → message-pending(架构级状态,不再靠 null+facts 猜)', async () => {
+    const session = pendingTailSession()
+    const api = makeApi(session, makeAgent())
+    const result = await api.recall({ sessionId: 's1', messageId: 'a2', spanStatus: 'not-persisted', spanFacts: { fileMaxSeq: 3, targetSeq: -1 } })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('message-pending')
+    expect(result.error.message).toBe('消息生成中,完成后可编辑')
+  })
+
+  it('issue-229 显式状态:spanStatus=already-shadowed → target-shadowed(历史只读)', async () => {
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    await api.recall({ sessionId: 's1', messageId: 'u1' }) // 内存里 u1 已被遮蔽(span 算不出)
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1', spanStatus: 'already-shadowed', spanFacts: { fileMaxSeq: 8, targetSeq: 1 } })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('target-shadowed')
+    expect(result.error.message).toBe('该消息位于已折叠块(历史只读):展开该块后编辑,或追加新消息修订')
+  })
+
+  it('issue-229 显式状态优先:not-found 压过内存兜底(不再一律 target-shadowed)', async () => {
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    await api.recall({ sessionId: 's1', messageId: 'u1' })
+    // 对照:无状态 → 内存兜底判遮蔽(target-shadowed);有状态 → 按状态给 message-not-found
+    const fallback = await api.recall({ sessionId: 's1', messageId: 'u1' })
+    expect(fallback.error.code).toBe('target-shadowed')
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1', spanStatus: 'not-found', spanFacts: { fileMaxSeq: 8, targetSeq: 1 } })
+    expect(result.ok).toBe(false)
+    expect(result.error.code).toBe('message-not-found')
+    expect(result.error).toMatchObject({ messageId: 'u1', seq: 1 })
+  })
+
+  it('issue-229 显式状态:spanStatus=replay-failed → span-replay-failed(内部错误,绝不冒充遮蔽)', async () => {
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    await api.recall({ sessionId: 's1', messageId: 'u1' })
+    for (const call of [
+      () => api.recall({ sessionId: 's1', messageId: 'u1', spanStatus: 'replay-failed', spanFacts: { fileMaxSeq: 8, targetSeq: 1 } }),
+      () => api.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'x', spanStatus: 'replay-failed', spanFacts: { fileMaxSeq: 8, targetSeq: 1 } }),
+      () => api.regenerate({ sessionId: 's1', messageId: 'a1', spanStatus: 'replay-failed', spanFacts: { fileMaxSeq: 8, targetSeq: 1 } }),
+    ]) {
+      const result = await call()
+      expect(result.ok).toBe(false)
+      expect(result.error.code).toBe('span-replay-failed')
+      expect(result.error.message).toMatch(/内部错误/)
+      expect(result.error.code).not.toBe('target-shadowed') // 不冒充"历史只读"
+    }
+  })
+
+  it('issue-229 状态优先于内存兜底:显式 not-persisted 压过内存"看起来已遮蔽"的形态', async () => {
+    // 内存里目标看似被遮蔽(marker 命中),但文件侧显式状态是 not-persisted → 可重试
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    await api.recall({ sessionId: 's1', messageId: 'u1' }) // 内存里 u1 已被遮蔽
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1', spanStatus: 'not-persisted', spanFacts: { fileMaxSeq: 8, targetSeq: -1 } })
+    expect(result.error.code).toBe('message-pending')
+  })
+
   it('文件注入 span(文件含目标)→ 不再被内存 surface 滞后误伤(issue-200)', async () => {
     const session = makeSession().seed(
       headerEvent(),
