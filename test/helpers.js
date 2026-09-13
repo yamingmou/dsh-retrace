@@ -10,7 +10,9 @@
  */
 import { vi } from 'vitest'
 import { createEditorApi } from '../lib/host-core.js'
-import { createDshMarkerWriter } from '../lib/adapter/dsh-writer.js'
+import { createDshMarkerWriter, carrierContentOf } from '../lib/adapter/dsh-writer.js'
+import { isCarrierMarkerEvent } from '../lib/marker-carrier.js'
+import { deriveMessage, officialSurfaceMeter } from './official-meter.js'
 
 /** User message event factory (real user input → round boundary). */
 export function userMessage(id, text, extra = {}) {
@@ -85,12 +87,15 @@ export function headerEvent() {
   }
 }
 
+/** log-only 事件类型(官方定义:不进入 surface,不产生模型可见节点)。 */
+const LOG_ONLY_TYPES = new Set(['request/header', 'compaction/prune', 'compaction/summary'])
+
 /**
  * Build a fake session. `seed(...events)` appends events and builds the
- * surface exactly as the runtime does for these shapes: every non-header
+ * surface exactly as the runtime does for these shapes: every non-log-only
  * event is a surface node. `append` additionally applies `surfaceOp.replace`
- * by dropping the shadowed span from the surface (the marker becomes the new
- * tail node).
+ * by dropping the shadowed span from the surface (the replacement carrier
+ * becomes the new tail node).
  */
 export function makeSession() {
   const events = []
@@ -106,7 +111,8 @@ export function makeSession() {
     appendRaw(event) {
       const record = { seq: events.length, ...event }
       events.push(record)
-      if (record.type !== 'request/header') surface.nodes.push(record.seq)
+      // log-only 类型(request/header、compaction/prune 审计段)不进 surface
+      if (!LOG_ONLY_TYPES.has(record.type)) surface.nodes.push(record.seq)
       return record
     },
     append(type, data, options = {}) {
@@ -114,6 +120,7 @@ export function makeSession() {
       events.push(record)
       // 真实 DSH（dsh-session）只有 surface-eligible 类型（user/assistant/tool + surfaceOp）
       // 进入 surface；step/start、step/end、turn/start、turn/end 是位置边界，不产生节点。
+      if (LOG_ONLY_TYPES.has(type)) return record
       if (type === 'step/start' || type === 'step/end' || type === 'turn/start' || type === 'turn/end') return record
       if (options.surfaceOp && options.surfaceOp.op === 'replace') {
         const { start, end } = options.surfaceOp
@@ -152,12 +159,48 @@ export function makeAgent(overrides = {}) {
 }
 
 /**
+ * 一个「形状合规」的假写入器(两段结构),供只需要"写入发生过"的用例
+ * (HTTP 路由 / rollback executor)注入——不依赖真实 adapter,但写出的形状与生产
+ * 一致(审计段 `compaction/prune` + 载体段 `user/message`),故 host-core 的出口
+ * 断言照常生效(假写入器写旧形状会被契约拦下)。
+ * @param {{onWrite?: (marker: object) => void}} [opts]
+ */
+export function fakeCarrierWriter({ onWrite } = {}) {
+  return async function writeMarker(session, span, intent = {}) {
+    const shadowed = Array.isArray(span.shadowedSeqs) ? span.shadowedSeqs.slice() : []
+    const audit = session.append('compaction/prune', {
+      shadowedRange: { start: span.start, end: span.end },
+      shadowedSeqs: shadowed.slice(),
+      shadowedTokenCount: shadowed.length,
+    })
+    const marker = session.append('user/message', {
+      role: 'user',
+      id: `retrace-${intent.op ?? 'recall'}-${intent.targetSeq ?? span.start}`,
+      content: carrierContentOf(intent),
+      source: { kind: 'model', provider: 'p', model: 'm' },
+    }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: [audit.seq, ...shadowed] })
+    if (typeof onWrite === 'function') onWrite(marker)
+    return marker
+  }
+}
+
+/** 最近一次写入的遮蔽载体(两段结构的第 2 段)。 */
+export function lastCarrierMarker(session) {
+  const events = Array.isArray(session?.events) ? session.events : []
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (isCarrierMarkerEvent(events[i])) return events[i]
+  }
+  return null
+}
+
+/**
  * 默认 hooks(2026-09-02 抽象设计落地):真实 DSH 遮蔽写入器 + 默认校验通过。
  * 测试可覆盖 validateMarker(断言 writer→校验链路)或整体覆盖。
+ * meter 注入官方口径的测量桩(写作器拿不到 meter 会拒写——见 official-meter.js)。
  */
 export function makeHooks(agents, overrides = {}) {
   const validateMarker = overrides.validateMarker ?? (async () => ({ t1Ok: true }))
-  const writer = createDshMarkerWriter({ agents, validateMarker, readMaxStep: overrides.readMaxStep })
+  const writer = createDshMarkerWriter({ validateMarker, meter: officialSurfaceMeter(), deriveMessage })
   return { validateMarker, writeMarker: writer.writeMarker, ...overrides }
 }
 

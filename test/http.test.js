@@ -251,10 +251,10 @@ describe('P1 HTTP routes', () => {
   })
 })
 
-describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：recall tail 两入口一致；L-1 单次 probe）', () => {
+describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口一致；单次 probe）', () => {
   it('HTTP /recall 用 tail mode 单次 spanProbeFromFile（不再 round，缺陷①断层在 HTTP 入口也修复）', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    // L-1(独立审查 74e580d 后续):与 index.js harness 入口对齐——单次 probe(span+facts
+    // 与 index.js harness 入口对齐——单次 probe(span+facts
     // 同一份快照);spanFromFile 不再被主路径调用(消除双读 TOCTOU)。
     const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
       span: { start: 1, end: 5, shadowedSeqs: [1, 2, 3, 4, 5] },
@@ -263,19 +263,18 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
     })
     const spanSpy = vi.spyOn(dshAdapter, 'spanFromFile')
     try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'))
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage, fakeCarrierWriter } = await import('./helpers.js')
+      const { carrierTargetSeq } = await import('../lib/marker-carrier.js')
+      // 假会话须覆盖注入 span 的全部 seq([1..5]):两段结构的审计段会占用"下一个 seq",
+      // 注入 span 若把尚未存在的事件当作被遮蔽节点,审计 seq 会与它撞号(官方拒重复)
+      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'), userMessage('u3', 'tail'))
       const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
       const seam = makeSeam()
-      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
-        turn: 1, step: 1,
-        message: { id: `retrace-recall-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
-        editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
-      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
+      const fakeWriter = fakeCarrierWriter()
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'u1' })
-      expect(probeSpy).toHaveBeenCalledTimes(1) // L-1:单次 probe
-      expect(spanSpy).not.toHaveBeenCalled() // L-1:主路径不再 spanFromFile 双读
+      expect(probeSpy).toHaveBeenCalledTimes(1) // 单次 probe
+      expect(spanSpy).not.toHaveBeenCalled() // 主路径不再 spanFromFile 双读
       // 关键断言:HTTP 入口 recall 也用 tail mode(与 index.js harness 入口一致)
       expect(probeSpy.mock.calls[0][2]).toBe('tail')
       const parsed = JSON.parse(res.body)
@@ -294,15 +293,14 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       prompt: { seq: 1, text: 'hi' },
     })
     try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'))
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage, fakeCarrierWriter } = await import('./helpers.js')
+      const { carrierTargetSeq } = await import('../lib/marker-carrier.js')
+      // 假会话须覆盖注入 span 的全部 seq([1..5]):两段结构的审计段会占用"下一个 seq",
+      // 注入 span 若把尚未存在的事件当作被遮蔽节点,审计 seq 会与它撞号(官方拒重复)
+      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'), userMessage('u3', 'tail'))
       const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
       const seam = makeSeam()
-      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
-        turn: 1, step: 1,
-        message: { id: `retrace-edit-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
-        editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
-      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
+      const fakeWriter = fakeCarrierWriter()
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/editAndResend`, { sessionId: 's1', messageId: 'u1', text: 'x' })
       expect(probeSpy).toHaveBeenCalledTimes(1)
@@ -313,13 +311,48 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
     }
   })
 
-  it('HTTP /recall 文件快照未含目标(文件 flush 滞后)→ 同一份快照的 facts → message-pending 而非 target-shadowed()', async () => {
+  it('HTTP /recall probe 显式状态逐档生效(两入口/两线同一判定)', async () => {
+    const { dshAdapter } = await import('../lib/adapter/dsh.js')
+    const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+    // 曾因"行级吃掉 else if 的括号"把这条链路整条变成死代码(状态判定全塌成
+    // message-pending)→ 本用例按**状态**逐档断言,在任一线上失效都会红。
+    const cases = [
+      { status: 'already-shadowed', code: 'target-shadowed' },
+      { status: 'not-found', code: 'message-not-found' },
+      { status: 'replay-failed', code: 'span-replay-failed' },
+      { status: 'not-persisted', code: 'message-pending' },
+    ]
+    for (const c of cases) {
+      const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
+        status: c.status,
+        span: null,
+        facts: { fileMaxSeq: 5, targetSeq: 4, mode: 'tail', nodes: 5 },
+        prompt: null,
+      })
+      try {
+        const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+        // 内存侧也算不出 span(目标已被移出内存 surface)→ 走状态判定分支
+        session.surface.nodes = session.surface.nodes.filter((s) => s !== 2)
+        const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
+        const handler = createRetraceHttpHandler({}, { sessions, agents, seam: makeSeam(), rollback: {}, hooks: {}, log: () => {} })
+        const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'a1' })
+        const parsed = JSON.parse(res.body)
+        expect(parsed.ok).toBe(false)
+        expect({ status: c.status, got: parsed.error.code }).toEqual({ status: c.status, got: c.code })
+      } finally {
+        probeSpy.mockRestore()
+      }
+    }
+  })
+
+  it('HTTP /recall 文件快照未含目标(文件 flush 滞后)→ 同一份快照的 facts → message-pending 而非 target-shadowed', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
     // 文件读成功但快照未含目标(刚 commit 未 flush):单次 probe → span null + fileMaxSeq < 目标 seq
     const spanSpy = vi.spyOn(dshAdapter, 'spanFromFile')
     const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({ span: null, facts: { fileMaxSeq: 3, targetSeq: -1 }, prompt: null })
     try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage, fakeCarrierWriter } = await import('./helpers.js')
+      const { carrierTargetSeq } = await import('../lib/marker-carrier.js')
       // a2(seq 4)已进内存 events 但 surface 滞后未纳入 —— 用户点击落在提交窗口
       const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'))
       session.appendRaw(assistantMessage('a2', 'more'))
@@ -328,8 +361,8 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       const seam = makeSeam()
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: {}, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'a2' })
-      expect(probeSpy).toHaveBeenCalledTimes(1) // L-1:span 与 facts 来自同一次 probe(同一份快照)
-      expect(spanSpy).not.toHaveBeenCalled() // L-1:不再主调 + 补读的双读
+      expect(probeSpy).toHaveBeenCalledTimes(1) // span 与 facts 来自同一次 probe(同一份快照)
+      expect(spanSpy).not.toHaveBeenCalled() // 不再主调 + 补读的双读
       const parsed = JSON.parse(res.body)
       expect(parsed.ok).toBe(false)
       expect(parsed.error.code).toBe('message-pending')
@@ -340,7 +373,7 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
     }
   })
 
-  it('HTTP /regenerate 注入文件侧 prompt → 重发该轮 user 原文(M-1 端到端)', async () => {
+  it('HTTP /regenerate 注入文件侧 prompt → 重发该轮 user 原文(端到端)', async () => {
     const { dshAdapter } = await import('../lib/adapter/dsh.js')
     const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
       span: { start: 3, end: 4, shadowedSeqs: [3, 4] },
@@ -348,7 +381,8 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       prompt: { seq: 3, text: 'SAME ROUND PROMPT' },
     })
     try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage, fakeCarrierWriter } = await import('./helpers.js')
+      const { carrierTargetSeq } = await import('../lib/marker-carrier.js')
       const session = makeSession().seed(
         headerEvent(),
         userMessage('u1', 'OLDER ROUND PROMPT'),
@@ -358,22 +392,14 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       // 内存 surface 滞后:目标 a2 已进 events 但未进 nodes
       session.appendRaw(assistantMessage('a2', 'current answer'))
       session.surface.nodes.pop()
-      // M-1 陷阱:该轮 user(seq 3)在内存 events 里是洞,更早轮 user(seq 1)仍在
+      // 陷阱:该轮 user(seq 3)在内存 events 里是洞,更早轮 user(seq 1)仍在
       // ——旧实现直扫稀疏 events 会选中 seq 1(重发更早轮文本)。
       delete session.events[3]
       const followup = vi.fn()
       const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup } })
       const seam = makeSeam()
       const markers = []
-      const fakeWriter = async (session, span, intent) => {
-        const marker = await session.append('assistant/message', {
-          turn: 1, step: 1,
-          message: { id: `retrace-regenerate-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
-          editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
-        }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
-        markers.push(marker)
-        return marker
-      }
+      const fakeWriter = fakeCarrierWriter({ onWrite: (marker) => markers.push(marker) })
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/regenerate`, { sessionId: 's1', messageId: 'a2' })
       const parsed = JSON.parse(res.body)
@@ -381,193 +407,17 @@ describe('POST recall · HTTP 入口 span mode（独立审查 ❌-1 回归：rec
       // 重发文本 = 该轮 user(seq 3)原文,绝不是更早轮(seq 1)的
       expect(followup).toHaveBeenCalledTimes(1)
       expect(followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
-      // marker:遮蔽该轮 + targetSeq 指向该轮 user(不是更早轮)
+      // 载体:遮蔽该轮;业务溯源 targetSeq 由区间起点派生(读端口径)
       expect(markers[0].surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
-      expect(markers[0].data.editor.targetSeq).toBe(3)
-      expect(markers[0].data.editor.text).toBe('SAME ROUND PROMPT')
+      expect(carrierTargetSeq(markers[0])).toBe(3)
+      expect(markers[0].data.id).toMatch(/^retrace-regenerate-/)
     } finally {
       probeSpy.mockRestore()
     }
   })
 })
 
-describe('长会话整理 HTTP 路由(fold 摘要 + waterLevel,独立审查 ❌-6 回归)', () => {
-  it('HTTP /fold 注入 range span + summary(两入口一致)', async () => {
-    const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    // L-1:主路径统一单次 probe(span 从 probe.span 取)
-    const spanSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
-      span: { start: 1, end: 4, shadowedSeqs: [1, 2, 3, 4] },
-      facts: { fileMaxSeq: 4, targetSeq: 1 },
-      prompt: null,
-    })
-    const sumSpy = vi.spyOn(dshAdapter, 'summaryFromFile').mockResolvedValue('【完成块】摘要')
-    try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-      const session = makeSession().seed(headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'), userMessage('u2', 'q2'), assistantMessage('a2', 'r2'))
-      const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
-      const seam = makeSeam()
-      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
-        turn: 1, step: 1,
-        message: { id: 'retrace-fold-x', role: 'assistant', content: Array.isArray(intent.content) ? intent.content : [], source: { kind: 'model', provider: 'p', model: 'm' } },
-        editor: { targetSeq: intent.targetSeq, text: '' },
-      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
-      const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
-      const res = await post(handler, `${ROUTE_PREFIX}/fold`, { sessionId: 's1', start: 1, end: 4 })
-      expect(spanSpy).toHaveBeenCalledTimes(1)
-      expect(spanSpy.mock.calls[0][2]).toBe('range')
-      expect(sumSpy).toHaveBeenCalledTimes(1)
-      expect(JSON.parse(res.body).ok).toBe(true)
-    } finally {
-      spanSpy.mockRestore(); sumSpy.mockRestore()
-    }
-  })
-
-  it('HTTP /fold 未显式 end → 自动边界(foldBoundaryFromFile,批5 50 轮接线,两入口一致)', async () => {
-    const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    // foldBoundaryFromFile 被调(无 end 时先自动兜底切块)
-    const bndSpy = vi.spyOn(dshAdapter, 'foldBoundaryFromFile').mockResolvedValue({ start: 1, end: 5, rounds: 1, reason: 'completed' })
-    const spanSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
-      span: { start: 1, end: 5, shadowedSeqs: [1, 2, 3, 4, 5] },
-      facts: { fileMaxSeq: 5, targetSeq: 1 },
-      prompt: null,
-    })
-    const sumSpy = vi.spyOn(dshAdapter, 'summaryFromFile').mockResolvedValue('【完成块】摘要')
-    try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-      const session = makeSession().seed(headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'), userMessage('u2', 'q2'), assistantMessage('a2', 'r2'), userMessage('u3', 'q3'), assistantMessage('a3', 'r3'))
-      const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
-      const seam = makeSeam()
-      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
-        turn: 1, step: 1,
-        message: { id: 'retrace-fold-x', role: 'assistant', content: Array.isArray(intent.content) ? intent.content : [], source: { kind: 'model', provider: 'p', model: 'm' } },
-        editor: { targetSeq: intent.targetSeq, text: '' },
-      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
-      const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
-      const res = await post(handler, `${ROUTE_PREFIX}/fold`, { sessionId: 's1', start: 1 }) // 无 end!
-      // 自动边界先于 span probe:end 被注入成 5 → span range [1..5]
-      expect(bndSpy).toHaveBeenCalledTimes(1)
-      expect(spanSpy).toHaveBeenCalledTimes(1)
-      expect(spanSpy.mock.calls[0][2]).toBe('range')
-      expect(spanSpy.mock.calls[0][3]).toEqual({ endSeq: 5 })
-      expect(sumSpy).toHaveBeenCalledTimes(1)
-      expect(JSON.parse(res.body).ok).toBe(true)
-    } finally {
-      bndSpy.mockRestore(); spanSpy.mockRestore(); sumSpy.mockRestore()
-    }
-  })
-
-  it('HTTP /fold rounds 显式编组 → 传给 foldBoundaryFromFile(50 轮上限在函数内兜底)', async () => {
-    const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    const bndSpy = vi.spyOn(dshAdapter, 'foldBoundaryFromFile').mockResolvedValue({ start: 1, end: 8, rounds: 2, reason: 'completed' })
-    const spanSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({
-      span: { start: 1, end: 8, shadowedSeqs: [1, 2, 3, 4, 5, 6, 7, 8] },
-      facts: { fileMaxSeq: 8, targetSeq: 1 },
-      prompt: null,
-    })
-    const sumSpy = vi.spyOn(dshAdapter, 'summaryFromFile').mockResolvedValue('【完成块】摘要')
-    try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-      const session = makeSession().seed(headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'), userMessage('u2', 'q2'), assistantMessage('a2', 'r2'), userMessage('u3', 'q3'), assistantMessage('a3', 'r3'))
-      const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
-      const seam = makeSeam()
-      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
-        turn: 1, step: 1,
-        message: { id: 'retrace-fold-x', role: 'assistant', content: Array.isArray(intent.content) ? intent.content : [], source: { kind: 'model', provider: 'p', model: 'm' } },
-        editor: { targetSeq: intent.targetSeq, text: '' },
-      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
-      const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
-      const res = await post(handler, `${ROUTE_PREFIX}/fold`, { sessionId: 's1', start: 1, rounds: 2 })
-      expect(bndSpy).toHaveBeenCalledTimes(1)
-      expect(bndSpy.mock.calls[0][2]).toEqual({ rounds: 2 }) // rounds 传透
-      expect(JSON.parse(res.body).ok).toBe(true)
-    } finally {
-      bndSpy.mockRestore(); spanSpy.mockRestore(); sumSpy.mockRestore()
-    }
-  })
-
-  it('HTTP /fold 起点轮内非 user → 回退轮首 user(独立审查 HIGH-2:不得半轮漏遮蔽)', async () => {
-    const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    // 调用方 start=轮内 assistant(seq 2);foldBoundary 回退 b.start=轮首 user(seq 1)
-    const bndSpy = vi.spyOn(dshAdapter, 'foldBoundaryFromFile').mockResolvedValue({ start: 1, end: 4, rounds: 1, reason: 'completed' })
-    const spanSpy = vi.spyOn(dshAdapter, 'spanFromFile').mockResolvedValue({ start: 1, end: 4, shadowedSeqs: [1, 2, 3, 4] })
-    const sumSpy = vi.spyOn(dshAdapter, 'summaryFromFile').mockResolvedValue('【完成块】摘要')
-    try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-      const session = makeSession().seed(headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'), userMessage('u2', 'q2'), assistantMessage('a2', 'r2'))
-      const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
-      const seam = makeSeam()
-      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
-        turn: 1, step: 1,
-        message: { id: 'retrace-fold-x', role: 'assistant', content: Array.isArray(intent.content) ? intent.content : [], source: { kind: 'model', provider: 'p', model: 'm' } },
-        editor: { targetSeq: intent.targetSeq, text: '' },
-      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
-      const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
-      const res = await post(handler, `${ROUTE_PREFIX}/fold`, { sessionId: 's1', start: 2 }) // 轮内 assistant
-      // 回退探测:spanFromFile 被先以 b.start=1 调用(range 模式,可算 → 采用回退起点)
-      const rollbackCall = spanSpy.mock.calls.find((c) => c[1] === 1)
-      expect(rollbackCall).toBeTruthy()
-      expect(rollbackCall[2]).toBe('range')
-      expect(rollbackCall[3]).toEqual({ endSeq: 4 })
-      expect(sumSpy).toHaveBeenCalledWith('s1', 1, 4) // 摘要按回退后起点(整轮,含 user 输入)
-      expect(JSON.parse(res.body).ok).toBe(true)
-    } finally {
-      bndSpy.mockRestore(); spanSpy.mockRestore(); sumSpy.mockRestore()
-    }
-  })
-
-  it('HTTP /waterLevel 返回上下文用量(纯读路由,不再 404)', async () => {
-    const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    const spy = vi.spyOn(dshAdapter, 'waterLevelFromFile').mockResolvedValue({ cjkTokens: 100, pct: 0.1, band: 'green', officialTokens: 50, remaining: 999, window: 1048576, caveat: 'x' })
-    try {
-      const { makeSession, makeEnv } = await import('./helpers.js')
-      const session = makeSession().seed()
-      const { sessions, agents } = makeEnv(session, { agent: {} })
-      const handler = createRetraceHttpHandler({}, { sessions, agents, seam: makeSeam(), rollback: {}, log: () => {} })
-      const res = await post(handler, `${ROUTE_PREFIX}/waterLevel`, { sessionId: 's1' })
-      expect(spy).toHaveBeenCalledTimes(1)
-      const parsed = JSON.parse(res.body)
-      expect(parsed.ok).toBe(true)
-      expect(parsed.value.band).toBe('green')
-    } finally {
-      spy.mockRestore()
-    }
-  })
-})
-
-describe('B2 foldPreview HTTP 路由(折前预览,M-1)', () => {
-  it('HTTP /foldPreview 返回 trio + previewText(纯读)', async () => {
-    const { dshAdapter } = await import('../lib/adapter/dsh.js')
-    const spy = vi.spyOn(dshAdapter, 'trioFromFile').mockResolvedValue({
-      'roadmap-card': { blockTitle: '血缘拍板', summary: '拍板:选 A', keySeqs: [1, 2], timeRange: '2026-09-09' },
-      process: { rounds: 1, actions: ['ls'], toolResults: 1 },
-      archive: { shadowedSeqs: [1, 2], restorable: true },
-    })
-    try {
-      const { makeSession, makeEnv } = await import('./helpers.js')
-      const session = makeSession().seed()
-      const { sessions, agents } = makeEnv(session, { agent: {} })
-      const handler = createRetraceHttpHandler({}, { sessions, agents, seam: makeSeam(), rollback: {}, log: () => {} })
-      const res = await post(handler, `${ROUTE_PREFIX}/foldPreview`, { sessionId: 's1', start: 1, end: 2 })
-      const parsed = JSON.parse(res.body)
-      expect(parsed.ok).toBe(true)
-      expect(parsed.value.trio['roadmap-card'].summary).toContain('拍板')
-      expect(parsed.value.previewText).toContain('【路标卡】')
-    } finally {
-      spy.mockRestore()
-    }
-  })
-
-  it('HTTP /foldPreview 区间非法 → bad 错误', async () => {
-    const { makeSession, makeEnv } = await import('./helpers.js')
-    const session = makeSession().seed()
-    const { sessions, agents } = makeEnv(session, { agent: {} })
-    const handler = createRetraceHttpHandler({}, { sessions, agents, seam: makeSeam(), rollback: {}, log: () => {} })
-    const res = await post(handler, `${ROUTE_PREFIX}/foldPreview`, { sessionId: 's1', start: 5, end: 1 })
-    expect(JSON.parse(res.body).ok).toBe(false)
-  })
-})
-
-describe('关闭守卫 V2 runningState HTTP 路由(,client 轮询同步读源)', () => {
+describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', () => {
   /** 官方形状 sessions/agents(jobs 走 ctx.jobs;缺省降级空)。 */
   function makeGuardEnv(sessions, agents) {
     return {

@@ -1,6 +1,6 @@
 /**
  * dsh-retrace — test/close-guard-client.test.js
- * 关闭守卫 V2()客户端纯逻辑层:reason 解析/本地化文案/快照判定/
+ * 关闭守卫 V2客户端纯逻辑层:reason 解析/本地化文案/快照判定/
  * 运行中清单/放行标记。
  */
 import { describe, it, expect } from 'vitest'
@@ -101,7 +101,7 @@ describe('close-guard-client classifySnapshot/isStale(beforeunload 同步判定)
   })
 })
 
-describe('close-guard-client buildRunningCopy(A 文案,规格草案 §二可微调)', () => {
+describe('close-guard-client buildRunningCopy(A 文案,规格草案可微调)', () => {
   const snapshot = {
     running: [
       { sessionId: 's1', reasons: ['agent-running'] },

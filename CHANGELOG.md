@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.26] — 2026-09-14 · pre-release audit fixes: cross-machine defect / gate blind spot / false snapshot warning
+
+- pre-release audit fixes: cross-machine defect / gate blind spot / false snapshot warning
+
 ## [0.4.24] — 2026-09-10 · rejected-edit fix (submit race) + UX polish + review fixes
 
 - rejected-edit fix (submit race) + UX polish + review fixes

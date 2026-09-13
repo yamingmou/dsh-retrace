@@ -1,5 +1,5 @@
 /**
- * 记录 200/记录 199 — client 操作失败文案映射。
+ * — client 操作失败文案映射。
  *
  * 修复前:client 只对 agent-busy 做本地化,其余 code 原样透传 host 英文
  * ("This message is no longer part of the active conversation.")——把「提交中
@@ -9,11 +9,11 @@
  */
 import { describe, it, expect } from 'vitest'
 import { zh, en, opFailureText } from '../lib/client.js'
-import { SHADOWED_TARGET_MESSAGE, PENDING_TARGET_MESSAGE } from '../lib/host-core.js'
+import { SHADOWED_TARGET_MESSAGE, PENDING_TARGET_MESSAGE, SPAN_REPLAY_FAILED_MESSAGE, TARGET_NOT_FOUND_MESSAGE } from '../lib/host-core.js'
 
 const tOf = (dict) => (key) => dict[key]
 
-describe('client 操作失败文案(记录 200/199)', () => {
+describe('client 操作失败文案', () => {
   it('message-pending → 中文「消息生成中,完成后可编辑」,不再透传 host 英文', () => {
     expect(opFailureText('message-pending', 'This message is no longer part of the active conversation.', tOf(zh)))
       .toBe(PENDING_TARGET_MESSAGE)
@@ -40,12 +40,38 @@ describe('client 操作失败文案(记录 200/199)', () => {
     expect(opFailureText(undefined, null, t)).toBe(zh['error.generic'])
   })
 
-  it('字典键完整:en 与 zh 都含两个新 error 键(zh 为键集源头)', () => {
-    for (const key of ['error.targetShadowed', 'error.messagePending']) {
+  it('message-not-found / span-replay-failed → 本地化(中英齐备,与 host 文案同源)', () => {
+    expect(opFailureText('message-not-found', 'host 中文', tOf(zh))).toBe(TARGET_NOT_FOUND_MESSAGE)
+    expect(zh['error.messageNotFound']).toBe(TARGET_NOT_FOUND_MESSAGE)
+    expect(opFailureText('message-not-found', TARGET_NOT_FOUND_MESSAGE, tOf(en))).toMatch(/not in the session log/i)
+
+    expect(opFailureText('span-replay-failed', 'host 中文', tOf(zh))).toBe(SPAN_REPLAY_FAILED_MESSAGE)
+    expect(zh['error.spanReplayFailed']).toBe(SPAN_REPLAY_FAILED_MESSAGE)
+    expect(opFailureText('span-replay-failed', SPAN_REPLAY_FAILED_MESSAGE, tOf(en))).toMatch(/internal error/i)
+
+    // 契约违规:技术细节(契约名/期望/实际)只进日志,用户看通用文案
+    expect(opFailureText('contract-violation', '契约违规[host-core.writeMarker.marker]:期望 …;实际 …', tOf(zh))).toBe(zh['error.generic'])
+    expect(opFailureText('contract-violation', '契约违规[…]', tOf(en))).toBe(en['error.generic'])
+  })
+
+  it('字典键完整:en 与 zh 都含新 error 键(zh 为键集源头)', () => {
+    for (const key of ['error.targetShadowed', 'error.messagePending', 'error.messageNotFound', 'error.spanReplayFailed']) {
       expect(typeof zh[key]).toBe('string')
       expect(typeof en[key]).toBe('string')
       expect(zh[key].length).toBeGreaterThan(0)
       expect(en[key].length).toBeGreaterThan(0)
+    }
+  })
+
+  it('zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;文案行声称的机械兜底)', () => {
+    const zhKeys = Object.keys(zh).sort()
+    expect(Object.keys(en).sort()).toEqual(zhKeys)
+    const blank = zhKeys.filter((key) => !String(zh[key] ?? '').trim() || !String(en[key] ?? '').trim())
+    expect(blank).toEqual([])
+    // 被登记的文案行:两边都必须有(键在 → 英文界面不会漏成空/中文)
+    for (const key of ['marker.referenceHint', 'fork.badgeHint']) {
+      expect(zh[key]).toBeTruthy()
+      expect(en[key]).toBeTruthy()
     }
   })
 })

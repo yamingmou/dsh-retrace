@@ -134,7 +134,10 @@ describe('R1 watchdog', () => {
         throw new Error('disk full')
       },
     })
+    // 夹具必须把会话放进 ctx.sessions：memoryLengthFor 现在对"未知"返回 null 并跳过
+    // （不再把未知降级成 0），否则根本走不到快照分支，这个用例就测不到"抛错不崩"。
     h.ctx.emit('session/event', { id: 'sess-7', events: [] })
+    h.ctx.sessions.set('sess-7', { id: 'sess-7', events: [] })
     h.setFileSeq(3)
     await h.runTick()
     expect(h.logLines.some((l) => l.includes('快照失败'))).toBe(true)

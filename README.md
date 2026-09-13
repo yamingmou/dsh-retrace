@@ -77,17 +77,6 @@ Full steps in [📦 Installation](#-installation).
 | 🧭 | **Jump-to-conversation** | one click from a version to that point in the conversation (auto-loads history, anchor highlight) |
 | 🧹 | **Bounded storage** | snapshots keep the most recent N versions (default 50); throttled background sweep prunes truncated ones |
 
-**Three-segment window (B track — folding = archiving, restorable, never deletes)** — proactively fold finished blocks in long sessions to protect the context cache and stay ahead of the host's auto-compaction auto-compaction:
-
-| | What | |
-|---|---|---|
-| 📊 | **Context water level** | live estimate of context usage (🟢<60% / 🟡60-85% / 🔴>85%, CJK-corrected, includes tool-call arguments); yellow-line suggests which block to fold |
-| 📦 | **Fold (trio)** | a completed block folds into **roadmap card + process summary + archive pointer**: the card extracts a one-line conclusion from decision-signal sentences (拍板/决定/结论…, deterministic — no LLM); process = rounds/actions/tool results; the full original stays in the log |
-| 📖 | **Unfold** | expand shows the roadmap card first (time + block title + one-line conclusion), then the full original verbatim; revisions append a new card (`superseded-by` points at the old one, which stays auditable) |
-| 🧭 | **Fold preview** | before folding, see the roadmap card that would be generated (what gets archived / what the conclusion is) |
-
-> Command surface: `retrace.fold` / `retrace.unfold` / `retrace.waterLevel` / `retrace.foldPreview` (host RPC + HTTP at `/api/plugins/retrace`). Folding does not depend on the host's compaction — proactive folding (before the yellow→red line) is the only way to protect the context cache when auto-compaction cannot be replaced.
-
 **Why it's different** (the interaction layer — the guarantees above are the storage layer):
 
 - 🎯 **Whole-round recall** — removes the input *and* its output (tool rows included), not just a single bubble.
@@ -253,6 +242,79 @@ The dynamic host registers the same operations behind the package-private
 
 ---
 
+## 🔺 Compatibility & upgrade notes
+
+`dsh-retrace` is a **bundle plugin**: it plugs into whatever host surface it is
+installed into. A host release that *removes* a package or a client service can
+therefore break an older plugin build even though nothing in that build changed —
+the symptom is usually a failed boot, not a wrong-looking feature.
+
+This section exists so you can tell **host-side breakage** from **plugin-side bugs**.
+Read it before filing an issue.
+
+### Host-side breaking changes that `0.4.26` adapts to — *not caused by this plugin*
+
+1. **`@deepseek-ai/dsh-session` removed the `decodeStorageRecord` export (0.1.5).**
+   `dsh-retrace` itself never imported it, but its dependency `dsh-log-contract` did.
+   With no such export the loader aborts with
+   `plugin tree failed to load … does not provide an export named 'decodeStorageRecord'`
+   and **the whole plugin tree fails to load — not just this plugin**, so the app does
+   not start. `0.4.26` requires a `dsh-log-contract` build that decodes through its own
+   local compatibility layer instead of the removed host export.
+   → **Dependency note:** needs `dsh-log-contract >= 0.3.12`.
+2. **`@deepseek-ai/dsh-client-runtime` — the legacy client runtime — was removed**,
+   and with it the client service `conversationEvents`. A plugin that still declares
+   either one never becomes ready, and it takes the whole desktop client down:
+   `renderer boot failed (plugins: …): The client Loader did not provide an error message.`
+   — the window never finishes starting and the only way in is to disable the plugin.
+   `0.4.26` drops the removed package from `dsh.client.inject` and resolves the
+   conversation-events service **defensively** (`uiConversation`, falling back to the
+   legacy name), so it runs on hosts that provide the new service *and* on older hosts
+   that still provide the old one.
+
+> Both items above are **host-side removals**, documented here on purpose: if you hit
+> either symptom right after a host upgrade, the first question is "does this plugin
+> build predate the removal?", not "what did the plugin break?".
+
+### Plugin-side fixes in `0.4.26` (these are ours)
+
+- **Data home and session base are now one source.** The plugin previously resolved its
+  own data directory through the host's home resolver (`$DSH_HOME` → `~/.dsh`), which
+  does not know about a migrated base (for example a newer `DSH_HOME` directory). With
+  `$DSH_HOME` unset,
+  sessions were read from one base while snapshots and the artifact store were written
+  to another. Snapshots, version stores and `verify-install` now follow the **active
+  session base**. When `$DSH_HOME` is set, behaviour is unchanged.
+- **No user-visible string hard-codes `~/.dsh` any more** (the settings hint used to say
+  snapshots live under `~/.dsh`).
+- Stale peer declarations with no remaining import site removed
+  (`@deepseek-ai/dsh-home-paths`, `@deepseek-ai/dsh-client-runtime`).
+
+### Upgrading
+
+```bash
+dsh plugin --profile desktop add dsh-retrace@0.4.26
+# then restart DSH — plugins are not hot-reloaded
+```
+
+If the app **fails to boot after an upgrade**, a single failing plugin can take the
+whole tree down, so recover first and diagnose second:
+
+1. remove `dsh-retrace` from the profile's `dsh.profile.bundles` **and** its
+   `dependencies` entry, restart, and confirm you can get back in;
+2. read the host log —
+   macOS: `~/Library/Application Support/DSH Desktop/logs/host/dsh-<date>.error.log`;
+3. `plugin tree failed to load` is the **host** half; `renderer boot failed` is the
+   **client** half. Both name the offending plugin/package — start there.
+
+### Pinning
+
+Pin an exact plugin version (`dsh-retrace@0.4.26`) and let `dsh-log-contract` resolve to
+`>=0.3.12`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
+the **host surface**, not by semver alone.
+
+---
+
 ## ⚠️ Requirements & limitations
 
 - Only **user messages** can be edited; recall works on user and assistant
@@ -282,14 +344,22 @@ The dynamic host registers the same operations behind the package-private
 - **Real-time watchdog** — snapshots the log at the first sign of concurrent writes.
 - Companion **`dsh-log-contract`**: 30+ offline contract rules + in-place repair
   (`fix --neutralize` / `--clip-crossstep`) for sessions that would fail `/compact`.
-- **Three-segment window** — context **water level** (CJK-corrected, tool-args
-  included), **fold** of completed blocks into a deterministic **trio** (roadmap
-  card + process + archive pointer), **unfold** with a read-first card layer,
-  revision chain (`superseded-by`), and fold preview — active folding protects
-  the context cache ahead of the host's auto-compaction auto-compaction.
-- **Close guard** — before exit/reload, warns when sessions still have running
-  work (agent running / queued / open turn / background jobs); queries via
-  `retrace.runningState`.
+**Close guard (don't lose work by accident)** — before you exit or reload, know what is still running:
+
+| | What | |
+|---|---|---|
+| 🛡️ | **Running-work detection** | every session is scanned for live work: agent running, queued inbox items, background jobs, unclosed turns |
+| 📋 | **Running banner** | sessions with live work show a persistent in-page banner (short session code + reasons), so you can see it before quitting |
+| ⚠️ | **Exit prompt** | on plugin dispose (app exit / reload) a Chinese notice lists each running session and why it is considered busy — it only warns, it never cancels your running agent |
+| 🔒 | **Page-close interception (Web)** | `beforeunload` interception: a strong confirm when work is running (details modal, `[仍关闭]` = confirm-and-go), a light confirm otherwise |
+| 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports |
+
+> Desktop note: the Electron shell destroys the window on quit, so the page-level
+> `beforeunload` hook cannot fire there and the host exposes no plugin quit-veto seam —
+> Desktop is covered by the running banner plus the dispose notice; Web gets the full
+> interception.
+
+> Command surface: `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP).
 
 **What's next** — see the [public roadmap](./docs/ROADMAP.md) for the agent
 business-layer plan (runtime guard, interruption governance, ecosystem-facing
