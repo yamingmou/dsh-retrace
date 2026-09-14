@@ -69,7 +69,7 @@ describe('client 操作失败文案', () => {
     const blank = zhKeys.filter((key) => !String(zh[key] ?? '').trim() || !String(en[key] ?? '').trim())
     expect(blank).toEqual([])
     // 被登记的文案行:两边都必须有(键在 → 英文界面不会漏成空/中文)
-    for (const key of ['marker.referenceHint', 'fork.badgeHint']) {
+    for (const key of ['marker.referenceHint', 'badge.hint']) {
       expect(zh[key]).toBeTruthy()
       expect(en[key]).toBeTruthy()
     }

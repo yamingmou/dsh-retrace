@@ -11,6 +11,7 @@
  * 三条必须逐字相等(tail/round 两模式、多种目标)。
  */
 import { describe, it, expect } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import {
   SPAN_STATUS, SPAN_MODE, spanAt, spanForSeq, spanSliceOf, roundStartIndex, roundEndIndex,
   spanOk, spanMiss, spanMissArgsOf, describeSpanResult, isSpanStatus, isRoundBoundaryEvent,
@@ -18,6 +19,7 @@ import {
 import { shadowSpanOf } from '../lib/message-list.js'
 import { computeSpan } from '../lib/adapter/dsh.js'
 import { makeSession, makeAgent, makeApi } from './helpers.js'
+import { carrierShadowedSeqs } from '../lib/marker-carrier.js'
 
 /** 通用事件(带 surfaceOp,官方 foldSurface 需要)——与 test/adapter.test.js 同风格。 */
 function conv() {
@@ -167,7 +169,7 @@ describe('业务层与适配层同一实现(审计第 2 项:同一输入 → 同
 
 /** 写入侧 marker(三情形翻译会追加 step/turn 包裹事件 → 按 surfaceOp 找,不靠"最后一个")。 */
 function markerOf(session) {
-  return session.events.find((e) => e?.surfaceOp?.op === 'replace')
+  return sessionEvents(session).find((e) => e?.surfaceOp?.op === 'replace' && e.type === 'user/message')
 }
 
 describe('预览 = 写入(端到端回归:业务层预览 / 适配层计算 / host-core 实际落盘三者相等)', () => {
@@ -175,15 +177,17 @@ describe('预览 = 写入(端到端回归:业务层预览 / 适配层计算 / ho
     const fileEvents = conv() // 适配层读到的文件侧快照(写入前)
     const session = makeSession()
     for (const event of conv()) session.appendRaw({ ...event })
-    const messages = messagesOf(session.events)
+    const messages = messagesOf(sessionEvents(session))
     const api = makeApi(session, makeAgent())
     const result = await api.recall({ sessionId: 's1', messageId: 'u2' }) // 撤回 u2(轮2)
     expect(result.ok).toBe(true)
     const marker = markerOf(session)
+    // 被遮蔽 seq 的取值口径 = marker-carrier 的单一实现(两段结构的顶层数组首项是
+    // 审计事件 seq,不属被遮蔽段)⇒ 断言读法与写入端一致。
     const written = {
       start: marker.surfaceOp.start,
       end: marker.surfaceOp.end,
-      shadowedSeqs: marker.sourceEventSeqs,
+      shadowedSeqs: carrierShadowedSeqs(marker),
     }
     // ①业务层预览(message-list 投影,UI 侧"将遮蔽这些消息")
     const preview = shadowSpanOf(messages, [], 2, { mode: 'tail' })
@@ -206,7 +210,7 @@ describe('预览 = 写入(端到端回归:业务层预览 / 适配层计算 / ho
     const api1 = makeApi(s1, makeAgent())
     expect((await api1.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'x' })).ok).toBe(true)
     const marker1 = markerOf(s1)
-    expect({ start: marker1.surfaceOp.start, end: marker1.surfaceOp.end, shadowedSeqs: marker1.sourceEventSeqs })
+    expect({ start: marker1.surfaceOp.start, end: marker1.surfaceOp.end, shadowedSeqs: carrierShadowedSeqs(marker1) })
       .toEqual(shadowSpanOf(messagesOf(conv()), [], 0, { mode: 'round' }))
 
     const s2 = build()
@@ -215,7 +219,7 @@ describe('预览 = 写入(端到端回归:业务层预览 / 适配层计算 / ho
     const marker2 = markerOf(s2)
     // fromScratch = "重新开始"语义:从**第一个 user** 起 tail 到尾部(不是从目标自身)
     const preview2 = shadowSpanOf(messagesOf(conv()), [], 0, { mode: 'tail' })
-    expect({ start: marker2.surfaceOp.start, end: marker2.surfaceOp.end, shadowedSeqs: marker2.sourceEventSeqs }).toEqual(preview2)
+    expect({ start: marker2.surfaceOp.start, end: marker2.surfaceOp.end, shadowedSeqs: carrierShadowedSeqs(marker2) }).toEqual(preview2)
     expect(preview2.shadowedSeqs).toEqual([0, 1, 2, 3, 4, 5])
   })
 })
