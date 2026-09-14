@@ -61,8 +61,8 @@ describe('close-guard-client sessionLine/runningLines(A 明细聚合)', () => {
   })
 
   it('label 覆盖原始 id(UI 传短码)', () => {
-    expect(sessionLine({ sessionId: 'a-very-long-id', reasons: ['agent-running'] }, { locale: 'zh', label: 'member-65member-16' }))
-      .toBe('- 会话 member-65member-16: 正在运行')
+    expect(sessionLine({ sessionId: 'a-very-long-id', reasons: ['agent-running'] }, { locale: 'zh', label: 'zz065zz016' }))
+      .toBe('- 会话 zz065zz016: 正在运行')
   })
 
   it('reasons 缺失兜底不崩', () => {
@@ -74,11 +74,11 @@ describe('close-guard-client sessionLine/runningLines(A 明细聚合)', () => {
       { sessionId: 'aaa', reasons: ['agent-running'] },
       { sessionId: 'bbb', reasons: ['jobs-2', 'unclosed-turn-5'] },
     ]
-    const labelOf = (id) => (id === 'aaa' ? 'member-01' : 'member-02')
+    const labelOf = (id) => (id === 'aaa' ? 'zz001' : 'zz002')
     const lines = runningLines(running, { locale: 'zh', labelOf })
     expect(lines).toEqual([
-      '- 会话 member-01: 正在运行',
-      '- 会话 member-02: 后台任务 2 个; 未闭合轮次 5',
+      '- 会话 zz001: 正在运行',
+      '- 会话 zz002: 后台任务 2 个; 未闭合轮次 5',
     ])
   })
 })

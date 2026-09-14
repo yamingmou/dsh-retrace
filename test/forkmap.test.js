@@ -117,10 +117,13 @@ describe('applyForkmap — surface fold', () => {
   })
 
   it('falls back to sourceEventSeqs when the replaced span is not live', () => {
+    // A real carrier cites `[auditSeq, ...shadowed]`: the audit event is not a
+    // message, so the fallback must drop it (real <session> shape:
+    // `sourceEventSeqs: [23075, 23069, 23070]` → shadowed `[23069, 23070]`).
     const state = fold([
       append(1), reply(2), append(3), reply(4),
       marker(5, 1, 2, 'edit'),
-      { ...replaceEvent(6, 7, 8, { sourceEventSeqs: [3, 4], data: { editor: { text: 'x' }, message: { id: 'retrace-edit-6' } } }) },
+      { ...replaceEvent(6, 7, 8, { sourceEventSeqs: [2, 3, 4], data: { editor: { text: 'x' }, message: { id: 'retrace-edit-6' } } }) },
     ])
     expect(state.boundaries[1].replacedSeqs).toEqual([3, 4])
   })
@@ -214,7 +217,7 @@ describe('forkmapProjectionDefinition — registry contract', () => {
   })
 })
 
-describe('渲染卡死回归（2026-08-30：ForkView/VersionsView O(N²) indexOf）', () => {
+describe('渲染卡死回归（2026-08-30：窗口化列表 O(N²) indexOf）', () => {
   it('窗口化渲染用索引算 top，不再对可见节点做 indexOf 线性查找', () => {
     const fs = require('node:fs')
     const path = require('node:path')
@@ -227,11 +230,11 @@ describe('渲染卡死回归（2026-08-30：ForkView/VersionsView O(N²) indexOf
     expect(src).toMatch(/const visibleStart = Math\.max\(0, Math\.floor\(scrollTop \/ ROW_H\) - 2\)/)
   })
 
-  it('ForkView 与 VersionsView 两处都修复', () => {
+  it('读档点视图沿用同一处窗口化修复（ForkView 已随第二 tab 删除）', () => {
     const fs = require('node:fs')
     const path = require('node:path')
     const src = fs.readFileSync(path.join(__dirname, '../lib/client.js'), 'utf8')
     const occurrences = (src.match(/visibleStart \+ i\) \* ROW_H/g) ?? []).length
-    expect(occurrences).toBeGreaterThanOrEqual(2) // ForkRow + VersionRow
+    expect(occurrences).toBeGreaterThanOrEqual(1) // VersionRow（ForkView/ForkRow 已删）
   })
 })

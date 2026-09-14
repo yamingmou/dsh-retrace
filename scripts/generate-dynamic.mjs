@@ -32,17 +32,22 @@ const indent = (text, spaces) =>
 {
   const hostCore = read('lib/host-core.js')
   const writerSrc = read('lib/adapter/dsh-writer.js')
-  // host-core 现在依赖两个**纯模块**(span 语义单一真相 + 契约运行时校验)——
-  // 动态插件 realm 不能 import,故一并 inline(声明顺序 = 依赖顺序):
-  //   span-semantics.js(零依赖)→ adapter/contract.js(只引 span-semantics)
-  //   → host-core → dsh-writer
+  // host-core 现在依赖四个**纯模块**(span 语义单一真相 + 载体形状单一真相 +
+  // 契约运行时校验 + 宿主事件视图兼容访问器)——动态插件 realm 不能 import,
+  // 故一并 inline(声明顺序 = 依赖顺序):
+  //   host-compat.js(零依赖)→ span-semantics.js(零依赖)→ marker-carrier.js(零依赖)
+  //   → adapter/contract.js(只引前两者)→ host-core → dsh-writer
+  const hostCompatSrc = read('lib/host-compat.js')
   const spanSemanticsSrc = read('lib/span-semantics.js')
+  const markerCarrierSrc = read('lib/marker-carrier.js')
   const contractSrc = read('lib/adapter/contract.js')
-  // 这四个文件都是纯 ESM(host-core/span-semantics 零平台 import;contract 只引
+  // 这些文件都是纯 ESM(host-core/span-semantics/host-compat 零平台 import;contract 只引
   // span-semantics;dsh-writer 只引 host-core 与 contract 的符号)——strip export 与
   // import,声明落进动态 apply 作用域(inline 顺序保证符号先声明后使用)。
   const strip = (src) => src.replace(/^import .* from '[^']*';?\n/gm, '').replace(/^export /gm, '').trim()
+  const inlineHostCompat = strip(hostCompatSrc)
   const inlineSpanSemantics = strip(spanSemanticsSrc)
+  const inlineMarkerCarrier = strip(markerCarrierSrc)
   const inlineContract = strip(contractSrc)
   const inlineHost = strip(hostCore)
   const inlineWriter = strip(writerSrc)
@@ -56,15 +61,20 @@ return {
   apply(ctx) {
     const { sessions, agents } = ctx
     const log = (line) => console.error(\`retrace: \${line}\`)
+${indent(inlineHostCompat, 4)}
 ${indent(inlineSpanSemantics, 4)}
+${indent(inlineMarkerCarrier, 4)}
 ${indent(inlineContract, 4)}
 ${indent(inlineHost, 4)}
 ${indent(inlineWriter, 4)}
-    // 遮蔽写入器（DSH 三情形翻译）。动态路径无 prewrite guard 与文件全量
-    // readMaxStep——step 分配仅内存覆盖（maxStepInTurn），窗口外既有 step 无法
-    // 感知（同类风险）；正式装配在
-    // lib/index.js 注入 readMaxStep（文件全量）与 validateMarker。
-    const markerWriter = createDshMarkerWriter({ agents, log })
+    // 遮蔽写入器（DSH 两段结构翻译）。动态路径无 prewrite guard——
+    // 正式装配在 lib/index.js 注入 validateMarker。
+    // 官方 token-meter 服务面同样**注入**（生成件里不能 import 官方包）：第 1 段的
+    // shadowedTokenCount 必须写官方 shadow-price（令牌价），拿不到服务时写入器拒写。
+    const markerWriter = createDshMarkerWriter({
+      meter: () => (typeof ctx.get === 'function' ? ctx.get('tokenMeter') : undefined) ?? ctx.tokenMeter,
+      log,
+    })
     const api = createEditorApi(ctx, sessions, agents, log, { writeMarker: markerWriter.writeMarker })
     const disposers = [
       harness.handle('retrace.recall', (args) => api.recall(args)),
