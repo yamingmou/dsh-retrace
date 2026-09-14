@@ -361,6 +361,55 @@ describe('viewVersionIndex', () => {
     ])
   })
 
+  it('两段结构载体:kind 由 data.id 分类;markerText 取第 2 段 content(时间线仍然可读)', () => {
+    // 新形态:user/message + replace + data.id(旧形态是 assistant/message + data.editor)
+    const carrier = (seq, { start, end, op = 'recall', content = '（此处内容已被撤回：原消息已归档，可在恢复视图中查看）' } = {}) => ({
+      seq,
+      type: 'user/message',
+      time: 1_700_000_000_000 + seq,
+      surfaceOp: { op: 'replace', start, end },
+      sourceEventSeqs: [seq - 1, ...Array.from({ length: end - start + 1 }, (_, i) => start + i)],
+      data: {
+        role: 'user',
+        id: `${MARKER_ID_PREFIX}-${op}-abc123`,
+        content: [{ type: 'text', text: content }],
+        source: { kind: 'model', provider: 'test', model: 'test-model' },
+      },
+    })
+    const state = fold([
+      userMessage(0),
+      assistantMessage(1),
+      carrier(2, { start: 0, end: 1 }),
+    ])
+    const view = viewVersionIndex(state)
+    expect(view.versions).toHaveLength(1)
+    expect(view.versions[0]).toMatchObject({
+      versionId: 'v2',
+      kind: 'recall',
+      markerText: '（此处内容已被撤回：原消息已归档，可在恢复视图中查看）',
+    })
+    // 折叠载体(fold op)+ 派生的人读摘要文本 → 时间线显示摘要文本
+    // 公开面:同一路径的判据与业务词表无关(折叠 op 不在公开面)⇒ 用中性摘要文本
+    const digest = '【归档摘要】\n块: 测试块\n结论: 用 A'
+    const state2 = fold([
+      userMessage(0),
+      assistantMessage(1),
+      carrier(2, { start: 0, end: 1, op: 'fold', content: digest }),
+    ])
+    // kind:fold 不在 kindFromMarkerId 的识别集里(旧形态同样落到 'edit' 兜底——
+    // 既有行为,本次不改);要点是**新形态的 markerText 仍取得到**。
+    expect(viewVersionIndex(state2).versions[0]).toMatchObject({ kind: 'edit', markerText: digest })
+    // 审计段本身不是边界(surfaceOp 缺省)⇒ 不产生版本
+    const state3 = fold([
+      userMessage(0),
+      assistantMessage(1),
+      { seq: 2, type: 'compaction/prune', time: 3, data: { shadowedRange: { start: 0, end: 1 }, shadowedSeqs: [0, 1], shadowedTokenCount: 2 } },
+      carrier(3, { start: 0, end: 1 }),
+    ])
+    expect(viewVersionIndex(state3).versions).toHaveLength(1)
+    expect(viewVersionIndex(state3).versions[0].versionId).toBe('v3')
+  })
+
   it('is empty for a fresh state', () => {
     expect(viewVersionIndex(createVersionIndexState())).toEqual({ versions: [] })
   })

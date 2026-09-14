@@ -10,38 +10,43 @@
  *    rejecting guard aborts the write (session unchanged, op fails).
  */
 import { describe, it, expect, vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createMarkerGuard, rollbackShareOf, isRestoreMarker, ROLLBACK_MIN_SURFACE } from '../lib/prewrite-guard.js'
 import { createEditorApi } from '../lib/host-core.js'
+import { carrierShadowedSeqs } from '../lib/marker-carrier.js'
 import { userMessage, assistantMessage, toolRow, headerEvent, makeSession, makeEnv, makeAgent, makeHooks } from './helpers.js'
 
 function validEnvelope(session) {
   return {
-    type: 'assistant/message',
+    // 两段结构的第 2 段(载体):官方 user/message 词表精确四成员
+    type: 'user/message',
     data: {
-      // 新形状(0.4.17v3+):真实 turn/step——T4(turn 缺失)写前拦截拒绝 turn:null marker
-      turn: 1,
-      step: 1,
-      message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
-      editor: { targetSeq: 0, text: 'hi' },
+      role: 'user',
+      id: 'retrace-recall-x',
+      content: [{ type: 'text', text: '（此处内容已被撤回：原消息已归档，可在恢复视图中查看）' }],
+      source: { kind: 'model', provider: 'p', model: 'm' },
     },
     surfaceOp: { op: 'replace', start: 0, end: 0 },
+    // 首元素 = 审计段 seq(此处用 0 占位:守卫单测只看形状/遮蔽数,不校验存在性)
     sourceEventSeqs: [0],
   }
 }
 
 describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮蔽数判定）', () => {
   // 会话工厂：n 个 surface 节点 + header(不算节点)
+  // ⚠️ 事件必须带**真实消息形状**(user/message 带 content、assistant/message 带
+  // message):写入器现在按官方口径给被遮蔽区间估令牌价(estimateMessage 口径),
+  // 光有 turn/step 的空壳事件估不出价 —— 那不是"大会话"的替身,是坏事件。
   function bigSession(n = 10) {
     const s = makeSession()
     s.appendRaw({ type: 'request/header', data: { header: { config: { provider: 'p', model: 'm' } } } })
     for (let i = 0; i < n; i++) {
+      const user = i % 2 === 0
       s.appendRaw({
-        type: i % 2 === 0 ? 'user/message' : 'assistant/message',
-        data: {
-          turn: Math.floor(i / 2) + 1,
-          step: 0,
-          ...(i % 2 === 0 ? { id: `u${i}`, source: { kind: 'user' } } : {}),
-        },
+        type: user ? 'user/message' : 'assistant/message',
+        data: user
+          ? { turn: Math.floor(i / 2) + 1, step: 0, id: `u${i}`, role: 'user', content: [{ type: 'text', text: `q${i}` }], source: { kind: 'user' } }
+          : { turn: Math.floor(i / 2) + 1, step: 0, message: { id: `a${i}`, role: 'assistant', content: [{ type: 'text', text: `r${i}` }], source: { kind: 'model', provider: 'p', model: 'm' } } },
       })
     }
     return s
@@ -50,8 +55,8 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
   // 大事件数会话：events 数组直接构造(模拟大会话,绕过 surface 窗口化)
   function hugeSession(nodeCount, eventCount) {
     const s = bigSession(nodeCount)
-    // 填充到 eventCount(往 events 里塞非 surface 事件,如 chunk)
-    while (s.events.length < eventCount) {
+    // 填充到 eventCount(往 log 里塞非 surface 事件,如 chunk)
+    while (sessionEvents(s).length < eventCount) {
       s.appendRaw({ type: 'assistant/chunk', data: { turn: 999, step: 0, text: 'x' } })
     }
     return s
@@ -105,7 +110,7 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
   it('host-core 全链路:edit 用轮内遮蔽(round),编辑早期消息也只遮蔽 1 轮 → 不触发守卫', async () => {
     // 60 surface 节点 + 2000+ chunk = 大会话;编辑 u0 → roundSpanFrom 只遮蔽 u0 轮
     const session = hugeSession(60, 2200)
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async (s, envelope) => {
       const share = rollbackShareOf(s, envelope)
@@ -120,17 +125,18 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     expect(result.ok).toBe(true) // round 遮蔽(1 轮)→ 不触发守卫
     // marker 写入,遮蔽的是 u0 轮(2 个节点)
     let marker = null
-    for (let i = session.events.length - 1; i >= 0; i--) {
-      const e = session.events[i]
-      if (e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') { marker = e; break }
+    for (let i = sessionEvents(session).length - 1; i >= 0; i--) {
+      const e = eventAt(session, i)
+      if (e.type === 'user/message' && e.surfaceOp?.op === 'replace') { marker = e; break }
     }
     expect(marker).toBeTruthy()
-    expect(marker.sourceEventSeqs.length).toBeLessThanOrEqual(2)
+    // 被遮蔽节点数取载体口径(首元素是审计 seq,不计入)
+    expect(carrierShadowedSeqs(marker).length).toBeLessThanOrEqual(2)
   })
 
   it('host-core 全链路:fromScratch 遮蔽到尾部 → 触发 rollback-guide,事件零写入', async () => {
     const session = hugeSession(60, 2200)
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async (s, envelope) => {
       const share = rollbackShareOf(s, envelope)
@@ -144,7 +150,7 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     const result = await api.editAndResend({ sessionId: 's1', messageId: 'u0', text: 'edited', fromScratch: true })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('rollback-guide')
-    expect(session.events.length).toBe(before) // 零写入
+    expect(sessionEvents(session).length).toBe(before) // 零写入
   })
 
   it('host-core 全链路:小范围 recall(撤 1 轮)→ 照常通过', async () => {
@@ -156,13 +162,13 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
       userMessage('u3', 'more'),
       assistantMessage('a3', 'done'),
     )
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async () => ({ t1Ok: true }))
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'u3' })
     expect(result.ok).toBe(true)
-    expect(session.events.length).toBe(before + 5) // 情形③完整 turn 信封：turn/start+step/start+marker+step/end+turn/end
+    expect(sessionEvents(session).length).toBe(before + 2) // 两段结构：审计段 + 载体段(无 turn/step 信封)
   })
 
   it('restore(rollback 回档)豁免:即使遮蔽巨大也不拦(问题 A 修复)', async () => {
@@ -170,7 +176,7 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     const guard = createMarkerGuard({ prewriterFactory: factory })
     const session = hugeSession(60, 2500)
     const env = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49)
-    env.data.message.id = 'retrace-restore-abcd1234-xyz' // restore marker
+    env.data.id = 'retrace-restore-synthetic-xyz' // restore marker(id 在两段结构的 data.id 上)
     expect(isRestoreMarker(env)).toBe(true)
     await expect(guard.validateMarkerAppend(session, env)).resolves.toEqual({ t1Ok: true })
   })
@@ -196,7 +202,20 @@ describe('createMarkerGuard (fake prewriter)', () => {
     const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
     const guard = createMarkerGuard({ prewriterFactory: factory })
     await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toEqual({ t1Ok: true })
-    expect(factory).toHaveBeenCalledWith({ events: [] })
+    // 2026-09-14：显式传 header（版本单一真相）；缺 header 时由契约按形状推断。
+    expect(factory).toHaveBeenCalledWith({ events: [], header: null })
+  })
+
+  it('把会话 header 传给契约（dsh-log-contract ≥0.3.13 的格式版本单一真相）', async () => {
+    // 只传 events 时 0.3.13 会按事件形状推断版本：一份没有 system/message、也没有任何
+    // replace 的 v3 日志只会推出 2（assistant/attempt 在 v2/v3 都有）⇒ 我们写的现代
+    // {op:'replace',startSeq,endSeq} 会被判 S4/S8 拒写。传 header 即在本次调用内固定版本。
+    const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
+    const guard = createMarkerGuard({ prewriterFactory: factory })
+    const header = { version: 3, id: 's1', createdAt: 1, isSeeded: false }
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [], header }, validEnvelope()))
+      .resolves.toEqual({ t1Ok: true })
+    expect(factory).toHaveBeenCalledWith({ events: [], header })
   })
 
   it('throws marker-rejected on error-level violations', async () => {
@@ -267,7 +286,7 @@ describe('createMarkerGuard (real dsh-log-contract integration)', () => {
     const envelope = validEnvelope()
     envelope.surfaceOp = { op: 'replace', start: 0, end: 1 }
     envelope.sourceEventSeqs = [] // ← the incident's first-round corruption
-    await expect(guard.validateMarkerAppend({ id: 's1', events }, envelope)).rejects.toMatchObject({
+    await expect(guard.validateMarkerAppend({ id: 's1', events }, envelope, { phase: 'post' })).rejects.toMatchObject({
       code: 'marker-rejected',
     })
   })
@@ -281,17 +300,26 @@ describe('host-core hooks.validateMarker', () => {
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
-    expect(validateMarker).toHaveBeenCalledTimes(1)
-    const [calledSession, envelope] = validateMarker.mock.calls[0]
+    // 两阶段:pre(业务闸)+ pair(计划中的两段:审计按预言 seq 合成 + 载体一起校验)
+    expect(validateMarker).toHaveBeenCalledTimes(2)
+    const [calledSession, preEnvelope, preExtra] = validateMarker.mock.calls[0]
     expect(calledSession).toBe(session)
-    expect(envelope.type).toBe('assistant/message')
-    expect(envelope.surfaceOp).toEqual({ op: 'replace', start: 0, end: 1 })
-    expect(envelope.sourceEventSeqs).toEqual([0, 1])
+    expect(preExtra?.phase).toBe('pre')
+    expect(preEnvelope.type).toBe('user/message')
+    expect(preEnvelope.surfaceOp).toEqual({ op: 'replace', start: 0, end: 1 })
+    expect(preEnvelope.sourceEventSeqs).toEqual([0, 1])
+    const [, pairEnvelope, pairExtra] = validateMarker.mock.calls[1]
+    expect(pairExtra?.phase).toBe('pair')
+    expect(pairEnvelope.sourceEventSeqs).toEqual([2, 0, 1]) // 首元素 = 审计段 seq(预言值 == 真实值)
+    expect(pairExtra?.auditSeq).toBe(2)
+    expect(pairExtra?.audit?.shadowedSeqs).toEqual([0, 1])
+    // 校验全部发生在写入之前;写完后审计段确实落在 seq 2(两段成对)
+    expect(eventAt(session, 2)?.type).toBe('compaction/prune')
   })
 
   it('aborts the write when the hook rejects (nothing appended)', async () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = async () => {
       const error = new Error('Marker write rejected by contract guard')
@@ -302,7 +330,7 @@ describe('host-core hooks.validateMarker', () => {
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('marker-rejected')
-    expect(session.events.length).toBe(before) // nothing was committed
+    expect(sessionEvents(session).length).toBe(before) // nothing was committed
   })
 
   it('skips the hook when none is provided (dynamic-plugin path)', async () => {
@@ -314,123 +342,39 @@ describe('host-core hooks.validateMarker', () => {
   })
 })
 
-describe('R2 T1 折叠自检（2026-08-29：turn-null marker 不再静默破坏 /compact）', () => {
-  it('tokenMeterFoldOk：无 step/start 的日志 → true（远古/夹具结构不误报）', async () => {
-    const { tokenMeterFoldOk } = await import('../lib/prewrite-guard.js')
-    expect(tokenMeterFoldOk([{ type: 'user/message', data: {} }])).toBe(true)
+describe('T1 折叠自检作废 + 钩子两阶段（载体改造后）', () => {
+  /**
+   * 原 R2 T1 自检(token-meter 配对:assistant/message 须落在打开中的 step 内)随载体
+   * 改造一并作废——第 2 段是 `user/message`,token-meter 对它没有 step 配对要求。
+   * 留三条断言把"作废"本身钉住:函数不再导出、host 结果不再带 markerT1Broken、
+   * 钩子按 pre/post 两阶段被调用。
+   */
+  it('tokenMeterFoldOk 不再导出(死函数随 T1 作废一并移除)', async () => {
+    const mod = await import('../lib/prewrite-guard.js')
+    expect(mod.tokenMeterFoldOk).toBeUndefined()
   })
 
-  it('tokenMeterFoldOk：正常 step 配对 → true', async () => {
-    const { tokenMeterFoldOk } = await import('../lib/prewrite-guard.js')
-    const events = [
-      { type: 'step/start', data: { turn: 1, step: 0 } },
-      { type: 'assistant/message', data: { turn: 1, step: 0 } },
-      { type: 'step/end', data: { turn: 1, step: 0 } },
-    ]
-    expect(tokenMeterFoldOk(events)).toBe(true)
-  })
-
-  it('tokenMeterFoldOk：turn-null assistant/message 无打开 step → false（/compact 会被拒）', async () => {
-    const { tokenMeterFoldOk } = await import('../lib/prewrite-guard.js')
-    const events = [
-      { type: 'step/start', data: { turn: 1, step: 0 } },
-      { type: 'assistant/message', data: { turn: 1, step: 0 } },
-      { type: 'step/end', data: { turn: 1, step: 0 } },
-      // 轮次间编辑 marker：turn/step = null，无打开 step
-      { type: 'assistant/message', data: { turn: null, step: null } },
-    ]
-    expect(tokenMeterFoldOk(events)).toBe(false)
-  })
-
-  it('guard 返回 t1Ok=false 但**不阻断**写入（编辑必须生效；调用方未传 wrapped 信封时的防御路径）', async () => {
-    const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
-    const log = vi.fn()
-    const guard = createMarkerGuard({ log, prewriterFactory: factory })
-    // 会话事件里已有一次闭合的 step，随后追加裸 turn-null marker（无 wrapped 信封）→ T1 失败
-    const session = {
-      id: 's1',
-      events: [
-        { type: 'step/start', data: { turn: 1, step: 0 } },
-        { type: 'assistant/message', data: { turn: 1, step: 0 } },
-        { type: 'step/end', data: { turn: 1, step: 0 } },
-      ],
-    }
-    const result = await guard.validateMarkerAppend(session, validEnvelope())
-    expect(result).toEqual({ t1Ok: false }) // 不抛错、不阻断
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('markerT1Broken'))
-  })
-
-  it('host-core：情形③完整 turn 信封（turn:null 已废弃），T1 通过，marker 落盘且不标注（0.4.17v3 P1/D8 治本）', async () => {
+  it('host 结果不再带 markerT1Broken(该标注随 T1 作废)', async () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    // 完整信封后 token-meter 配对必然通过 → t1Ok=true
-    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
-    expect(result.ok).toBe(true) // 不阻断
-    expect(result.value.markerT1Broken).toBe(false)
-    // marker 已落盘、真实 turn 号（铁律：不得为 null）、无标注
-    let marker = null
-    for (let i = session.events.length - 1; i >= 0; i--) {
-      const e = session.events[i]
-      if (e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') { marker = e; break }
-    }
-    expect(marker.type).toBe('assistant/message')
-    expect(marker.data.turn).toBe(1)
-    expect(marker.data.step).toBe(1)
-    expect(marker.data?.editor?.markerT1Broken).toBeUndefined()
-    // 校验钩子收到完整序列（turn/start → step/start → marker → step/end → turn/end）
-    expect(validateMarker).toHaveBeenCalledTimes(1)
-    const hookArgs = validateMarker.mock.calls[0]
-    expect(hookArgs[2]).toEqual({
-      wrappedBefore: [
-        { type: 'turn/start', data: { turn: 1 } },
-        { type: 'step/start', data: { turn: 1, step: 1 } },
-      ],
-      wrappedAfter: [
-        { type: 'step/end', data: { turn: 1, step: 1 } },
-        { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
-      ],
-    })
+    expect(result.ok).toBe(true)
+    expect(result.value.markerT1Broken).toBeUndefined()
   })
 
-  it('guard：wrappedBefore/wrappedAfter 传入完整序列后 T1 自检通过（误报消除）', async () => {
-    const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
-    const log = vi.fn()
-    const guard = createMarkerGuard({ log, prewriterFactory: factory })
-    // 会话事件里已有一次闭合的 step，随后追加情形③ marker + 完整 turn 信封
-    const session = {
-      id: 's1',
-      events: [
-        { type: 'step/start', data: { turn: 1, step: 0 } },
-        { type: 'assistant/message', data: { turn: 1, step: 0 } },
-        { type: 'step/end', data: { turn: 1, step: 0 } },
-      ],
-    }
-    const envelope = { ...validEnvelope(), data: { ...validEnvelope().data, turn: 2, step: 1 } } // 情形③：turn=2（信封 turn），step=1
-    const result = await guard.validateMarkerAppend(session, envelope, {
-      wrappedBefore: [
-        { type: 'turn/start', data: { turn: 2 } },
-        { type: 'step/start', data: { turn: 2, step: 1 } },
-      ],
-      wrappedAfter: [
-        { type: 'step/end', data: { turn: 2, step: 1 } },
-        { type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } },
-      ],
-    })
-    expect(result).toEqual({ t1Ok: true }) // 完整序列配对通过 → 不再误报
-    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('markerT1Broken'))
-  })
-
-  it('host-core：t1Ok=true（正常）时不标注', async () => {
+  it('钩子两阶段:pre(落盘前,仅业务闸) + pair(计划中的两段,完整契约校验;仍在写之前)', async () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    const validateMarker = async () => ({ t1Ok: true })
+    const phases = []
+    const validateMarker = vi.fn(async (_session, envelope, extra) => { phases.push(extra?.phase) })
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
-    expect(result.value.markerT1Broken).toBe(false)
-    const marker = session.events[session.events.length - 1]
-    expect(marker.data?.editor?.markerT1Broken).toBeUndefined()
+    expect(phases).toEqual(['pre', 'pair'])
+    // pair 阶段拿到的首元素 = 审计段 seq(载荷把计划中的审计段按同一 seq 合成进事件表,
+    // 故完整契约校验在**任何 append 之前**就能跑 —— 本轮整改的核心)
+    const pairEnvelope = validateMarker.mock.calls[1][1]
+    expect(pairEnvelope.sourceEventSeqs[0]).toBe(eventAt(session, 2).seq)
   })
 })

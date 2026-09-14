@@ -27,6 +27,13 @@ import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const SINGLE_TRUTH = 'lib/span-semantics.js'
+/**
+ * 第 4 项(2026-09,反方复核):「载体区间起点 / 业务溯源派生」也有**唯一**实现
+ * ——`lib/marker-carrier.js` 的 `spanRangeOf` + `carrierTargetSeq`。历史形态是
+ * client 侧自写 `spanStartOf`(只取 `op.start/op.startSeq` 数值,不校验 `op==='replace'`、
+ * 不校验键数恰 3)⇒ 同名字段两条口径可分歧(畸形 surfaceOp 上一条给数、一条给 -1)。
+ */
+const CARRIER_TRUTH = 'lib/marker-carrier.js'
 /** 生成件(源码的副本/打包产物):内容是派生的,排除出结构断言。 */
 const GENERATED = /(^|\/)(dynamic-host|dynamic-client|client\.bundle)\.js$/
 
@@ -56,6 +63,11 @@ const BANS = [
     what: 'span 由序列切片直接组装(shadowedSeqs: <序列>.slice(…))',
     re: /shadowedSeqs\s*:\s*[\w.]*(?:nodes|seqs|sequences|messages|events|surface)[\w.]*\.slice\(/,
   },
+  {
+    // 第 4 项:载体区间起点/业务溯源的**第二份**取值实现(唯一实现见 lib/marker-carrier.js)
+    what: '第二份区间起点取值实现(spanStartOf / rangeStartOf / targetSeqOf / spanRangeStart)',
+    re: /(?:function|const|let)\s+(spanStartOf|rangeStartOf|targetSeqOf|spanRangeStart)\b/,
+  },
 ]
 
 /** 历史实现形态(收敛前的真实写法)——用于证明每条正则有牙。 */
@@ -70,6 +82,8 @@ const HISTORICAL_SHAPES = [
   'function roundStartIndex(nodes, index, isBoundary) {',
   // span 由序列切片组装
   'return { start: nodes[index], end: nodes[nodes.length - 1], shadowedSeqs: events.slice(startPos, events.length) }',
+  // 第 4 项:client 侧自写的区间起点取值(只取数值,不校验 op/键数)——已被收敛删除
+  "function spanStartOf(event) {\n  const op = event?.surfaceOp\n  const start = op.start !== undefined ? op.start : op.startSeq\n  return typeof start === 'number' ? start : -1\n}",
 ]
 
 function libFiles() {
@@ -106,7 +120,7 @@ function banHits(rel) {
 
 describe('单一真相(第 2 项)· 结构断言:轮首回退/尾部切片只有一份实现', () => {
   it('lib/ 下除 lib/span-semantics.js 外,不存在第二份轮首回退/尾部切片实现', () => {
-    const scanned = libFiles().filter((rel) => rel !== SINGLE_TRUTH && !GENERATED.test(rel))
+    const scanned = libFiles().filter((rel) => rel !== SINGLE_TRUTH && rel !== CARRIER_TRUTH && !GENERATED.test(rel))
     expect(scanned.length).toBeGreaterThan(15) // 扫描面非空(防规则失效导致"假绿")
     const hits = scanned.flatMap(banHits)
     expect(hits).toEqual([])
@@ -120,6 +134,21 @@ describe('单一真相(第 2 项)· 结构断言:轮首回退/尾部切片只有
     expect(/for\s*\(let i = index;\s*i >= 0;\s*i--\)/.test(text)).toBe(true) // 唯一的轮首回退循环
   })
 
+  it('第 4 项:区间起点/业务溯源唯一实现在 lib/marker-carrier.js(不是"两边都没有")', () => {
+    const text = readFileSync(join(root, CARRIER_TRUTH), 'utf8')
+    for (const name of ['spanRangeOf', 'carrierTargetSeq']) {
+      expect(text).toContain(`export function ${name}`)
+    }
+    // 严格判据(畸形 surfaceOp 不给数)也在这一份实现里
+    expect(text).toContain("if (surfaceOp.op !== 'replace') return null")
+    expect(text).toContain('if (keys.length !== 3) return null')
+    // 其余 lib 文件里不得再出现同名取值实现(扫描面非空,防规则失效)
+    const scanned = libFiles().filter((rel) => rel !== SINGLE_TRUTH && rel !== CARRIER_TRUTH && !GENERATED.test(rel))
+    expect(scanned.length).toBeGreaterThan(15)
+    const dup = scanned.filter((rel) => /(?:function|const|let)\s+(spanStartOf|rangeStartOf|targetSeqOf|spanRangeStart)\b/.test(readFileSync(join(root, rel), 'utf8')))
+    expect(dup).toEqual([])
+  })
+
   it('断言有牙:每条禁用形态都能咬到历史实现样本(正则写错 → 这里先红)', () => {
     for (const ban of BANS) {
       const bitten = HISTORICAL_SHAPES.filter((shape) => ban.re.test(shape))
@@ -131,6 +160,7 @@ describe('单一真相(第 2 项)· 结构断言:轮首回退/尾部切片只有
   })
 
   it('豁免集合只含生成件(生成件的同源由 test/generated.test.js 保证)', () => {
+    expect(CARRIER_TRUTH).toBe('lib/marker-carrier.js') // 第二份"唯一真相"也是源码,不是生成件
     for (const rel of ['lib/dynamic-host.js', 'lib/dynamic-client.js', 'lib/client.bundle.js']) {
       expect(GENERATED.test(rel)).toBe(true)
       expect(existsSync(join(root, rel))).toBe(true)

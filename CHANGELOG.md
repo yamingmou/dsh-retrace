@@ -1,49 +1,108 @@
-## [0.4.25] — 2026-09-10 · 关闭守卫（防误关）+ 编辑被拒修复（提交竞态）+ 编辑提示本地化
+### 0.4.28(2026-09-14 · 宿主契约漂移修复 + 版本/分叉视图可解释化 + 客户端 O(K·N²) 消除)
 
-### 新增：关闭守卫（防误关，通用能力）
+> **注**：`0.4.27` 曾短暂发布后**撤回**（`npm dist-tag` 已退回 `0.4.26`，`0.4.27` 已标记 deprecated）。
+> **本版是它的替代版本**：含其全部修复，另加下述两项完善。
 
-- **运行中检测全集**（`lib/close-guard.js`）：agent status=running / inbox 排队
-  (hasPending·nextTurn/nextStep) / 后台 jobs（按 owner.id 关联）/ 未闭合轮
-  （复用 interrupt-guard）→ 单会话与会话清单两种查询；
-- **关闭前提示**：插件 dispose（应用退出/重载）时，若有运行中会话 → 中文强提示
-  列出会话与原因（只提示不中断，绝不代用户取消 agent）；
-- **运行中横幅（client）**：会话有运行中任务时页面常驻横幅（会话短码 + 原因明细，
-  可忽略/展开，集合变化重现），退出前可见；
-- **页面关闭拦截（client，Web）**：`beforeunload` A 强拦（有运行中任务 → 原生门 +
-  自绘中文明细模态，`[仍关闭]` 为二次放行）/ B 轻确认（无任务 → 一次确认）；
-- **查询面**：host handler `retrace.runningState` + HTTP `GET|POST
-  /api/plugins/retrace/runningState`（会话清单/单会话，形状一致）。
+- **【宿主侧变更·非本插件缺陷】适配 `@deepseek-ai/dsh-session` **移除 `Session.events`**(`0.1.5-rc.1`)**:
+  该类**既无 `events` 字段也无 `events` getter**;真读口是 `snapshotEvents(from,to)`(冻结、**按 seq 索引**)、
+  `eventAt(seq)`、`ownEvents()`、`isOwnSeq(seq)`。插件在 **18+ 处**读旧成员,其中无守卫处抛
+  `TypeError: Cannot read properties of undefined (reading 'length')`;而**撤回与编辑都以"按 `messageId` 定位目标 seq"开头**
+  (`lib/host-core.js` 的 `findMessageSeq`)⇒ **两个操作都在动手前中止,表现为"点了没反应"**。
+  现经 `lib/host-compat.js` 兼容访问器(`sessionEvents`/`eventAt`:新宿主优先、旧宿主回退),两代宿主都能跑。
+- **【我方缺陷】客户端读 `snapshot.chat.nodes` —— 该路径在本宿主不存在**:
+  聊天节点实际在 **`useChat` 的 `snapshot.nodes`**(实测:宿主里字面量 `snapshot.chat` **0 命中**)。
+  6 个 hook / 7 处读取全部抛错、被宿主错误边界吞掉 ⇒ **编辑/撤回入口从不出现**;而设置项组件不读节点 ⇒
+  正常显示(用户给出的判别性观察)。现改为从槽位契约的 `useChat` standardProp 取节点。
+- **【我方缺陷】版本/分支视图「跳转」点了毫无反应**:`store.getSnapshot()?.chat?.nodes` 恒 `undefined`
+  ⇒ 锚点 key 恒 `null` ⇒ 分页首个空页即 break(仅 `console.warn`)。现改为**注入式节点源**
+  (视图经 `useChat` + ref 提供)+ 官方 `store.loadThrough(seq)` 分页,失败时给出**可诊断理由**
+  (renderer 警告 + 经 `clientReport` 落宿主日志)。
+- **【宿主侧变更·非本插件缺陷】客户端会话存储无 `keys()`**:旧回退 `Object.keys(service)`
+  ⇒ **枚举恒为空,不崩不报** ⇒ `close-guard`/`interrupt-guard` 的"运行中会话 / 未闭合轮"告警**永不触发**。
+  现 `list()` 优先、`keys()` 回退;**刻意不用猜服务字段兜底**(猜出来的空集同样是静默失败)。
+- **【我方缺陷】设短码会冲掉用户标题**:客户端本地拼 `[短码] 原标题`,却**没有读标题的途径**
+  (`getTitle` 在 `dsh-api-session-controller` 全包 0 命中) ⇒ base 退化成 `sessionId.slice(0,16)`
+  ⇒ 标题变成 `[XXXXXX] <session>-648c-4c`。现短码入标题**只走服务端** `setBadgeTitle`(从会话日志读当前标题);
+  手动重命名不受影响。
+- **可诊断性**:`lib/http.js` 的 `sendError` 原先只回传 message、**不写日志**(本类问题因此被藏了很久),
+  现记录 code + message + **stack**。
+- **测试与自检**:52 文件 **845 用例**。测试假宿主**默认翻转为生产形状**(只有 `snapshotEvents`/`eventAt`、
+  **无 `events`**)——把实现改回**守卫型回退**(`Array.isArray(session?.events) ? … : []`,最易被写出的形态)
+  由"38/38 全绿"变为 **47 条红**。新增**宿主契约上线前闸门** `scripts/check-host-contract.mjs`(读已安装
+  `app.asar`,**81 条**声明式断言:正向 present + 反向 absent,含 `Session.events` 不得复活、服务名按
+  `super(ctx,"X")` 断言),接入 `check`;闸门已用"故意改坏断言"自证 → `1 FAILED` + **EXIT=1**。
+  投影防泄露自检 0 命中;源 → 投影 → profile 实装 bundle **逐字一致**。
 
-> 说明：桌面端（Electron）应用退出走 `window.destroy()`，页面 `beforeunload` 不触发，
-> 且宿主未暴露插件可用的退出否决点（quit-veto）——桌面侧以运行中横幅 + dispose 提示
-> 覆盖；Web 端拦截完整生效。
+- **【用户体验·完善】版本 / 分叉视图不再「只有动作、没人看得懂」**：实测两视图在有数据的**正常状态**下
+  **除标题外没有任何解释性文字**（唯一沾边的是「没数据时才出现」的空态句），行内还把**内部术语与裸节点类型**
+  直接给用户看。现补：常显的**概念解释句**（版本＝每次撤回/编辑/重新生成前的快照点，可回退或对比；
+  分叉＝旧路径与新路径的分岔，可跳转或从分叉点回退）、**类型图例**、**每行恒有白话「为什么」行**；
+  并把 `用户消息`→`你发送的消息`、`被遮蔽 N 个节点`→`旧路径的 N 条消息被替换`、
+  `产物动作（N）`→`将变更的文件（N）`、医生条去掉内部词（`token meter`）。
+- **【性能·完善】客户端隐藏判定由 O(K·N²) 降为「每快照一次 O(K·N)」**：`useSeqHidden` 此前**每行都重扫节点**
+  （实测 2000 行/20 marker **346ms**、3000/30 **1568ms**）。该路径在 2.0.9 上原先是**死的**（行组件全部抛错、
+  从不渲染），正是本轮修复让行组件**第一次真正渲染**后才变活 ⇒ **属本修复的可见代价，不是别人的旧账**。
+  现复用同一份 per-snapshot hide plan：**2000/20 → 8.3ms（41.7×）**、**3000/30 → 18.3ms（85.8×）**，二次项消失；
+  行为判定**逐字等价**（7 类快照与旧谓词差分零漂移；40 行查表 **0 次**全表扫描）。
+### 0.4.26(2026-09-14 · 新基座适配:bundle 在新宿主上装得进、起得来、数据落同一个家)
 
-### 修复：编辑最新消息被拒（提交竞态）
+- **【宿主侧变更·非本插件缺陷】适配 `@deepseek-ai/dsh-session` 把 `decodeStorageRecord` 从公开导出面拿掉（`0.1.5-rc.1`；函数仍在内部模块，但包根不再导出、exports 子路径不可达）**:
+  本插件自身从未 import 该符号,但依赖 `dsh-log-contract` 会经它解码 ⇒ 宿主不再导出该符号时
+  **整棵插件树 `plugin tree failed to load`**,App 起不来。现要求 `dsh-log-contract >= 0.3.12`
+  (经其自身兼容层解码,不再触碰该已移除导出)。
+- **【宿主侧变更·非本插件缺陷】适配消失的客户端**服务** `conversationEvents`**:
+  该服务原由已被移除的旧客户端运行时 `@deepseek-ai/dsh-client-runtime` 提供(该串在宿主里已 **0 命中**)。
+  插件客户端半若仍在 `export const inject` 里声明它,其 fiber 就**永远停在 pending**,宿主据此报
+  `renderer boot failed (plugins: …): The client Loader did not provide an error message` ——
+  **没有任何错误信息,客户端起不来,唯一进法是禁用插件**。现:从 `inject` 删掉该服务,改在 `apply` 里
+  **防御性解析**(`uiConversation`,取不到回退旧名),新宿主与仍提供旧服务的老宿主都能跑。
+  (**澄清**:在 `dsh.client.inject` 里声明一个**已不存在的包**不会导致启动失败 —— 加载器对
+  认不出的条目静默跳过;致命的是**服务名**。删那个陈旧包属卫生清理,不是致因。)
+- **插件数据家与会话基座同源**:此前用宿主的 home 解析器(`$DSH_HOME` → `~/.dsh`)定位插件数据,
+  而它不认识迁移后的基座 ⇒ 未设 `$DSH_HOME` 时「会话从一个基座读、快照与产物库写到另一个基座」。
+  现在快照、版本库、`verify-install` 默认目录统一跟随**活动会话基座**;设了 `$DSH_HOME` 行为不变。
+- **清理**:删除已无任何引用点的陈旧 peer 声明(`@deepseek-ai/dsh-home-paths`、
+  `@deepseek-ai/dsh-client-runtime`);用户可见文案不再写死 `~/.dsh`。
+- **测试与自检**:45 文件 647 passed;产物自检 0 残留;
+  装载前置检查扩到四道(宿主导出符号 / 客户端装配依赖 / 客户端服务名 / 同一包多份副本),
+  **每道都做过负对照**(塞回坏依赖即报红)。
 
-- **现象**：编辑刚完成的回复时提示 `This message is no longer part of the active
-  conversation.`，但该消息实为活跃（未被折叠/撤回）；
-- **根因**：点击落在轮次收尾窗口，宿主持久化文件尚未落盘刚提交的消息 →
-  目标 span 计算为空 → 与「消息已被遮蔽」共用同一判定而误报；
-- **修复**：区分「提交中」与「已被遮蔽」——文件快照落后于目标 seq → 新错误码
-  `message-pending`（『消息生成中，完成后可编辑』）；更早的替换标记命中 →
-  `target-shadowed`（『该消息位于已折叠块（历史只读）：展开该块后编辑，或追加新
-  消息修订』）；两者均附 messageId/seq；重新生成的前置输入改由文件侧权威取
-  （与目标同一轮的首条用户消息，绝不越过中间被遮蔽区域取到更早的轮）；
-- **提示本地化**：客户端按错误码映射中英文文案，不再原样透传宿主英文；
-- **一致性**：HTTP 与 harness 两入口统一单次快照探测（消除两次读取间的时序差）。
+## [0.4.21] — 2026-09-09 · 关闭守卫 V1 + 四角度审核 P0
 
-### 修复：会话守卫对齐官方形状 + 会话文件短缓存（P0）
+### 0.4.22(2026-09-09 · 关闭守卫 V2)
 
-- 运行中判定对齐官方 `agent.inbox`（hasPending/nextTurn/nextStep）与 jobs 快照
-  （按 `owner.id` 关联），不依赖未公开字段；
-- 会话文件读取 300ms 进程级短缓存（mtime+size 签名），降低连续操作的重复解压。
+- **关闭守卫 V2**:lib/close-guard-client.js + client.js —— 页面关闭
+  A 强拦(原生门+自绘中文明细模态,[仍关闭] arm 二次放行)/B 轻确认 + 运行中横幅
+  (短码明细全程可见)+ runningState HTTP 面(5s 轮询缓存,beforeunload 同步读);
+  技术验证 5 项实证(Desktop 退出=destroy 路径不触发 beforeunload → web 完整实现 +
+  桌面横幅 + 向官方 shell 提议 quit-veto seam,如实不硬造);
+### 0.4.24(2026-09-10 · 编辑被拒 bug + 折叠消息 UX)
+
+- **编辑被拒 bug(真 bug 闭环)**:根因 = 提交竞态/快照滞后——点击落 turn
+  收尾窗口,文件未 flush 刚 commit 消息 → span null → 误抛 target-shadowed。修复:
+  host-core 三 op(recall/editAndResend/regenerate)span null 时区分「提交中」与
+  「真被遮蔽」——fileMaxSeq<目标 seq(flush 滞后)→ 新 code `message-pending`
+  (『消息生成中,完成后可编辑』);更早 replace marker 命中 → `target-shadowed`
+  中文可操作(『该消息位于已折叠块(历史只读):展开该块后编辑,或追加新消息修订』);
+  均附 messageId/seq;regenerate 判定序统一(去无条件内存终判);
+- **文案本地化**:client `opFailureText(code,message,t)` 中英映射
+  (error.targetShadowed/error.messagePending),不再原样透传 host 英文;
+- **审查闭环(M-1/L-1)**:regenerate 重发文本改由文件侧 `roundPromptOf` 权威取
+  (同轮轮首 user 原文,绝不过遮蔽洞选错更早轮;带不出则保守 no-prompt 不落 marker);
+  HTTP 双读对齐单次 `spanProbeFromFile`(消两快照 TOCTOU);
+- 413 测试绿(0.4.23 基线 385 + 28:host-core 12/adapter 10/client 4/http 2)。
+
+### 批6(2026-09-09 · 关闭守卫)
+
+- **关闭守卫(防误关)**:lib/close-guard.js runningState 检测全集(agent running/
+  inbox queued/未闭合轮/后台 jobs)+ dispose 强提示 + retrace.runningState handler;
 
 ## [0.4.20] — 2026-09-09 · recall 遮蔽语义修复（tail）+ 死锁根治 + bootPin 修复
 
-### 修复（2026-09-07 · ISSUE-20260907113201-5e551006 + 同族 ISSUE-20260902125219-bfb965e4）
+### 修复（2026-09-07 · 两笔同族内部工单）
 
 **缺陷①（遮蔽只到单轮→断层）**：recall 语义 = 遮蔽目标轮及之后全部（编辑=从此处分叉，
-bfb965e4 用户要求"撤回该消息之后的所有后续输入输出"）——recall 的 span mode 从 round 改
+dddddddd 用户要求"撤回该消息之后的所有后续输入输出"）——recall 的 span mode 从 round 改
 **tail**（index.js withFileSpan + host-core fallback）；tail 起点回退到目标所在**轮首**
 （撤回回复连带 input，防孤立 user）。
 
@@ -57,13 +116,13 @@ bfb965e4 用户要求"撤回该消息之后的所有后续输入输出"）——
 - host-core `shadowSpanFrom` tail 同步位置段化（host 视图尽力，主路径 = spanFromFile）。
 
 **守卫边界（预期行为）**：撤回很旧消息遮蔽 >40 节点 → 快照点守卫拒绝并引导分支
-（bfb965e4"旧消息应禁撤/建议分支"的正式出口）；撤回最近轮正常放行。
+（dddddddd"旧消息应禁撤/建议分支"的正式出口）；撤回最近轮正常放行。
 
 **验证**：238 测试绿（+4：官方 foldSurface nodes 回归——已遮蔽 target→null / marker 后
 撤回写入不抛 / tail 轮首起点 / round marker 不入轮）；evidence 快照 6 个失败场景全修；
 dynamic-host 重建。
 
-**遗留（bfb965e4 UX 部分，另列）**：recall 二次确认 + undo 路径（误点撤回保护）未实现。
+**遗留（dddddddd UX 部分，另列）**：recall 二次确认 + undo 路径（误点撤回保护）未实现。
 
 
 
@@ -71,32 +130,31 @@ dynamic-host 重建。
 
 **根因（三层）**：① 改标题的唯一机制 store.rename 只在打开 ForkView/RetraceView
 （版本/分支标签）时触发——默认对话视图/会话列表从不触发；② host 编辑时用
-session.append 写标题——不更新官方 title 投影（且被自动改名覆盖）；③ 5e551005
-这类新 fork 会话不在短码表（维护线 8-31 后未刷新）→ 只有 FNV 兜底（不可读）。
+session.append 写标题——不更新官方 title 投影（且被自动改名覆盖）；③ dddddddd
+这类新 fork 会话不在短码表（修复工具 8-31 后未刷新）→ 只有 FNV 兜底（不可读）。
 
 **修复**：
 - **官方 rename pin**：host 用 `ctx.get('sessionTitle').rename(session, '[短码] 原标题')`
   ——官方语义 = 写 user source title → **永久关闭自动改名**（onUserMessage 见
-  user source 不再生成）+ 标题投影立即刷新（5e551005 已 pin"项目讨论"，正是此机制）；
+  user source 不再生成）+ 标题投影立即刷新（dddddddd 已 pin"项目讨论"，正是此机制）；
   替代旧的 session.append（append 不更新投影）。edit 时 ensureBadgeTitle /
   setBadgeTitle / setUserTitle / initBadgeTitles 全部走 rename pin；
 - **短码实时推导**：不在短码表 → 扫全部会话 header（工作区 createdAt 序号 + 父链，
-  与维护线 generate-session-codes.mjs 同规则，表的新鲜超集）——**5e551005 = member-71member-65**；
-  与维护线表 103/103 一致验证；配套 dsh-log-contract 0.3.10 readSessionHeader
+  与修复工具内部短码生成脚本同规则，表的新鲜超集）——**dddddddd = zz071zz065**；
+  与修复工具维护的短码表 103/103 一致验证；配套 dsh-log-contract 0.3.10 readSessionHeader
   （帧1 轻量读取，全量 109 会话 ≈ 30ms，懒加载缓存）；
 - **启动批量 pin**：host apply 后自动批量处理驻留会话（延迟重试 + 30s 补跑），
   用户打开 DSH 侧边栏即见 `[短码] 名称`——不依赖 ForkView、不依赖先编辑；
 - 短码三级：archive 表 → 实时推导 → FNV 兜底；
 - 234 测试绿；desktop file: 挂载已含新代码。
 
-## [0.4.18] — 2026-09-02 · hotfix：情形③ turn/end 补 reason.kind（5e551005 malformed）
+## [0.4.18] — 2026-09-02 · hotfix：情形③ turn/end 补 reason.kind（dddddddd malformed）
 
-### 修复（2026-09-02 · 5e551005 malformed turn/end —— 维护线确认 + 逐字镜像官方契约）
+### 修复（2026-09-02 · dddddddd malformed turn/end —— 修复工具确认 + 逐字镜像官方契约）
 
 - 情形③完整 turn 信封的 `turn/end` 漏 `reason.kind` → 官方 validation 拒绝
   （`turn/end = { turn, reason: { kind } }`，dsh-agent-loop:620）→ 会话加载失败
-  SessionPersistenceCorruptionError → **每次编辑都触发**（5e551005，维护线
-  tools/validate.mjs 固化）；
+  SessionPersistenceCorruptionError → **每次编辑都触发**（dddddddd，修复工具用一个离线自查脚本固化）；
 - 修复：`lib/adapter/dsh-writer.js` 情形③ wrappedAfter 的 turn/end 带
   `reason: { kind: 'completed' }`（信封 turn 立即完整关闭）；dynamic-host
   regenerate；测试断言更新（信封形状 + reason.kind）；场景重演验证
@@ -130,7 +188,7 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
     step key 冲突白屏）；文件全量 readMaxStep 覆盖**窗口外既有 step**（host
     窗口化内存不可信）；双向取大，两类场景实测复现已修复（T3=0）；
 - **动态路径（dynamic-host inline）降级文档化**：无 readMaxStep → 仅内存覆盖，
-  窗口外 step 无法感知（5e551001 同类风险，已记录；正式装配 lib/index.js 注入
+  窗口外 step 无法感知（aaaaaaaa 同类风险，已记录；正式装配 lib/index.js 注入
   文件全量 readMaxStep）；
 - **死代码清理**：http.js / index.js 的 args.readMaxStep 注入已无人消费（writer
   readMaxStep 来自装配闭包）——删除；
@@ -139,10 +197,10 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
 
 ### 修复（2026-09-02 · 情形②窗口化防御：step 号从文件全量算）
 
-- 复盘 2026-09-02（5e551001 白屏真正根因 = step 节点 key 冲突）：情形②
+- 复盘 2026-09-02（aaaaaaaa 白屏真正根因 = step 节点 key 冲突）：情形②
   （开 turn 无 step）分配新 step 号时，host 窗口化 session.events 可能看不到
   turn 内全部 step → 算小 → 新 step 号撞上窗口外既有 step = step key 冲突白屏
-  （与 5e551002 103:1 同型）；
+  （与 eeeeeeee 103:1 同型）；
 - `adapter/dsh.js` 加 `maxStepInTurnFromFile`（从文件全量事件算 turn 内最大
   step；readEvents 拆出 readEventsFromFile 便于测试注入）；host-core 情形②
   优先用注入的 `readMaxStep` 回调（失败 fallback 内存扫描）；index.js/http.js
@@ -159,15 +217,15 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
 
 | 版本 | 轮次间 marker 形状 | 后果 |
 |---|---|---|
-| 0.4.10-0.4.16 | 裸 step + 真实 nextTurn | **D7 同款孤儿块**：重发 turn/start 前先产生该 turn 的 update → 客户端 turn-tail 抛 `update before its start Match` → 维护线反复删（5e551010 第 4 次修复） |
-| 0.4.17（已废弃） | 临时 step **turn:null** | **D8 白屏死循环**（5e551001）：客户端渲染状态机对 turn=null 无法归属任何 turn → Renderer CPU 31.8% → 白屏「载入历史」；维护线把 null→95 后恢复，用户验证 |
+| 0.4.10-0.4.16 | 裸 step + 真实 nextTurn | **D7 同款孤儿块**：重发 turn/start 前先产生该 turn 的 update → 客户端 turn-tail 抛 `update before its start Match` → 修复工具反复删（bbbbbbbb 第 4 次修复） |
+| 0.4.17（已废弃） | 临时 step **turn:null** | **D8 白屏死循环**（aaaaaaaa）：客户端渲染状态机对 turn=null 无法归属任何 turn → Renderer CPU 31.8% → 白屏「载入历史」；修复工具把 null→95 后恢复，用户验证 |
 | **0.4.17v3（本版）** | **三情形 turn 赋值**（见下） | 五层（foldSurface/token-meter/location/turn-tail/**客户端渲染**）全绿 |
 
-**教训**：0.4.17 的四层验证漏了**客户端渲染层**——离线契约/匹配器都过不等于客户端不死循环。维护线 `tools/validate.mjs` 已把 step 包裹/消息本体的 null-turn 判为**致命**；**任何 step/marker 事件不得写 turn:null**（铁律）。
+**教训**：0.4.17 的四层验证漏了**客户端渲染层**——离线契约/匹配器都过不等于客户端不死循环。修复工具侧一个离线自查脚本已把 step 包裹/消息本体的 null-turn 判为**致命**；**任何 step/marker 事件不得写 turn:null**（铁律）。
 
 **治本（三情形，`lib/host-core.js appendEditorMarker`）**：
 - ① **有打开的 step**（回合中编辑）：marker 携带该 step 的 turn/step（不变）；
-- ② **无打开 step 但有打开着的 turn**（回合内 step 间隙编辑——5e551001 现场）：
+- ② **无打开 step 但有打开着的 turn**（回合内 step 间隙编辑——aaaaaaaa 现场）：
   marker 用该 turn 号 + 新 step 号（turn 内 max step + 1）→ turn/start 早已在
   marker 之前 → 无孤儿、无 null、不占新 turn 号（重发用 agent-loop 计数器，无碰撞）；
 - ③ **无打开 turn**（真轮次间）：开**完整 turn 信封**（turn/start → step/start →
@@ -185,11 +243,11 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
 - `lib/rollback.js` / `lib/index.js`：传 `agents`；动态产物 `dynamic-host.js` 同步重建。
 
 **验证**：231 测试全绿（+2：情形②开 turn+新 step / 情形③信封+推进，含 loop 计数器
-推进断言）。真实会话重放：5e551001（修复前备份）case2 四层全绿；case3 合成序列
+推进断言）。真实会话重放：aaaaaaaa（修复前备份）case2 四层全绿；case3 合成序列
 四层全绿（对照：旧孤儿形状 THROW `update-before-start`、turn:null 形状触发白屏）。
 
-**遗留**：5e551010 旧孤儿块已被维护线清除（2026-09-01 23:32，0 marker）；5e551001
-已由维护线 null→95 修复（用户验证）；本版之后编辑不再产生孤儿块/空 turn。
+**遗留**：bbbbbbbb 旧孤儿块已被修复工具清除（2026-09-01 23:32，0 marker）；aaaaaaaa
+已由修复工具 null→95 修复（用户验证）；本版之后编辑不再产生孤儿块/空 turn。
 
 ### 修复（2026-08-31 · 独立审查 3 项）
 
@@ -210,7 +268,7 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
 
 ### 新增（2026-08-31 · 快照点守卫：回档幅度保护）
 
-- **回档幅度保护（5e55100a 事故闭环，生产级运行保障）**：编辑/撤回/重发/
+- **回档幅度保护（eeeeeeee 事故闭环，生产级运行保障）**：编辑/撤回/重发/
   恢复写入前计算遮蔽占比（`sourceEventSeqs / surface.nodes`），
   **> 40%（`ROLLBACK_RATIO`）拒绝落盘**，抛 `rollback-guide` 错误并引导
   「从快照点创建会话分支」（生产基线不支持原地大幅改写）。
@@ -232,12 +290,12 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
 
 ## [0.4.11] — 2026-08-30 · 渲染卡死修复（ForkView/VersionsView O(N²)）
 
-### 修复（2026-08-30 禁用验证坐实：5e551007 打开转圈、Renderer CPU 27.7%）
+### 修复（2026-08-30 禁用验证坐实：cccccccc 打开转圈、Renderer CPU 27.7%）
 
 - **ForkView / VersionsView 窗口化渲染 O(N²) → O(1)**：`visible.map` 里
   `nodes.indexOf(node)` / `list.indexOf(record)` 在每次渲染对每个可见节点做
   线性查找——2047 节点 × ~15 可见行 = 每次渲染 ~30K 次比较，React 重渲染风暴
-  → 转圈、Renderer CPU 27.7% 持续高负载。大会话（5e551007 126.9 万事件、
+  → 转圈、Renderer CPU 27.7% 持续高负载。大会话（cccccccc 126.9 万事件、
   forkmap 2047 节点）打开卡死，小会话不触发。
 - 修复：窗口化切片带起始索引（visibleStart），渲染用 `(visibleStart + i) * ROW_H`
   直接算 top，去掉 indexOf。ForkView + VersionsView 两处同修。
@@ -255,7 +313,7 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
 ### 修复(刷屏事故根治 v2)
 
 - **轮次间编辑(常态)自动开临时 step 包裹 marker**：step/start → marker(turn=nextTurn, step=1) → step/end。官方 token-meter 要求每条 assistant/message 必须有打开的 step(stepStart===void 0 即抛，dsh-token-meter :590)，turn-null 或伪造 turn/step 都过不了；临时 step 是唯一合法形态。三层验证通过(foldSurface / token-meter / 客户端 Location boundary——step/turn 事件不进 surface)。
-- 0.4.7-0.4.9 只修了回合中编辑(step-context)，轮次间编辑仍写 turn:null(5e551007 实测 6 个，最新 07:27)→ 仍会刷屏压垮 host。本次根治：任何编辑都不再产生 turn-null marker。
+- 0.4.7-0.4.9 只修了回合中编辑(step-context)，轮次间编辑仍写 turn:null(cccccccc 实测 6 个，最新 07:27)→ 仍会刷屏压垮 host。本次根治：任何编辑都不再产生 turn-null marker。
 - 配套：check 新增 T2(跨 step sourceEventSeqs)/S9(物理序单调)/I1(inbox 重放)——dsh-log-contract 0.3.5。
 
 ### 测试
@@ -267,7 +325,7 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
 ### 修复(2026-08-30 第二类刷屏事故)
 
 - **编辑/重发/重新生成前自动停止运行中的 agent**：ensureIdle 替代 requireIdle——agent 正在响应时不再抛 agent-busy，而是自动 agent.cancel() + whenIdle() 等待其干净收尾再执行编辑。
-- 为什么必要：编辑发生在 agent 还开着 step 时，DSH 的 resend 会把旧 step 的 chunk 全部引用进新 assistant/message 的 sourceEventSeqs(5e551007 seq 7000004 跨 step 7/8/9)，token-meter 抛 belongs to another step(:645)→ 同样刷屏压垮 host。
+- 为什么必要：编辑发生在 agent 还开着 step 时，DSH 的 resend 会把旧 step 的 chunk 全部引用进新 assistant/message 的 sourceEventSeqs(实测：跨 step 7/8/9)，token-meter 抛 belongs to another step(:645)→ 同样刷屏压垮 host。
 - 配套：dsh-log-contract fix --clip-crossstep(0.3.4)裁剪历史跨 step 引用。
 
 ### 测试
@@ -280,7 +338,7 @@ session.append 写标题——不更新官方 title 投影（且被自动改名�
 
 - **回合内编辑不再产生 turn-null marker**：`appendEditorMarker` 通过 `findOpenStep()` 检测当前打开的 step，marker 携带该 step 的 `turn/step`（空 content + surface replace 形态经官方 foldSurface 与 token-meter 双验证）→ **token-meter 配对通过、零 T1 违规、不再刷屏**。
 - 轮次间编辑（无打开 step）回退路径不变：`turn:null` + `editor.markerT1Broken` 标注 + 客户端提示。
-- 配套：`dsh-log-contract fix --neutralize`（0.3.3）原地中和历史 turn-null marker（type→`retrace/marker` + `ignorable:true`，不动 seq/行数，会话驻留安全）——已用于现场会话 5e551008 / 5e551011。
+- 配套：`dsh-log-contract fix --neutralize`（0.3.3）原地中和历史 turn-null marker（type→`retrace/marker` + `ignorable:true`，不动 seq/行数，会话驻留安全）——已用于现场会话 aaaaaaaa / bbbbbbbb。
 
 ### 测试
 

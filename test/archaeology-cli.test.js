@@ -1,5 +1,5 @@
 /**
- * 考古 CLI 核心逻辑测试（需求文档 A1-A4 的纯函数层）。
+ * 考古 CLI 核心逻辑测试（纯函数层）。
  */
 import { describe, it, expect } from 'vitest';
 import { fileOpFromCall, replayFileHistory, simpleHash, diffLines, lineageOf } from '../lib/archaeology-cli.js';

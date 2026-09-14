@@ -24,7 +24,7 @@
  * 弱声称词(必须/不会/永不…)在注释与文案里出现频繁,扩面后逐行登记;其中"文案/阈值
  * 注释"类声称的证据是**同族行为用例**(note 写明边界),不是逐字断言。
  *
- * 能力分层:仅本仓私有侧存在的模块,其登记项以块**包住(生成公开产物时
+ * 模块分层:只在部分构建面存在的模块,其登记项以块**包住(生成对外产物时整块移除
  * );对应 lib 文件/声称行不在时,登记项也不在清单里。
  */
 import { describe, it, expect } from 'vitest'
@@ -94,6 +94,21 @@ const testsOf = (relPath) => {
  */
 const CLAIM_REGISTRY = [
   {
+    file: 'lib/marker-carrier.js',
+    claims: ['`v` 与 kind 必须有值'],
+    evidence: [
+      { test: 'test/migration-traces.test.js', title: 'encode/decode:缺 v 或 kind 的载荷一律不认(前缀不足以构成痕迹)', claim: '`v` 与 kind 必须有值', note: '前缀只是第一道门;v/kind 缺失或 kind 为空串时 decodeTraceText 返回 null,用例逐条断言' },
+    ],
+  },
+  {
+    file: 'lib/migration-traces.js',
+    claims: ['不会二次包裹', '必须清洗掉的旧载荷键'],
+    evidence: [
+      { test: 'test/migration-traces.test.js', title: '幂等:对产物再跑一次 changed === 0', claim: '不会二次包裹', note: '产物已是痕迹事件 ⇒ isTraceEvent 认出并跳过,重跑零改动且字节不变' },
+      { test: 'test/migration-traces.test.js', title: 'B 类痕迹载荷:targetSeq / 文本 / 原 message 全保留,`turn:null`/`step:null` 被清洗且留记录', claim: '必须清洗掉的旧载荷键', note: 'null 的 turn/step 从原载荷里删除并记入 droppedNullKeys;用例同时断言二者都不在新形态里' },
+    ],
+  },
+  {
     file: 'lib/host-core.js',
     claims: ['绝不静默', '确保 agent 空闲', '绝不冒充"已遮蔽"', '绝不直扫稀疏', '绝不越过遮蔽区重发更早轮'],
     evidence: [
@@ -117,7 +132,7 @@ const CLAIM_REGISTRY = [
     file: 'lib/adapter/contract.js',
     claims: ['写前校验保证 marker 合法'],
     evidence: [
-      { test: 'test/contract-runtime.test.js', title: '合法 marker 通过(真实 writer 产出形状)', claim: '写前校验保证 marker 合法', note: '写前校验负责语义/契约,形状由 assertMarkerShape 兜底' },
+      { test: 'test/contract-runtime.test.js', title: '合法载体通过(真实 writer 产出形状)', claim: '写前校验保证 marker 合法', note: '写前校验负责语义/契约,形状由 assertMarkerShape 兜底(两段结构:第 1 段审计 + 第 2 段载体)' },
     ],
   },
   {
@@ -149,9 +164,13 @@ const CLAIM_REGISTRY = [
   },
   {
     file: 'lib/close-guard.js',
-    claims: ['绝不中断/取消 agent、绝不写事件'],
+    claims: ['绝不中断/取消 agent、绝不写事件', '绝不用 Object.keys(service)'],
     evidence: [
       { test: 'test/close-guard.test.js', title: '有运行中会话 → 提示并列出原因;全静止 → 静默', claim: '绝不中断/取消 agent、绝不写事件', note: '守卫只查询+提示;测试断言其返回快照与提示行,不含任何写路径' },
+      // 2026-09-14 P1:会话枚举绝不猜服务字段(Object.keys(service) 会取到 list/get 自身,
+      // 令运行中扫描静默为空)。用例:list()-only 新宿主必须看到全部运行中会话,
+      // 且「既无 list 也无 keys」时必须回空数组而不是去猜服务字段。
+      { test: 'test/close-guard.test.js', title: '既无 list 也无 keys → 空数组 + 可判定诊断(不静默;不猜服务字段)', claim: '绝不用 Object.keys(service)', note: '同文件另有「新宿主 list() 且无 keys() → 看到全部 2 个」断言:猜服务字段的实现会得 0 而变红;诊断断言钉住「形状不认识时必须留痕」' },
     ],
   },
   {
@@ -196,7 +215,6 @@ const CLAIM_REGISTRY = [
       '\'status ≠ ok 时',
       '元素必须是非 null 对象',
       'n) 断言,成本必须可忽略)',
-      ' 首尾一致(否则重放面与写入',
       '两个角色都必须实现各自方法)',
       '*   - 必须从持久化层读',
     ],
@@ -212,56 +230,40 @@ const CLAIM_REGISTRY = [
     ],
   },
   {
+    // 两段结构改造后本文件**不再有声称词行**:turn/step 三情形的八条声称
+    // （官方 token-meter 配对 / 信封 / 计数器推进 / 半关闭 turn 防御）随翻译作废一并消失，
+    // 剩下的"写前断言先于 append""两段形状"等不变量的机械校验落在
+    // lib/adapter/contract.js 的 assertAuditShape/assertMarkerShape 与其用例上。
     file: 'lib/adapter/dsh-writer.js',
-    claims: [
-      '官方 token-meter',
-      ' marker 必须落在合法',
-      '都必须在边界处形状合规(违规',
-      '620）：turn/end 必须带',
-      '残留 fallback 标注',
-      '契约边界:**可抛断言必须在任何',
-      '日志里留下"半关闭 turn',
-      'nextTurn+1，不会复用',
-    ],
-    evidence: [
-      { test: 'test/host-core.test.js', title: '情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（D8 现场）', claim: '官方 token-meter' },
-      { test: 'test/host-core.test.js', title: '情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（D8 现场）', claim: ' marker 必须落在合法' },
-      { test: 'test/contract-runtime.test.js', title: '适配器返回坏 marker → host-core 边界抛 contract-violation(经 op 信封成 code)', claim: '都必须在边界处形状合规(违规' },
-      { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: '620）：turn/end 必须带' },
-      { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: '残留 fallback 标注' },
-      { test: 'test/contract-runtime.test.js', title: '出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态)', claim: '契约边界:**可抛断言必须在任何' },
-      { test: 'test/contract-runtime.test.js', title: '传入坏 span 时**任何写入都不发生**(断言先于 append;不留半关闭 turn)', claim: '日志里留下"半关闭 turn' },
-      { test: 'test/host-core.test.js', title: '轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', claim: 'nextTurn+1，不会复用' },
-    ],
+    claims: [],
+    evidence: [],
+    note: '载体写入器:形状不变量由 lib/adapter/contract.js 的两段断言覆盖(test/contract-runtime.test.js);'
+      + '写序(审计先写)与轮边界(source.kind=model)由 test/host-core.test.js「两段结构…」用例覆盖',
   },
   {
     file: 'lib/adapter/dsh.js',
     claims: [
       '遮蔽移除节点 → nodes',
       '// 违规**必须往上抛**',
-      'session.events',
-      '// dsh-writer 的',
+      '必须算在文件侧',
     ],
     evidence: [
       { test: 'test/adapter.test.js', title: '位置序 ≠ seq 数值序:marker 插在中间时 span 的 start 数值可 > end(官方只认位置)', claim: '遮蔽移除节点 → nodes' },
       { test: 'test/adapter.test.js', title: 'readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"', claim: '// 违规**必须往上抛**' },
-      { test: 'test/adapter.test.js', title: '跨遮蔽区(中间 fold marker 遮蔽更早轮)→ prompt 取当前轮 user,绝不被遮蔽轮的更早 user', claim: 'session.events' },
-      { test: 'test/adapter.test.js', title: 'maxStepInTurnFromFile:从全量事件算 turn 内最大 step(情形②窗口化防御)', claim: '// dsh-writer 的' },
+      { test: 'test/adapter.test.js', title: '跨遮蔽区(中间 fold marker 遮蔽更早轮)→ prompt 取当前轮 user,绝不被遮蔽轮的更早 user', claim: '必须算在文件侧' },
     ],
   },
   {
     file: 'lib/client.js',
     claims: [
       '点击展开查看原提问（仅作对照',
-      'fork.badgeHint',
+      'badge.hint',
       '用户实测调大至 20）：行数',
-      '2026-08-31）：短码',
     ],
     evidence: [
       { test: 'test/client-error.test.js', title: 'zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;文案行声称的机械兜底)', claim: '点击展开查看原提问（仅作对照', note: '文案行:由字典键完整性用例兜底(两边都有键、非空);逐字文案不在此断言' },
-      { test: 'test/client-error.test.js', title: 'zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;文案行声称的机械兜底)', claim: 'fork.badgeHint', note: '文案行:同上(会话铭牌短码提示),短码确定性另由 test/badge.test.js 覆盖' },
+      { test: 'test/client-error.test.js', title: 'zh/en 字典键集完全一致且无空值(英文界面不留中文键缺口;文案行声称的机械兜底)', claim: 'badge.hint', note: '文案行:同上(会话铭牌短码提示),短码确定性另由 test/badge.test.js 覆盖' },
       { test: 'test/prewrite-guard.test.js', title: '遮蔽 > 40 节点但小会话(<2000 事件)→ 不拦(短会话豁免)', claim: '用户实测调大至 20）：行数', note: '阈值注释(client 侧短会话豁免 20 行):行为面同族阈值由 prewrite-guard 用例覆盖;client 侧渲染阈值本身暂无用例 —— 登记以免静默改动' },
-      { test: 'test/badge.test.js', title: '同一 id 确定性：两次调用结果相同', claim: '2026-08-31）：短码' },
     ],
   },
   {
@@ -314,21 +316,48 @@ const CLAIM_REGISTRY = [
     file: 'lib/prewrite-guard.js',
     claims: [
       '* 会话根本不会被改坏。',
-      '编辑必须生效），只返回 `{',
       '绝对遮蔽阈值：遮蔽 ≤ 40',
       '/** 会话规模阈值：事件数',
-      '校验先于落盘，包裹事件尚未写入',
-      '// 尚未写入 events',
-      'break /compact',
     ],
     evidence: [
-      { test: 'test/prewrite-guard.test.js', title: 'guard 返回 t1Ok=false 但**不阻断**写入（编辑必须生效；调用方未传 wrapped 信封时的防御路径）', claim: '* 会话根本不会被改坏。' },
-      { test: 'test/prewrite-guard.test.js', title: 'guard 返回 t1Ok=false 但**不阻断**写入（编辑必须生效；调用方未传 wrapped 信封时的防御路径）', claim: '编辑必须生效），只返回 `{' },
+      { test: 'test/prewrite-guard.test.js', title: 'rejects the 8-25 incident shape: empty sourceEventSeqs on a replace', claim: '* 会话根本不会被改坏。' },
       { test: 'test/prewrite-guard.test.js', title: '遮蔽 ≤ 40 节点(绝对阈值):即使大会话也不拦(2026-09-01 编辑最后一条修复)', claim: '绝对遮蔽阈值：遮蔽 ≤ 40' },
       { test: 'test/prewrite-guard.test.js', title: '遮蔽 ≤ 40 节点(绝对阈值):即使大会话也不拦(2026-09-01 编辑最后一条修复)', claim: '/** 会话规模阈值：事件数' },
-      { test: 'test/prewrite-guard.test.js', title: 'guard：wrappedBefore/wrappedAfter 传入完整序列后 T1 自检通过（误报消除）', claim: '校验先于落盘，包裹事件尚未写入' },
-      { test: 'test/prewrite-guard.test.js', title: 'guard：wrappedBefore/wrappedAfter 传入完整序列后 T1 自检通过（误报消除）', claim: '// 尚未写入 events' },
-      { test: 'test/prewrite-guard.test.js', title: 'guard 返回 t1Ok=false 但**不阻断**写入（编辑必须生效；调用方未传 wrapped 信封时的防御路径）', claim: 'break /compact' },
+    ],
+  },
+  // ── 短码侧身份确认（lib/identity/shortcode.js，公开面）─────────────────────
+  // 该模块把「身份判定只看 session id」「已登记码钉住不变」「不可判必须显式」
+  // 「身份与可用性分栏」等硬约束写在注释里；每条都由 test/identity-shortcode.test.js
+  // 的行为用例逐条钉住（合成数据，不读真实基座/短码表，公开产物里同样可跑）。
+  {
+    file: 'lib/identity/shortcode.js',
+    claims: [
+      '**短码必须可解析到 session id**',
+      '**身份判定永不读短码**',
+      '是两个并列字段，永不合并',
+      '但折叠若产生歧义必须检出',
+      '**只用于比较/连接**，绝不回写',
+      '折叠即产生歧义 → 必须检出',
+      '绝不用于改写身份或覆盖冲突',
+      '**不可判必须显式输出**，不默认通过',
+      '本函数绝不把两者相乘',
+      '独立分栏，绝不参与上面的判定',
+      '**已登记(pinned)的码永不变**',
+      '故运行时**绝不**用推导结果覆盖已登记码',
+    ],
+    evidence: [
+      { test: 'test/identity-shortcode.test.js', title: 'A2 短码 → 唯一 session id:已登记码解析到登记的会话', claim: '**短码必须可解析到 session id**' },
+      { test: 'test/identity-shortcode.test.js', title: 'R1 身份判定只看 uuid:传入短码这类非 uuid 判为不可解析', claim: '**身份判定永不读短码**', note: 'sameSession 只吃 id:短码形状的输入被显式判为不可解析,而不是"看着像就通过"' },
+      { test: 'test/identity-shortcode.test.js', title: 'R10 identity 与 availability 是两个并列字段(顶层同级,不合并)', claim: '是两个并列字段，永不合并' },
+      { test: 'test/identity-shortcode.test.js', title: '大小写折叠:FF 根标记的小写写法解析到同一会话', claim: '但折叠若产生歧义必须检出', note: '正常折叠(同一会话两种写法)必须命中;真正的折叠歧义由下一条用例钉住' },
+      { test: 'test/identity-shortcode.test.js', title: '规范化是纯函数:normalizeSessionId/uuidOf 不改动入参对象', claim: '**只用于比较/连接**，绝不回写' },
+      { test: 'test/identity-shortcode.test.js', title: '折叠歧义:根标记 FF 与真实 ff 工作区折叠后相撞 → 检出为 ambiguous', claim: '折叠即产生歧义 → 必须检出' },
+      { test: 'test/identity-shortcode.test.js', title: 'R9 一码两指 → REFUSED_AMBIGUOUS,不静默择一', claim: '绝不用于改写身份或覆盖冲突', note: '冲突只记 REFUSED_AMBIGUOUS 并保留两个候选,绝不择一覆盖' },
+      { test: 'test/identity-shortcode.test.js', title: 'A5 不可判必须显式:码不可解析 → undecidable + 原因', claim: '**不可判必须显式输出**，不默认通过' },
+      { test: 'test/identity-shortcode.test.js', title: 'R10 verifyPair 的身份判定不读取可用性(注入 availability 也不影响判定)', claim: '本函数绝不把两者相乘' },
+      { test: 'test/identity-shortcode.test.js', title: 'R10 身份一致但文件缺失 → 身份栏仍 consistent,可用性栏独立为 false', claim: '独立分栏，绝不参与上面的判定' },
+      { test: 'test/identity-shortcode.test.js', title: 'R9 分配器:已登记码钉住不变,新会话在工作区序号尾部追加', claim: '**已登记(pinned)的码永不变**' },
+      { test: 'test/identity-shortcode.test.js', title: 'R9 基座换代:重推导会改码,但已登记码仍不变(钉住优先于推导)', claim: '故运行时**绝不**用推导结果覆盖已登记码', note: '用例先证明"按新集合重推导确实会把码改指",再断言已登记码不动且新会话改用追加号' },
     ],
   },
 ]
@@ -364,7 +393,7 @@ describe('声称 = 有校验', () => {
   const lineHits = (entry, claim) => claimLines.filter((h) => h.file === entry.file && h.text.includes(claim))
 
   it('扫描到声称(清单非空,防止扫描规则失效导致"假绿")', () => {
-    expect(files.length).toBeGreaterThan(20) // 各层 lib 文件数不同(部分模块只在私有侧)
+    expect(files.length).toBeGreaterThan(20) // 各层 lib 文件数不同(部分模块随构建面不同)
     expect(claimLines.length).toBeGreaterThan(10)
     // 扩面后弱声称词必须真的在命中集里(否则"扩面"是假的)
     expect(claimLines.some((h) => /必须|不会|永不|禁止|恒通过/.test(h.text))).toBe(true)

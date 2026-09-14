@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -215,7 +216,7 @@ describe('createVersioningSeam', () => {
     expect(result.markerCount).toBe(1)
     expect(result.markers[0]).toMatchObject({ seq: 4 })
     // healthy session without markers → zero
-    const clean = { id: 's2', events: session.events.filter((e) => e.data?.editor === undefined) }
+    const clean = { id: 's2', events: sessionEvents(session).filter((e) => e.data?.editor === undefined) }
     ctx.sessions.set('s2', clean)
     expect(seam.doctorScan('s2').markerCount).toBe(0)
   })

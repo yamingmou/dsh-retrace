@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { DEFAULT_CONFIG, parseRetraceConfig, ROUTE_PREFIX, createRetraceHttpHandler } from '../lib/http.js'
 
 describe('parseRetraceConfig', () => {
@@ -13,8 +14,13 @@ describe('parseRetraceConfig', () => {
       git: false,
       retentionLimit: 10,
       prewrite: true,
+      // opt-in LLM boundary summary — OFF unless the client asks for it
+      summary: false,
     })
     expect(parseRetraceConfig(JSON.stringify({ prewrite: false }))).toEqual({ ...DEFAULT_CONFIG, prewrite: false })
+    // the new switch is honored when (and only when) explicitly set
+    expect(parseRetraceConfig(JSON.stringify({ summary: true }))).toEqual({ ...DEFAULT_CONFIG, summary: true })
+    expect(parseRetraceConfig(JSON.stringify({ summary: 'yes' }))).toEqual(DEFAULT_CONFIG)
   })
 
   it('merges partial configs onto defaults', () => {
@@ -186,6 +192,28 @@ describe('P1 HTTP routes', () => {
     expect(parsed.error.message).toBe('boom')
   })
 
+  it('an internal error is logged (message + stack) and still reported on the wire', async () => {
+    // 2026-09: sendError 只回传 message、不写日志 ⇒ 内部 TypeError 让宿主日志干干净净,
+    // 「不能撤回/不能编辑」被藏了很久。这条钉住:错误既上报 wire,也进服务端日志。
+    const seam = makeSeam()
+    seam.snapshot = vi.fn(() => {
+      const error = new Error('cannot read properties of undefined')
+      error.code = 'internal-boom'
+      throw error
+    })
+    const lines = []
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: (line) => lines.push(line) })
+    const res = await get(handler, `${ROUTE_PREFIX}/versions?sessionId=s1`)
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(false)
+    expect(parsed.error.code).toBe('internal-boom')
+    expect(parsed.error.message).toBe('cannot read properties of undefined')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('internal-boom')
+    expect(lines[0]).toContain('cannot read properties of undefined')
+    expect(lines[0]).toContain('Error: cannot read properties of undefined') // stack included
+  })
+
   it('POST /git/init proxies the seam', async () => {
     const seam = makeSeam()
     const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
@@ -263,15 +291,14 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
     })
     const spanSpy = vi.spyOn(dshAdapter, 'spanFromFile')
     try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'))
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage, fakeCarrierWriter } = await import('./helpers.js')
+      const { carrierTargetSeq } = await import('../lib/marker-carrier.js')
+      // 假会话须覆盖注入 span 的全部 seq([1..5]):两段结构的审计段会占用"下一个 seq",
+      // 注入 span 若把尚未存在的事件当作被遮蔽节点,审计 seq 会与它撞号(官方拒重复)
+      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'), userMessage('u3', 'tail'))
       const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
       const seam = makeSeam()
-      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
-        turn: 1, step: 1,
-        message: { id: `retrace-recall-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
-        editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
-      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
+      const fakeWriter = fakeCarrierWriter()
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/recall`, { sessionId: 's1', messageId: 'u1' })
       expect(probeSpy).toHaveBeenCalledTimes(1) // 单次 probe
@@ -294,15 +321,14 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
       prompt: { seq: 1, text: 'hi' },
     })
     try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
-      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'))
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage, fakeCarrierWriter } = await import('./helpers.js')
+      const { carrierTargetSeq } = await import('../lib/marker-carrier.js')
+      // 假会话须覆盖注入 span 的全部 seq([1..5]):两段结构的审计段会占用"下一个 seq",
+      // 注入 span 若把尚未存在的事件当作被遮蔽节点,审计 seq 会与它撞号(官方拒重复)
+      const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), assistantMessage('a2', 'more'), userMessage('u3', 'tail'))
       const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup: vi.fn() } })
       const seam = makeSeam()
-      const fakeWriter = async (session, span, intent) => session.append('assistant/message', {
-        turn: 1, step: 1,
-        message: { id: `retrace-edit-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
-        editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
-      }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
+      const fakeWriter = fakeCarrierWriter()
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/editAndResend`, { sessionId: 's1', messageId: 'u1', text: 'x' })
       expect(probeSpy).toHaveBeenCalledTimes(1)
@@ -353,7 +379,8 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
     const spanSpy = vi.spyOn(dshAdapter, 'spanFromFile')
     const probeSpy = vi.spyOn(dshAdapter, 'spanProbeFromFile').mockResolvedValue({ span: null, facts: { fileMaxSeq: 3, targetSeq: -1 }, prompt: null })
     try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage, fakeCarrierWriter } = await import('./helpers.js')
+      const { carrierTargetSeq } = await import('../lib/marker-carrier.js')
       // a2(seq 4)已进内存 events 但 surface 滞后未纳入 —— 用户点击落在提交窗口
       const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'))
       session.appendRaw(assistantMessage('a2', 'more'))
@@ -382,7 +409,8 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
       prompt: { seq: 3, text: 'SAME ROUND PROMPT' },
     })
     try {
-      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage } = await import('./helpers.js')
+      const { makeSession, makeEnv, headerEvent, userMessage, assistantMessage, fakeCarrierWriter } = await import('./helpers.js')
+      const { carrierTargetSeq } = await import('../lib/marker-carrier.js')
       const session = makeSession().seed(
         headerEvent(),
         userMessage('u1', 'OLDER ROUND PROMPT'),
@@ -394,20 +422,12 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
       session.surface.nodes.pop()
       // 陷阱:该轮 user(seq 3)在内存 events 里是洞,更早轮 user(seq 1)仍在
       // ——旧实现直扫稀疏 events 会选中 seq 1(重发更早轮文本)。
-      delete session.events[3]
+      session.dropAt(3)
       const followup = vi.fn()
       const { sessions, agents } = makeEnv(session, { agent: { status: 'idle', followup } })
       const seam = makeSeam()
       const markers = []
-      const fakeWriter = async (session, span, intent) => {
-        const marker = await session.append('assistant/message', {
-          turn: 1, step: 1,
-          message: { id: `retrace-regenerate-${intent.targetSeq}`, role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
-          editor: { targetSeq: intent.targetSeq, text: intent.originalText ?? '' },
-        }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: span.shadowedSeqs })
-        markers.push(marker)
-        return marker
-      }
+      const fakeWriter = fakeCarrierWriter({ onWrite: (marker) => markers.push(marker) })
       const handler = createRetraceHttpHandler({}, { sessions, agents, seam, rollback: {}, hooks: { writeMarker: fakeWriter }, log: () => {} })
       const res = await post(handler, `${ROUTE_PREFIX}/regenerate`, { sessionId: 's1', messageId: 'a2' })
       const parsed = JSON.parse(res.body)
@@ -415,10 +435,10 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
       // 重发文本 = 该轮 user(seq 3)原文,绝不是更早轮(seq 1)的
       expect(followup).toHaveBeenCalledTimes(1)
       expect(followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
-      // marker:遮蔽该轮 + targetSeq 指向该轮 user(不是更早轮)
+      // 载体:遮蔽该轮;业务溯源 targetSeq 由区间起点派生(读端口径)
       expect(markers[0].surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
-      expect(markers[0].data.editor.targetSeq).toBe(3)
-      expect(markers[0].data.editor.text).toBe('SAME ROUND PROMPT')
+      expect(carrierTargetSeq(markers[0])).toBe(3)
+      expect(markers[0].data.id).toMatch(/^retrace-regenerate-/)
     } finally {
       probeSpy.mockRestore()
     }
@@ -490,5 +510,199 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
     const handler = createRetraceHttpHandler({}, { sessions: { keys: () => sessions.keys(), get: (id) => sessions.get(id) }, agents: { get: (id) => agents.get(id) }, seam: makeSeam(), rollback: {}, log: () => {} })
     const res = await get(handler, `${ROUTE_PREFIX}/runningState`)
     expect(JSON.parse(res.body).value.running).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /summaries — the plugin's own boundary artifact (excerpts + opt-in summary)
+// ---------------------------------------------------------------------------
+
+describe('GET /summaries', () => {
+  const makeSummarySeam = (root, { enabled = true } = {}) => {
+    pretendCalls(0)
+    return {
+      configFor: () => ({ summary: enabled }),
+      storeRoot: () => root,
+    }
+  }
+  /** Nothing on the read path may consume LLM tokens. */
+  const pretendCalls = (n) => {
+    globalThis.__retraceLlmCalls = n
+  }
+
+  it('serves the artifact records and reports the switch state', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { appendSummary } = await import('../lib/summary-store.js')
+    const root = mkdtempSync(join(tmpdir(), 'retrace-route-'))
+    try {
+      await appendSummary(root, 's1', {
+        boundarySeq: 7,
+        versionId: 'v7',
+        called: true,
+        model: 'p/m',
+        summary: '摘要正文',
+        what: { op: 'recall', new: { excerpt: '' }, replaced: [{ seq: 3, role: 'user', excerpt: '逐字摘录' }] },
+      })
+      const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam: makeSummarySeam(root), rollback: {}, log: () => {} })
+      const res = await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)
+      const parsed = JSON.parse(res.body)
+      expect(parsed.ok).toBe(true)
+      expect(parsed.value.enabled).toBe(true)
+      expect(parsed.value.records).toHaveLength(1)
+      expect(parsed.value.records[0].summary).toBe('摘要正文')
+      expect(parsed.value.records[0].what.replaced[0].excerpt).toBe('逐字摘录')
+      // Reading the view three times performs zero LLM work.
+      for (let i = 0; i < 3; i++) await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)
+      expect(globalThis.__retraceLlmCalls).toBe(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('still serves the what digest when the summary switch is OFF', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { appendSummary } = await import('../lib/summary-store.js')
+    const root = mkdtempSync(join(tmpdir(), 'retrace-route-'))
+    try {
+      // The `what` line is written regardless of the switch; only `summary` is absent.
+      await appendSummary(root, 's1', {
+        boundarySeq: 12,
+        versionId: 'v12',
+        summaryEnabled: false,
+        called: false,
+        what: {
+          op: 'recall',
+          at: 1789130493921,
+          new: { excerpt: '' },
+          replaced: [
+            { seq: 10, role: 'user', excerpt: '逐字原文（撤回前的问题）' },
+            { seq: 11, role: 'assistant', excerpt: '逐字原文（撤回前的回答）' },
+          ],
+        },
+      })
+      const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam: makeSummarySeam(root, { enabled: false }), rollback: {}, log: () => {} })
+      const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)).body)
+      expect(parsed.ok).toBe(true)
+      expect(parsed.value.enabled).toBe(false) // the LLM switch is off…
+      expect(parsed.value.records).toHaveLength(1)
+      expect(parsed.value.records[0].summary).toBeUndefined() // …no summary…
+      expect(parsed.value.records[0].what.replaced[0].excerpt).toBe('逐字原文（撤回前的问题）') // …but the row IS readable
+      const md = await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1&format=md`)
+      expect(md.body).toContain('called: no')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('narrows to one boundary and can render Markdown', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { appendSummary } = await import('../lib/summary-store.js')
+    const root = mkdtempSync(join(tmpdir(), 'retrace-route-'))
+    try {
+      await appendSummary(root, 's1', { boundarySeq: 7, called: true, summary: '第一条' })
+      await appendSummary(root, 's1', { boundarySeq: 9, called: true, summary: '第二条' })
+      const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam: makeSummarySeam(root), rollback: {}, log: () => {} })
+      const one = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1&boundarySeq=9`)).body)
+      expect(one.value.records.map((r) => r.summary)).toEqual(['第二条'])
+      const md = await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1&format=md`)
+      expect(md.body).toContain('# dsh-retrace summaries')
+      expect(md.body).toContain('第一条')
+      expect(md.body).toContain('第二条')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a missing sessionId and degrades on an unreadable artifact', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const root = mkdtempSync(join(tmpdir(), 'retrace-route-'))
+    try {
+      const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam: makeSummarySeam(root), rollback: {}, log: () => {} })
+      const bad = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries`)).body)
+      expect(bad.ok).toBe(false)
+      expect(bad.error.code).toBe('missing-session')
+      const empty = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=absent`)).body)
+      expect(empty.ok).toBe(true)
+      expect(empty.value.records).toEqual([])
+      expect(empty.value.error).toBeNull()
+      const off = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=absent`)).body)
+      expect(off.value.enabled).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /summaries — the outline forest (`tree`)
+// ---------------------------------------------------------------------------
+
+describe('GET /summaries — outline forest', () => {
+  const treeSeam = (root, { enabled = false } = {}) => ({
+    configFor: () => ({ summary: enabled }),
+    storeRoot: () => root,
+  })
+
+  const withRoot = async (records, run) => {
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { appendSummary } = await import('../lib/summary-store.js')
+    const root = mkdtempSync(join(tmpdir(), 'retrace-tree-'))
+    try {
+      for (const record of records) await appendSummary(root, 's1', record)
+      return await run(root)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  it('serves parent/children/discardedCount built from the exact discarded sets', async () => {
+    await withRoot(
+      [
+        { boundarySeq: 24104, what: { op: 'compaction' }, discardedSeqs: [1, 2, 22216] },
+        { boundarySeq: 22216, what: { op: 'replace' }, discardedSeqs: [7, 8] },
+      ],
+      async (root) => {
+        const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam: treeSeam(root), rollback: {}, log: () => {} })
+        const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)).body)
+        expect(parsed.value.tree['24104']).toEqual({ parent: null, children: [22216], discardedCount: 3 })
+        expect(parsed.value.tree['22216']).toEqual({ parent: 24104, children: [], discardedCount: 2 })
+      },
+    )
+  })
+
+  it('omits tree entirely when no record carries a discarded set (client falls back to flat)', async () => {
+    await withRoot([{ boundarySeq: 7, called: true, summary: 'x' }], async (root) => {
+      const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam: treeSeam(root), rollback: {}, log: () => {} })
+      const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)).body)
+      expect(parsed.value.records).toHaveLength(1)
+      expect(Object.hasOwn(parsed.value, 'tree')).toBe(false)
+    })
+  })
+
+  it('keeps the WHOLE forest even when the request narrows to one boundary', async () => {
+    await withRoot(
+      [
+        { boundarySeq: 10, discardedSeqs: [1, 9, 5] },
+        { boundarySeq: 9, discardedSeqs: [] },
+        { boundarySeq: 5, discardedSeqs: [] },
+      ],
+      async (root) => {
+        const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam: treeSeam(root), rollback: {}, log: () => {} })
+        const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1&boundarySeq=9`)).body)
+        expect(parsed.value.records.map((r) => r.boundarySeq)).toEqual([9])
+        expect(Object.keys(parsed.value.tree).sort()).toEqual(['10', '5', '9'])
+        expect(parsed.value.tree['9'].parent).toBe(10)
+      },
+    )
   })
 })

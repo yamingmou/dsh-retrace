@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { createAdapter, NULL_ADAPTER, assertSpanShape, assertSpanResult, assertMarkerShape, assertEventListShape, CONTRACT_VIOLATION } from '../lib/adapter/contract.js'
+
 import { computeSpan, computeSpanProbe, isRoundBoundary, roundPromptOf, readEventsFromFile, dshAdapter } from '../lib/adapter/dsh.js'
 import { SPAN_STATUS, spanMissArgsOf, spanAt, spanForSeq } from '../lib/span-semantics.js'
 import { foldSurface } from '@deepseek-ai/dsh-session'
@@ -176,7 +177,9 @@ describe('adapter/dsh dshAdapter(DSH 平台适配器)', () => {
   it('暴露 reader 接口(EventReader 契约)', () => {
     expect(typeof dshAdapter.reader.readEvents).toBe('function')
     expect(typeof dshAdapter.spanFromFile).toBe('function')
-    expect(typeof dshAdapter.maxStepInTurnFromFile).toBe('function')
+    // 两段结构改造后不再需要文件侧 step 号读取器(turn/step 三情形翻译作废,
+    // 第 2 段是 user/message,token-meter 对它没有 step 配对要求)。
+    expect(dshAdapter.maxStepInTurnFromFile).toBeUndefined()
   })
 
   it('readEventsFromFile:日志记录包装漂移(抽样命中 undefined 洞)→ 抛契约违规,不静默当"文件不可读"', async () => {
@@ -194,43 +197,13 @@ describe('adapter/dsh dshAdapter(DSH 平台适配器)', () => {
         JSON.stringify({ type: 'assistant/message', seq: 2, time: 3, data: { message: { id: 'a1' } } }),
       ].join('\n') + '\n')
       await expect(readEventsFromFile(file)).rejects.toMatchObject({ code: CONTRACT_VIOLATION })
-      // 消费方按**自身契约**降级:step 号读取失败 → null(调用方回退内存扫描,不拖垮编辑)
-      expect(await dshAdapter.maxStepInTurnFromFile('s1', 5, file)).toBeNull()
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
-  it('maxStepInTurnFromFile:从全量事件算 turn 内最大 step(情形②窗口化防御)', async () => {
-    // 用临时会话文件验证(走真实 loadSessionLog 路径)
-    const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
-    const { tmpdir } = await import('node:os')
-    const { join } = await import('node:path')
-    const dir = mkdtempSync(join(tmpdir(), 'retrace-adapter-'))
-    try {
-      const events = [
-        { type: 'session', version: 0, id: 's1', createdAt: 1, cwd: '/tmp' },
-        { type: 'user/message', seq: 1, time: 2, data: { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } } },
-        { type: 'step/start', seq: 2, time: 3, data: { turn: 5, step: 1 } },
-        { type: 'step/start', seq: 3, time: 4, data: { turn: 5, step: 45 } },
-        { type: 'step/start', seq: 4, time: 5, data: { turn: 6, step: 3 } },
-      ]
-      const file = join(dir, 'session.jsonl')
-      writeFileSync(file, events.map((e) => JSON.stringify(e)).join('\n') + '\n')
-      // 直接测函数:注入文件路径(生产走 sessionFilePath 找 ~/.dsh)
-      const max = await dshAdapter.maxStepInTurnFromFile('s1', 5, file)
-      expect(max).toBe(45)
-      const max6 = await dshAdapter.maxStepInTurnFromFile('s1', 6, file)
-      expect(max6).toBe(3)
-      const missing = await dshAdapter.maxStepInTurnFromFile('ghost', 5, '/nonexistent/session.jsonl')
-      expect(missing).toBeNull()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 })
 
-describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 ISSUE-20260907113201 回归）', () => {
+describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 回归）', () => {
   // 合成:2 轮对话 + 一个 replace marker(遮蔽轮1,模拟已编辑会话)
   function withMarker() {
     return [
@@ -283,7 +256,7 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 ISSUE
   })
 
   it('位置序 ≠ seq 数值序:marker 插在中间时 span 的 start 数值可 > end(官方只认位置)', () => {
-    // 真实数据实测(2026-09-10):位置连续段 [7000011 … 7000009] 是正常写入——
+    // 真实数据实测:位置连续段数值非单调(start > end)是正常写入——
     // 官方 replacementRange 只判 indexOf(start) <= indexOf(end)(位置),不比较 seq 数值。
     const events = [
       { seq: 0, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a0', content: [] } } },

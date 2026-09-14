@@ -114,8 +114,11 @@ The same result with plain file edits and `pnpm` — exactly the steps
 > steps below with the dependency line pointing at the folder:
 > `"dsh-retrace": "file:~/plugins/dsh-retrace"`.
 
-1. Open the profile manifest (defaults: `~/.dsh/profiles/desktop` on DSH
-   Desktop, `~/.dsh/profiles/web` for standalone Web) and add **both** the
+1. Open the profile manifest (defaults: `<plugin data home>/profiles/desktop`
+   on DSH Desktop, `<plugin data home>/profiles/web` for standalone Web — where
+   `<plugin data home>` is `$DSH_HOME` when set, otherwise the **active session
+   base**, e.g. a newer `DSH_HOME` directory; `~/.dsh/profiles` is only the
+   pre-migration fallback) and add **both** the
    dependency and the bundle-layer entry:
 
    ```json
@@ -141,7 +144,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
 2. Install inside the profile directory:
 
    ```sh
-   cd ~/.dsh/profiles/<name> && pnpm install
+   cd "$DSH_HOME/profiles/<name>" && pnpm install   # or the active base you use
    ```
 
 3. Restart DSH Desktop / the `dsh` process (see above).
@@ -194,7 +197,7 @@ The dynamic host registers the same operations behind the package-private
 | **Start a fresh conversation after editing** | off | Hide earlier messages too, so the conversation looks like a fresh start (the whole surface is rewound before re-sending). Default off: only the edited round's context is replaced. |
 | **Hide shadowed messages per marker** | on | On (default): recall/edit/regenerate hide the replaced round per their markers. Off: every message stays visible; markers only show the notice and reference (review the full history). A single marker that would hide more than 40% of the conversation degrades to notice-only (history never silently vanishes). |
 | **Version & artifact snapshots** | on | On: every recall/edit records a version (messages and touched files) powering the timeline and artifact rollback. Off: only rewinds context — no version records, no artifact tracking (lightest). |
-| **Git integration** | on | On: use git to record and roll back when the workspace is a repository (never auto-commits, never touches your branches); non-repo workspaces can enable git from the timeline. Off: built-in snapshots under `~/.dsh` only — the plugin never touches the workspace git state; features are equivalent. |
+| **Git integration** | on | On: use git to record and roll back when the workspace is a repository (never auto-commits, never touches your branches); non-repo workspaces can enable git from the timeline. Off: built-in snapshots under the plugin data home only — the plugin never touches the workspace git state; features are equivalent. |
 | **Version retention limit** | 50 | File snapshots are kept for the most recent N versions; older ones are pruned automatically (timeline records and the audit trail are always kept). |
 
 ---
@@ -242,8 +245,158 @@ The dynamic host registers the same operations behind the package-private
 
 ---
 
+## 🔺 Compatibility & upgrade notes
+
+`dsh-retrace` is a **bundle plugin**: it plugs into whatever host surface it is
+installed into. A host release that *removes* a package or a client service can
+therefore break an older plugin build even though nothing in that build changed —
+the symptom is usually a failed boot, not a wrong-looking feature.
+
+This section exists so you can tell **host-side breakage** from **plugin-side bugs**.
+Read it before filing an issue.
+
+### Host-side breaking changes that `0.4.26` adapts to — *not caused by this plugin*
+
+1. **`@deepseek-ai/dsh-session` dropped `decodeStorageRecord` from its public export surface (in `0.1.5-rc.1`; the function still exists internally but is no longer exported from the package root and is unreachable via the exports map).**
+   `dsh-retrace` itself never imported it, but its dependency `dsh-log-contract` did.
+   With no such export the loader aborts with
+   `plugin tree failed to load … does not provide an export named 'decodeStorageRecord'`
+   and **the whole plugin tree fails to load — not just this plugin**, so the app does
+   not start. `0.4.26` requires a `dsh-log-contract` build that decodes through its own
+   local compatibility layer instead of the removed host export.
+   → **Dependency note:** needs `dsh-log-contract >= 0.3.12`.
+2. **A client **service** disappeared: `conversationEvents`** — it used to be provided by
+   the legacy client runtime `@deepseek-ai/dsh-client-runtime`, which has been removed
+   (the string `conversationEvents` no longer occurs anywhere in the host). A plugin whose
+   client half still declares that service in `export const inject` never becomes ready:
+   its fiber stays **pending**, which the host reports as
+   `renderer boot failed (plugins: …): The client Loader did not provide an error message.`
+   — no error text at all, the window does not finish starting, and the only way in is to
+   disable the plugin.
+   `0.4.26` drops the service from `inject` and resolves it **defensively** in `apply`
+   (`uiConversation`, falling back to the legacy name), so it runs on hosts that provide
+   the new service *and* on older hosts that still provide the old one.
+   > Note: declaring a **package** that no longer exists in `dsh.client.inject` is *not*
+   > what breaks the boot — the client loader skips unknown entries silently. The
+   > breakage comes from the **service name** the plugin waits for.
+
+> Both items above are **host-side removals**, documented here on purpose: if you hit
+> either symptom right after a host upgrade, the first question is "does this plugin
+> build predate the removal?", not "what did the plugin break?".
+
+### Plugin-side fixes in `0.4.26` (these are ours)
+
+- **Data home and session base are now one source.** The plugin previously resolved its
+  own data directory through the host's home resolver (`$DSH_HOME` → `~/.dsh`), which
+  does not know about a migrated base (for example a newer `DSH_HOME` directory). With
+  `$DSH_HOME` unset,
+  sessions were read from one base while snapshots and the artifact store were written
+  to another. Snapshots, version stores and `verify-install` now follow the **active
+  session base**. When `$DSH_HOME` is set, behaviour is unchanged.
+- **No user-visible string hard-codes `~/.dsh` any more** (the settings hint used to say
+  snapshots live under `~/.dsh`).
+- Stale peer declarations with no remaining import site removed
+  (`@deepseek-ai/dsh-home-paths`, `@deepseek-ai/dsh-client-runtime`).
+
+### Host-side breaking changes that `0.4.28` adapts to — *not caused by this plugin*
+
+1. **`@deepseek-ai/dsh-session` removed the `Session.events` member** (in `0.1.5-rc.1`).
+   The class has no `events` field and no `events` getter at all any more; the supported
+   readers are `snapshotEvents(fromSeq, toSeqExclusive)` (frozen, sequence-indexed),
+   `eventAt(seq)`, `ownEvents()` and `isOwnSeq(seq)`. `0.4.28` reaches the log through a
+   compatibility accessor that prefers the new API and falls back to the old array, so it
+   runs on both host generations.
+   **Symptom before the fix:** recall and edit did nothing and surfaced the raw error
+   `TypeError: Cannot read properties of undefined (reading 'length')` — both operations
+   start by locating the target message id, and that lookup read the removed member.
+2. **The client-side session store has no `keys()`** (`ctx.sessions`). A plugin that
+   enumerates sessions with `keys()` silently sees **zero** of them: no crash, no error,
+   just safety warnings that never fire. `0.4.28` prefers the official `list()` and falls
+   back to `keys()`; it deliberately does **not** fall back to enumerating service fields,
+   because guessing produces a silent empty result as well.
+3. **The client session controller has no title accessor** — `getTitle` does not exist
+   anywhere in `@deepseek-ai/dsh-api-session-controller`, and its `getSnapshot()` carries
+   no `title`. See the plugin-side item below: this one used to *overwrite your titles*.
+
+### Plugin-side fixes in `0.4.28` (these are ours)
+
+- **The edit / recall affordances never appeared at all.** The client half read chat
+  nodes from `snapshot.chat.nodes`, a path this host build does not have — nodes live in
+  the `useChat` store (`snapshot.nodes`). Every message-level component threw while
+  rendering and was swallowed by the error boundary, so the buttons were missing, while
+  the settings entry (which reads no nodes) rendered fine. Fixed: the client half now
+  takes `useChat` from the slot contract.
+- **"Jump to message" in the version and fork views did nothing.** It resolved the target
+  anchor through `store.getSnapshot()?.chat?.nodes`, which is permanently `undefined`
+  here. It now resolves through the `useChat` snapshot injected by the view and pages
+  with the official `store.loadThrough(seq)`; when the jump cannot complete it reports a
+  **diagnosable reason** (renderer warning + host-log line) instead of failing silently.
+- **Assigning a short code could overwrite your session title.** The client composed
+  `[CODE] <current title>` locally but had no way to read the current title, so the base
+  degraded to the session-id prefix (`[XXXXXX] <session-id-prefix>`). Title tagging now goes
+  through the host route only (`setBadgeTitle`), which reads the current title from the
+  session log. Manual renames are unaffected.
+- **Host-side operation failures are logged again** (code + message + stack). They used to
+  return the message to the UI without a log line, which is why this whole class of bug
+  was hard to diagnose from outside.
+
+- **The version and fork views now explain themselves.** They used to show a title plus a row of
+  actions with **no sentence anywhere saying what a "version" or a "fork" is** (the only near-miss
+  was an empty-state line that disappears as soon as data arrives), and fork rows printed raw node
+  types. They now carry an always-visible concept sentence, a type legend, and a plain-language
+  "why" line on every row; impact text reads `旧路径的 N 条消息被替换`, not `被遮蔽 N 个节点`.
+- **Client hide-lookup no longer rescans per row.** `useSeqHidden` re-scanned the node map for every
+  row (measured **346 ms** at 2000 rows / 20 markers, **1568 ms** at 3000/30 — and that path was
+  *dead* on this host until this release made the rows render at all, so it is this fix own cost).
+  It now reuses one per-snapshot hide plan: **8.3 ms** and **18.3 ms** respectively, with the
+  predicate verified equivalent against the old one.
+### Upgrading
+
+```bash
+dsh plugin --profile desktop add dsh-retrace@0.4.28
+# then restart DSH — plugins are not hot-reloaded
+```
+
+**`0.4.27` was withdrawn.** It was briefly published and then recalled — `latest` points at `0.4.26`
+again and `0.4.27` is marked deprecated. **`0.4.28` is its replacement**: it carries every fix
+`0.4.27` had, plus the two items below.
+
+**`0.4.28` needs no data migration.** The session format is unchanged (v3), no session is
+re-written, and nothing has to be re-indexed: upgrade, restart, and the two symptoms above
+are gone. If you are on a host that still provides the old members, the compatibility
+accessors keep those paths working — this build does not drop older hosts.
+
+If the app **fails to boot after an upgrade**, a single failing plugin can take the
+whole tree down, so recover first and diagnose second:
+
+1. remove `dsh-retrace` from the profile's `dsh.profile.bundles` **and** its
+   `dependencies` entry, restart, and confirm you can get back in;
+2. read the host log —
+   macOS: `~/Library/Application Support/DSH Desktop/logs/host/dsh-<date>.error.log`;
+3. `plugin tree failed to load` is the **host** half; `renderer boot failed` is the
+   **client** half. Both name the offending plugin/package — start there.
+
+### Pinning
+
+Pin an exact plugin version (`dsh-retrace@0.4.26`) and let `dsh-log-contract` resolve to
+`>=0.3.12`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
+the **host surface**, not by semver alone.
+
+---
+
 ## ⚠️ Requirements & limitations
 
+- **Optional dependency (deliberately NOT in `package.json`)**: AI summaries need
+  an `llm` service from the host (the official `@deepseek-ai/dsh-llm`, bundled
+  with DSH Desktop). The plugin takes it **dynamically** via `ctx.get('llm')`:
+  present ⇒ summaries available, absent ⇒ it degrades to **verbatim excerpts
+  only**. Install and startup are unaffected either way. Model and credentials
+  follow the session's own default selection
+  (`agentDefaultModel.currentSelection()`); the plugin adds **no configuration
+  surface of its own**. Summaries sit behind a **default-off** switch (at most one
+  small call per operation: ≤6×400 chars in, ≤200 tokens out, 5 s timeout); when
+  it is off there are **zero LLM calls**, while the verbatim excerpt (zero token
+  cost) is **always recorded**.
 - Only **user messages** can be edited; recall works on user and assistant
   messages. Tool results are shadowed along with the recalled range but are not
   themselves recall targets.
@@ -288,7 +441,7 @@ The dynamic host registers the same operations behind the package-private
 
 > Command surface: `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP).
 
-**What's next** — see the [public roadmap](./docs/ROADMAP.md) for the agent
+**What's next** — see the [public roadmap](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md) for the agent
 business-layer plan (runtime guard, interruption governance, ecosystem-facing
 interfaces). This README only describes what is already shipped.
 
@@ -329,7 +482,7 @@ npm pack --dry-run    # verify the published file list
 > one and only swaps the transport (`host.call` vs the HTTP route) via
 > `__setMessageEditorWire`.
 
-PRs and issues are welcome — see [CONTRIBUTING](./CONTRIBUTING.md) (coming soon)
+PRs and issues are welcome — a `CONTRIBUTING.md` is coming soon
 and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 
 ---
@@ -339,7 +492,7 @@ and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin).
 
 Part of the **Agent business layer (production-grade guarantees)** — see the
-[public roadmap](./docs/ROADMAP.md) for the framework-agnostic layer and how
+[public roadmap](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md) for the framework-agnostic layer and how
 dsh-retrace is its DeepSeek Harness implementation. Companion components:
 
 - [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) — the
@@ -353,7 +506,7 @@ dsh-retrace is its DeepSeek Harness implementation. Companion components:
 > ```sh
 > dsh plugin --profile desktop add github:yamingmou/dsh-retrace
 > # or with pnpm directly into a profile:
-> cd ~/.dsh/profiles/desktop && pnpm add github:yamingmou/dsh-retrace
+> cd "$DSH_HOME/profiles/desktop" && pnpm add github:yamingmou/dsh-retrace
 > ```
 >
 > Then restart DSH Desktop as usual. The `dsh-log-contract` dependency is
@@ -393,7 +546,7 @@ retrace lineage <session>                      # parent-chain lineage (A4)
 ```
 
 `<session>` is a full log path or a sessionId (auto-looked-up under
-`~/.dsh/sessions`). All read-only.
+the active session base — `$DSH_HOME/sessions`, else a newer base, else `~/.dsh/sessions`). All read-only.
 
 **Session lineage in the fork map (A4, UI)**: the Fork map view header shows the
 current session's `parentSession` chain (session → parent → root, `←` direction).

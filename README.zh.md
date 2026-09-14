@@ -46,7 +46,6 @@ dsh plugin --profile desktop add dshmarket    # 只需一次
 [📦 安装](#-安装)。
 
 ---
----
 
 ## 🛡️ 生产级保证（0.4.x 全部已上线）
 
@@ -109,8 +108,9 @@ dsh plugin --profile <name> add dsh-retrace
 > 然后执行 `dsh plugin --profile desktop add ~/plugins/dsh-retrace`；或按下面步骤，
 > 把依赖行指向该文件夹：`"dsh-retrace": "file:~/plugins/dsh-retrace"`。
 
-1. 打开 profile 清单（默认位置：DSH Desktop 为 `~/.dsh/profiles/desktop`，
-   独立 Web 为 `~/.dsh/profiles/web`），同时加入依赖**和** bundle 层条目：
+1. 打开 profile 清单（默认位置：DSH Desktop 为 `<插件数据家>/profiles/desktop`，
+   独立 Web 为 `<插件数据家>/profiles/web` —— 插件数据家在设了 `$DSH_HOME` 时就是它，
+   否则跟随**活动会话基座**；`~/.dsh/profiles` 只是迁移前的兜底），同时加入依赖**和** bundle 层条目：
 
    ```json
    {
@@ -134,7 +134,7 @@ dsh plugin --profile <name> add dsh-retrace
 2. 在 profile 目录里安装：
 
    ```sh
-   cd ~/.dsh/profiles/<name> && pnpm install
+   cd "$DSH_HOME/profiles/<name>" && pnpm install   # 或你实际使用的基座
    ```
 
 3. 重启 DSH Desktop / `dsh` 进程（见上文）。
@@ -180,7 +180,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 | **编辑后从新对话开始** | 关 | 编辑后连此前的消息也一并隐藏，让对话看起来像从新消息重新开始（重发前回退整个表面）。默认关：只替换被编辑那一轮的上下文。 |
 | **按标记隐藏被编辑/撤回的消息** | 开 | 开（默认）：撤回/编辑/重新生成按标记隐藏被替换的那一轮消息。关：所有消息保持可见，标记仅显示提示与对照（查看完整历史用）。单个 marker 要隐藏超过 40% 的对话时自动降级为不隐藏（历史永不静默消失）。 |
 | **版本与产物快照** | 开 | 开：每次撤回/编辑记录一个版本（消息与触碰文件），提供时间线与产物回退；关：仅回退上下文，不记录版本、不追踪产物（最省资源）。 |
-| **启用 git 集成** | 开 | 开：工作区是 git 仓库时用 git 记录与回退（不自动提交、不动你的分支），非仓库可在时间线里一键启用；关：一律用内置快照（存于 `~/.dsh`），不触碰工作区 git 状态，功能等价。 |
+| **启用 git 集成** | 开 | 开：工作区是 git 仓库时用 git 记录与回退（不自动提交、不动你的分支），非仓库可在时间线里一键启用；关：一律用内置快照（存于插件数据家），不触碰工作区 git 状态，功能等价。 |
 | **版本保留上限** | 50 | 文件快照只保留最近 N 个版本，超出自动清理最旧的；时间线记录与审计痕迹始终保留。 |
 
 ---
@@ -221,8 +221,80 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 
 ---
 
+## 🔺 兼容性与升级须知
+
+`dsh-retrace` 是 **bundle 型插件**：它插进哪套宿主，就依赖那套宿主暴露的面。因此宿主
+**移除**一个包或一个客户端服务时，**旧版插件即使一行没改也会坏** —— 而且症状通常是
+「起不来」，不是「某个功能看起来不对」。
+
+本节的目的：让你能分清 **宿主侧破坏性变更** 与 **插件侧缺陷**。提 issue 前请先看这节。
+
+### `0.4.26` 适配的宿主侧破坏性变更 —— *不是本插件造成的*
+
+1. **`@deepseek-ai/dsh-session` 把 `decodeStorageRecord` 从公开导出面拿掉了（`0.1.5-rc.1`；函数仍在内部模块里，但不再从包根导出、exports map 子路径也不可达）。**
+   本插件自己从未 import 它，但它的依赖 `dsh-log-contract` import 了。宿主不再导出该符号时，
+   加载器会以
+   `plugin tree failed to load … does not provide an export named 'decodeStorageRecord'`
+   中止，而且**整棵插件树一起失败——不只是本插件**，于是 App 起不来。`0.4.26` 改为要求
+   一个通过**自身兼容层**解码、不再依赖该已移除导出的 `dsh-log-contract`。
+   → **依赖说明：** 需要 `dsh-log-contract >= 0.3.12`。
+2. **一个客户端**服务**消失了：`conversationEvents`** —— 它原先由旧客户端运行时
+   `@deepseek-ai/dsh-client-runtime` 提供，而该运行时已被移除（`conversationEvents`
+   这个串在宿主里**已 0 命中**）。插件的客户端半若仍在 `export const inject` 里声明它，
+   就**永远不就绪**：fiber 停在 **pending**，宿主据此报
+   `renderer boot failed (plugins: …): The client Loader did not provide an error message.`
+   —— **一个字的错误信息都没有**，窗口起不来，唯一的进法是把插件禁用。
+   `0.4.26` 已把它从 `inject` 中删掉，并改在 `apply` 里**防御性解析**
+   （`uiConversation`，取不到则回退旧名），因此：**既能在提供新服务的宿主上跑，
+   也仍兼容还提供旧服务的老宿主**。
+   > 注意：在 `dsh.client.inject` 里声明一个**已不存在的包**，**不会**导致启动失败 ——
+   > 客户端加载器对认不出的条目是**静默跳过**的。真正致命的是插件等待的那个**服务名**。
+
+> 上面两条都是**宿主侧移除**，写在这里是有意的：如果你在**升级宿主之后**立刻遇到这两种症状，
+> 第一个该问的是「这份插件构建是不是早于这次移除？」，而不是「插件改坏了什么？」。
+
+### `0.4.26` 里的插件侧修复（这些是我们自己的）
+
+- **插件数据家与会话基座合并为同一来源。** 此前插件用宿主的 home 解析器
+  （`$DSH_HOME` → `~/.dsh`）决定自己的数据目录，而它不认识迁移后的基座（例如一个更新的 `DSH_HOME` 目录）。
+  于是当 `$DSH_HOME` 未设时，**会话从一个基座读、快照与产物库写到另一个基座**。现在快照、
+  版本库与 `verify-install` 都跟随**活动会话基座**；`$DSH_HOME` 已设时行为不变。
+- **不再有任何用户可见文案写死 `~/.dsh`**（设置页原先提示快照存于 `~/.dsh`）。
+- 删掉已无任何引用点的陈旧 peer 声明（`@deepseek-ai/dsh-home-paths`、
+  `@deepseek-ai/dsh-client-runtime`）。
+
+### 升级
+
+```bash
+dsh plugin --profile desktop add dsh-retrace@0.4.26
+# 然后重启 DSH —— 插件不会热重载
+```
+
+如果**升级后 App 起不来**：一个插件失败就能拖垮整棵树，所以**先恢复、再排查**：
+
+1. 把 `dsh-retrace` 从 profile 的 `dsh.profile.bundles` **和** `dependencies` 里删掉，重启，
+   确认能先进得来；
+2. 读宿主日志 —— macOS：`~/Library/Application Support/DSH Desktop/logs/host/dsh-<日期>.error.log`；
+3. `plugin tree failed to load` 是**宿主侧**；`renderer boot failed` 是**客户端侧**。
+   两者都会点名出问题的插件/包 —— 从那里查起。
+
+### 版本固定建议
+
+请固定到确切版本（`dsh-retrace@0.4.26`），并让 `dsh-log-contract` 解析到 `>=0.3.12`。
+**不要在跨宿主升级时依赖 `^0.4` 这种范围**：这里的兼容性由**宿主的面**决定，光看 semver 不够。
+
+---
+
 ## ⚠️ 要求与限制
 
+- **可选依赖（不写进 `package.json`）**：AI 摘要需要宿主提供 `llm` 服务
+  （官方 `@deepseek-ai/dsh-llm`，随 DSH Desktop 内置）。插件用
+  `ctx.get('llm')` **动态取用**：有就用，缺失即降级为**只给逐字原文**，
+  安装/启动不受影响。模型与凭据沿用会话自身的默认模型选择
+  （`agentDefaultModel.currentSelection()`），插件**不新增任何配置面**。
+  摘要是**默认关闭**的开关（每次操作至多 1 次小调用，输入 ≤6×400 字、
+  输出 ≤200 token、5 秒超时），关闭时**零 LLM 调用**；而逐字原文
+  （`excerpt`）零 token 成本，**始终产出**。
 - 只有**用户消息**可以编辑；撤回同时适用于用户与助手消息。工具结果会随区间一并
   被阴影化，但不能单独作为撤回目标。
 - 智能体必须**空闲**：回复流式输出时需先点击 ⏹ 停止，再撤回或编辑；否则 Host
@@ -255,7 +327,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 > 桌面说明：Electron 宿主退出时销毁窗口，页面 `beforeunload` 不会触发，宿主也未暴露
 > 插件可用的退出否决点——桌面侧由运行中横幅 + dispose 提示覆盖；Web 端拦截完整生效。
 
-**未来计划**——见 [公开路线图](./docs/ROADMAP.md)（agent 业务层规划：运行时守护、中断治理、生态开放接口）。本 README 只描述已上线的能力。
+**未来计划**——见 [公开路线图](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md)（agent 业务层规划：运行时守护、中断治理、生态开放接口）。本 README 只描述已上线的能力。
 
 ---
 
@@ -293,7 +365,7 @@ npm pack --dry-run    # 校验发布文件清单
 > 发布版共用同一份 client 源码，仅通过 `__setMessageEditorWire` 切换传输层
 > （`host.call` vs HTTP 路由）。
 
-欢迎提交 PR 与 issue —— 见 [CONTRIBUTING](./CONTRIBUTING.md)（筹备中）与
+欢迎提交 PR 与 issue —— `CONTRIBUTING.md` 筹备中，先与
 [问题追踪](https://github.com/yamingmou/dsh-retrace/issues)。
 
 ---
@@ -302,7 +374,7 @@ npm pack --dry-run    # 校验发布文件清单
 
 收录于 [dsh-plugin topic](https://github.com/topics/dsh-plugin)。
 
-**Agent 业务层（生产级保证）** 的一部分——见 [公开路线图](./docs/ROADMAP.md)
+**Agent 业务层（生产级保证）** 的一部分——见 [公开路线图](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md)
 （框架无关的业务层定义，dsh-retrace 是它在 DeepSeek Harness 上的实现）。配套组件：
 
 - [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) —— 业务层的
@@ -314,7 +386,7 @@ npm pack --dry-run    # 校验发布文件清单
 > ```sh
 > dsh plugin --profile desktop add github:yamingmou/dsh-retrace
 > # 或直接用 pnpm 装进 profile：
-> cd ~/.dsh/profiles/desktop && pnpm add github:yamingmou/dsh-retrace
+> cd "$DSH_HOME/profiles/desktop" && pnpm add github:yamingmou/dsh-retrace
 > ```
 >
 > 然后照常重启 DSH Desktop。`dsh-log-contract` 依赖会自动带上。
@@ -351,7 +423,7 @@ retrace file-diff <session> <path> 0 5         # 两版本行级 diff（A3）
 retrace lineage <session>                      # 会话 parent 链谱系（A4）
 ```
 
-<session> 为完整日志路径或 sessionId（自动在 ~/.dsh/sessions 查找）。全部只读。
+<session> 为完整日志路径或 sessionId（自动在**活动会话基座**查找：`$DSH_HOME/sessions`，否则更新的基座，最后才是 `~/.dsh/sessions`）。全部只读。
 
 **分叉图里的会话谱系（A4, UI）**：Fork map 视图头部展示当前会话的
 `parentSession` 接续链（当前会话 → 父 → 根,`←` 方向）。数据来自

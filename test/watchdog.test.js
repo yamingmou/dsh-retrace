@@ -13,6 +13,22 @@
 import { describe, it, expect } from 'vitest'
 import { createWatchdog } from '../lib/watchdog.js'
 
+/**
+ * Production new-host session (DSH Desktop 2.0.9): only `snapshotEvents()` /
+ * `eventAt()` — NO `events` member. The watchdog's `memoryLengthFor` reads the
+ * in-memory session length through the host-compat accessor, so the default
+ * fixture must be the real shape (review).
+ */
+function newHostSession(id, length) {
+  const log = new Array(length)
+  return { id, snapshotEvents: () => Object.freeze(log.slice()), eventAt: (seq) => log[seq] }
+}
+
+/** Explicit legacy host shape (defensive coverage). */
+function legacySession(id, length) {
+  return { id, events: new Array(length) }
+}
+
 function fakeCtx() {
   const listeners = new Map() // eventName -> Set<fn>
   return {
@@ -72,7 +88,7 @@ function makeHarness(overrides = {}) {
 describe('R1 watchdog', () => {
   it('模拟双写入：文件尾部 seq 领先内存 → 快照 + warning', async () => {
     const h = makeHarness()
-    const session = { id: 'sess-1', events: new Array(10) }
+    const session = newHostSession('sess-1', 10)
     h.ctx.sessions.set('sess-1', session)
     h.ctx.emit('session/event', session)
     h.setFileSeq(15) // 另一写入者把文件尾部写到 seq 15（领先内存 10）
@@ -86,7 +102,7 @@ describe('R1 watchdog', () => {
 
   it('正常使用：fileSeq <= events.length 不误报', async () => {
     const h = makeHarness()
-    const session = { id: 'sess-2', events: new Array(20) }
+    const session = newHostSession('sess-2', 20)
     h.ctx.sessions.set('sess-2', session)
     h.ctx.emit('session/event', session)
 
@@ -103,7 +119,7 @@ describe('R1 watchdog', () => {
 
   it('tailSeqReader 返回 null（读取失败/降级）→ 不告警不崩溃', async () => {
     const h = makeHarness({ tailSeqReader: async () => null })
-    h.ctx.emit('session/event', { id: 'sess-4', events: [] })
+    h.ctx.emit('session/event', newHostSession('sess-4', 0))
     h.setFileSeq(99)
     await h.runTick()
     expect(h.snapshots.length).toBe(0)
@@ -134,9 +150,23 @@ describe('R1 watchdog', () => {
         throw new Error('disk full')
       },
     })
-    h.ctx.emit('session/event', { id: 'sess-7', events: [] })
+    // 夹具必须把会话放进 ctx.sessions：memoryLengthFor 现在对"未知"返回 null 并跳过
+    // （不再把未知降级成 0），否则根本走不到快照分支，这个用例就测不到"抛错不崩"。
+    h.ctx.emit('session/event', newHostSession('sess-7', 0))
+    h.ctx.sessions.set('sess-7', newHostSession('sess-7', 0))
     h.setFileSeq(3)
     await h.runTick()
     expect(h.logLines.some((l) => l.includes('快照失败'))).toBe(true)
+  })
+
+  it('旧宿主(显式 events 数组)仍读到内存长度并告警(回退未丢)', async () => {
+    const h = makeHarness()
+    const session = legacySession('sess-legacy', 4)
+    h.ctx.sessions.set('sess-legacy', session)
+    h.ctx.emit('session/event', session)
+    h.setFileSeq(9)
+    await h.runTick()
+    expect(h.snapshots.length).toBe(1)
+    expect(h.logLines.some((l) => l.includes('文件尾部 seq 9 领先内存 4'))).toBe(true)
   })
 })

@@ -4,15 +4,21 @@
  *
  * DSH 本地运行涉及多个入口，任何一处装旧/装漏都会造成行为分裂：
  *   ① GUI 端口 43120（DSH Desktop 主进程监听）——打不开 = host 未起；
- *   ② profile desktop/web/audit20260822 的 dsh-retrace / dsh-log-contract 实装版本
+ *   ② profileDir 下**实际装着的每个** profile 的 dsh-retrace / dsh-log-contract 实装版本
  *      ——旧版会继续写 turn-null marker，污染新会话（2026-08-30 事故源头之一）；
+ *      清单从磁盘发现（此前写死 desktop/web/audit20260822，换基座后必报假红）；
  *   ③ 插件 HTTP 路由 /api/plugins/retrace/{versions,forkmap,doctor} ——404 = 插件
  *      host 侧未注册；
  *   ④ 客户端 bundle（lib/client.bundle.js + lib/dynamic-client.js）——缺 = 前端未构建。
  *
  * 用法：
- *   node scripts/verify-install.mjs [--profile-dir ~/.dsh/profiles] [--gui-port 43120]
+ *   node scripts/verify-install.mjs [--profile-dir <home>/profiles] [--gui-port 43120]
  *       [--expect-retrace 0.4.11] [--expect-log-contract 0.3.6] [--session <sessionId>]
+ *
+ * 默认 profileDir = `<pluginDataHome()>/profiles`（与会话基座**同源**：$DSH_HOME 设了
+ * 就是 $DSH_HOME/profiles，未设 = ~/dsh-v3/profiles → ~/.dsh/profiles）。此前硬编码
+ * `~/.dsh/profiles`：未设 $DSH_HOME 时校验的是旧 home 的装态，而会话/GUI 跑在新基座
+ * ⇒ 校验对象与运行对象不是同一份（2026-09-14 实测）。
  *
  * 默认期望版本从仓库 package.json 读取（开发态），可用 --expect-* 覆盖（发版校验）。
  * 任一检查失败 → 打印 ✗ 并 exit 1；全过 → 打印 ✅ 汇总并 exit 0。
@@ -21,17 +27,18 @@
  * 与 desktop 0.4.10 行为分裂——本脚本就是防这种"半装态"再次发生。
  */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+// 默认 profileDir 与会话基座**同源**(单一实现;此前硬编码 ~/.dsh/profiles)。
+import { pluginDataHome } from '../lib/platform/session-paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
 // ---------- CLI 参数 ----------
 function parseArgs(argv) {
-  const args = { profileDir: path.join(os.homedir(), '.dsh', 'profiles'), guiPort: 43120, session: null };
+  const args = { profileDir: path.join(pluginDataHome(), 'profiles'), guiPort: 43120, session: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--profile-dir') args.profileDir = argv[++i];
@@ -46,7 +53,7 @@ function parseArgs(argv) {
 }
 
 // ---------- 期望版本：从各 profile 的 package.json 依赖声明解析（caret 范围） ----------
-// 需求文档 §2.2：比对「package.json 依赖解析版本」与「node_modules 实装版本」。
+// 比对「package.json 依赖解析版本」与「node_modules 实装版本」。
 // 不依赖本仓库 node_modules（那只是开发依赖解析，可能与发布版不同步）。
 function expectedFromProfile(profileDir, prof, pkg) {
   try {
@@ -103,20 +110,35 @@ function declaredKind(declared) {
   return m ? m[1] : null;
 }
 
+/**
+ * 待校验的 profile 清单 = 该 profileDir 下**实际装着**的入口（目录内带 package.json）。
+ *
+ * 此前硬编码 `['desktop','web','audit20260822']`：那是旧 home 时代的入口名单。新基座
+ * （v3，2026-09-14）下 `audit20260822` 根本不存在 —— 于是每次校验都报一条**假红**
+ * 并让整个脚本 exit 1，而真正的入口（v3 的 acp）反而没被校验。校验的语义是
+ * 「**已装**的入口之间不许出现半装态」（2026-08-30 事故），所以清单应当从磁盘发现，
+ * 而不是写死一份会随基座过期的名单。
+ */
+function discoverProfiles(profileDir) {
+  try {
+    return fs.readdirSync(profileDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+      .map((e) => e.name)
+      .filter((name) => fs.existsSync(path.join(profileDir, name, 'package.json')))
+      .sort();
+  } catch { return []; }
+}
+
 function checkProfiles(args) {
-  const profiles = ['desktop', 'web', 'audit20260822'];
+  const profiles = discoverProfiles(args.profileDir);
+  if (profiles.length === 0) {
+    check('至少发现一个 profile', false, `${args.profileDir} 下没有任何含 package.json 的 profile 目录`);
+    return;
+  }
+  check(`发现 ${profiles.length} 个 profile`, true, profiles.join(', '));
   const versions = {};
   const declared = {};
-  let profilesExist = true;
   for (const prof of profiles) {
-    const profDir = path.join(args.profileDir, prof);
-    if (!fs.existsSync(profDir)) {
-      check(`profile ${prof} 目录存在`, false, `${profDir} 缺失——该入口未安装/未创建`);
-      profilesExist = false;
-      versions[prof] = { retrace: null, logContract: null };
-      declared[prof] = { retrace: null, logContract: null };
-      continue;
-    }
     versions[prof] = {
       retrace: readInstalled(args.profileDir, prof, 'dsh-retrace'),
       logContract: readInstalled(args.profileDir, prof, 'dsh-log-contract'),
@@ -126,10 +148,6 @@ function checkProfiles(args) {
       logContract: expectedFromProfile(args.profileDir, prof, 'dsh-log-contract'),
     };
   }
-  if (!profilesExist) {
-    // 有 profile 缺失：一致性检查无意义，直接标记（不参与 ② 的集合）
-    return;
-  }
   // ① 每个 profile：实装版本必须满足 package.json 声明的依赖范围。
   //    file:/link: 本地挂载 → 与本地仓库版本比对（同源校验）。
   for (const prof of profiles) {
@@ -137,8 +155,12 @@ function checkProfiles(args) {
       const want = declared[prof][pkg];
       const got = versions[prof][pkg];
       const pkgName = pkg === 'retrace' ? 'dsh-retrace' : 'dsh-log-contract';
-      const localPath = declaredKind(want);
-      if (localPath) {
+      const localSpec = declaredKind(want);
+      if (localSpec) {
+        // file:/link:/workspace: 的**相对**路径按 profile 目录解析（pnpm 的语义）。
+        // 此前直接 path.join(localSpec,'package.json') 交给 cwd 解析——只有恰好从
+        // 同深度的目录运行时才碰对，换个 cwd 就误报「仓库不可读」（2026-09-14 实测）。
+        const localPath = path.resolve(path.join(args.profileDir, prof), localSpec);
         // 本地挂载：期望 = 本地仓库 package.json version
         let repoVer = null;
         try {
@@ -168,11 +190,12 @@ function checkProfiles(args) {
         got ? `实装 ${got}` : '未装');
     }
   }
-  // ② 三 profile 版本一致性（desktop/web 双写必须同步；audit 装同一版）
+  // ② 各 profile 版本一致性（多入口并存时不许出现"一半装了新版、一半停在旧版"）
   const retraceVersions = profiles.map((p) => versions[p].retrace).filter(Boolean);
   const lcVersions = profiles.map((p) => versions[p].logContract).filter(Boolean);
-  check('desktop/web/audit 三 profile retrace 版本一致', new Set(retraceVersions).size <= 1 && retraceVersions.length >= 1, `[${retraceVersions.join(', ') || '全部未装'}]`);
-  check('desktop/web/audit 三 profile log-contract 版本一致', new Set(lcVersions).size <= 1 && lcVersions.length >= 1, `[${lcVersions.join(', ') || '全部未装'}]`);
+  const scope = profiles.join('/');
+  check(`${scope} 各 profile retrace 版本一致`, new Set(retraceVersions).size <= 1 && retraceVersions.length >= 1, `[${retraceVersions.join(', ') || '全部未装'}]`);
+  check(`${scope} 各 profile log-contract 版本一致`, new Set(lcVersions).size <= 1 && lcVersions.length >= 1, `[${lcVersions.join(', ') || '全部未装'}]`);
 }
 
 function checkGuiPort(args) {

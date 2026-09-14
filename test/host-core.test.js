@@ -8,6 +8,7 @@
  * exchange (v3.3), and edit references are host-authoritative (v3.5/v3.6).
  */
 import { describe, it, expect, vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import {
   makeSession,
   userMessage,
@@ -19,7 +20,11 @@ import {
   makeAgent,
   makeApi,
   makeHooks,
+  lastCarrierMarker,
 } from './helpers.js'
+import { isRoundBoundaryEvent } from '../lib/span-semantics.js'
+import { AUDIT_EVENT_TYPE, CARRIER_DATA_KEYS, carrierShadowedSeqs, carrierTargetSeq } from '../lib/marker-carrier.js'
+import { deriveMessage, officialNodePrice, officialSurfaceMeter } from './official-meter.js'
 
 /** header + u1 + a1 + tool + u2 + a2 — the standard two-round session. */
 function standardSession() {
@@ -37,13 +42,18 @@ function surfaceSeqs(session) {
   return session.surface.nodes.slice()
 }
 
-/** 找最后一个 retrace marker（surfaceOp replace 的 assistant/message；step 边界不算）。
- * 洞容忍夹具把 host 内存 events 造成稀疏数组（窗口化视图的 undefined 洞）→
+/** 找最后一个遮蔽载体(两段结构的第 2 段:user/message + replace)。
+ * 洞容忍夹具把 host 内存 events 造成稀疏数组(窗口化视图的 undefined 洞)→
  *  裸下标访问会抛 TypeError，这里按存在性判断。 */
 function lastMarker(session) {
-  for (let i = session.events.length - 1; i >= 0; i--) {
-    const e = session.events[i]
-    if (e && e.type === 'assistant/message' && e.surfaceOp?.op === 'replace') return e
+  return lastCarrierMarker(session)
+}
+
+/** 最近一次写入的审计段(compaction/prune)。 */
+function lastAudit(session) {
+  for (let i = sessionEvents(session).length - 1; i >= 0; i--) {
+    const e = eventAt(session, i)
+    if (e && e.type === AUDIT_EVENT_TYPE) return e
   }
   return null
 }
@@ -58,8 +68,8 @@ describe('recall', () => {
 
     expect(result.ok).toBe(true)
     expect(result.value).toMatchObject({ op: 'recall', seq: 1, shadowed: 5, messageId: 'u1' })
-    // tail:u1 轮 + u2/a2 全部遮蔽(编辑=从此处分叉);surface 只剩 marker
-    expect(surfaceSeqs(session)).toEqual([8])
+    // tail:u1 轮 + u2/a2 全部遮蔽(编辑=从此处分叉);surface 只剩载体节点
+    expect(surfaceSeqs(session)).toEqual([lastMarker(session).seq])
   })
 
   it('recalling an assistant reply removes its whole round too (input + output)', async () => {
@@ -71,36 +81,42 @@ describe('recall', () => {
     expect(result.ok).toBe(true)
     // 撤回回复连带所在轮 input(回退轮首 u1)+ 其后全部 = tail 语义
     expect(result.value.shadowed).toBe(5)
-    expect(surfaceSeqs(session)).toEqual([8])
+    expect(surfaceSeqs(session)).toEqual([lastMarker(session).seq])
   })
 
-  it('appends an invisible replacement marker (empty assistant, surfaceOp replace)', async () => {
+  it('appends a two-segment carrier (audit prune + user/message replace)', async () => {
     const session = standardSession()
     const api = makeApi(session, makeAgent())
 
     await api.recall({ sessionId: 's1', messageId: 'u2' })
 
     const marker = lastMarker(session)
-    expect(marker.type).toBe('assistant/message')
-    expect(marker.data.turn).toBe(1) // 无打开 turn → 情形③完整 turn 信封，turn = nextTurn（0.4.17v3 P1/D8 治本）
-    expect(marker.data.step).toBe(1)
+    expect(marker.type).toBe('user/message')
+    // 官方 user/message 词表精确四成员(turn/step/editor 都无处容身)
+    expect(Object.keys(marker.data).sort()).toEqual([...CARRIER_DATA_KEYS].sort())
+    expect(marker.data.turn).toBeUndefined()
+    expect(marker.data.step).toBeUndefined()
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 5 })
-    expect(marker.sourceEventSeqs).toEqual([4, 5])
-    expect(marker.data.message).toMatchObject({
-      role: 'assistant',
-      content: [],
-      source: { kind: 'model', provider: 'test-provider', model: 'test-model' },
-    })
-    expect(marker.data.message.id).toMatch(/^retrace-recall-/)
-    expect(marker.data.editor).toEqual({ targetSeq: 4, text: 'second question' })
-    // 情形③完整 turn 信封：turn/start → step/start → marker → step/end → turn/end
-    const idx = session.events.indexOf(marker)
-    expect(session.events[idx - 2].type).toBe('turn/start')
-    expect(session.events[idx - 1].type).toBe('step/start')
-    expect(session.events[idx + 1].type).toBe('step/end')
-    expect(session.events[idx + 2].type).toBe('turn/end')
-    expect(session.events[idx - 2].data).toEqual({ turn: 1 })
-    expect(session.events[idx - 1].data).toEqual({ turn: 1, step: 1 })
+    // 首元素 = 审计段(第 1 段)seq;其余 = 全部被遮蔽节点
+    const audit = lastAudit(session)
+    expect(marker.sourceEventSeqs).toEqual([audit.seq, 4, 5])
+    // 第 1 段 shadowedTokenCount = **官方令牌价**(shadow-price claim),不是节点个数:
+    // 口径由官方 estimateMessage(deriveEventMessage(event)) 给出(见 test/official-meter.js)
+    const officialPrice = [4, 5].reduce((total, seq) => total + officialNodePrice(eventAt(session, seq)), 0)
+    expect(audit.data).toEqual({ shadowedRange: { start: 4, end: 5 }, shadowedSeqs: [4, 5], shadowedTokenCount: officialPrice })
+    expect(officialPrice).not.toBe(2) // 节点个数口径会写成 2 ⇒ 这就是被修正的高估源
+    expect(audit.surfaceOp).toBeUndefined()
+    expect(audit.sourceEventSeqs).toBeUndefined()
+    expect(carrierShadowedSeqs(marker)).toEqual([4, 5])
+    expect(marker.data.source).toEqual({ kind: 'model', provider: 'test-provider', model: 'test-model' })
+    expect(marker.data.id).toMatch(/^retrace-recall-/)
+    // 留痕形态(定稿 A2):content 非空且为文本块——空 content 会投影成一条"空消息"
+    expect(marker.data.content).toEqual([{ type: 'text', text: '（此处内容已被撤回：原消息已归档，可在恢复视图中查看）' }])
+    // 轮边界红线:载体的 source.kind='model' ⇒ 不被当成真实用户输入切轮
+    expect(isRoundBoundaryEvent(marker)).toBe(false)
+    // 不再写 turn/step 信封(三情形翻译作废):载体的前一个事件就是审计段
+    const idx = sessionEvents(session).indexOf(marker)
+    expect(eventAt(session, idx - 1)).toBe(audit)
   })
 
   it('reports the durable text of the recalled message', async () => {
@@ -135,7 +151,7 @@ describe('recall', () => {
     expect(second.ok).toBe(false)
     expect(second.error.code).toBe('target-shadowed')
     // The durable log was never rewritten: u1 is still an event.
-    expect(session.events.some((e) => e.type === 'user/message' && e.data.id === 'u1')).toBe(true)
+    expect(sessionEvents(session).some((e) => e.type === 'user/message' && e.data.id === 'u1')).toBe(true)
   })
 
   it('returns agent-busy while the agent is running and has no cancel API (fallback)', async () => {
@@ -160,8 +176,8 @@ describe('recall', () => {
     expect(cancel).toHaveBeenCalledTimes(1)
     expect(whenIdle).toHaveBeenCalledTimes(1)
     expect(result.ok).toBe(true) // 停止后编辑成功
-    // marker 已写入（编辑生效；轮次间编辑被临时 step 包裹，最后事件是 step/end）
-    expect(lastMarker(session).type).toBe('assistant/message')
+    // 载体已写入(编辑生效;不再有 turn/step 信封,最后事件即载体)
+    expect(lastMarker(session).type).toBe('user/message')
   })
 
   it('returns session-not-found for an unknown session', async () => {
@@ -225,7 +241,7 @@ describe('recall', () => {
 
       expect(result.ok).toBe(true)
       // Round is [u1, a1]; the injected context message stays in the surface.
-      expect(surfaceSeqs(session)).toEqual([1, 6])
+      expect(surfaceSeqs(session)).toEqual([1, lastMarker(session).seq])
       expect(result.value.shadowed).toBe(2)
     })
 
@@ -241,7 +257,7 @@ describe('recall', () => {
       const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
 
       expect(result.ok).toBe(true)
-      expect(surfaceSeqs(session)).toEqual([6])
+      expect(surfaceSeqs(session)).toEqual([lastMarker(session).seq])
       expect(result.value.shadowed).toBe(3)
     })
   })
@@ -268,7 +284,7 @@ describe('editAndResend', () => {
       originalText: 'second question',
       fromScratch: false,
     })
-    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 8]) // [u1,a1,tool] kept; [u2,a2] shadowed + marker
+    expect(surfaceSeqs(session)).toEqual([1, 2, 3, lastMarker(session).seq]) // [u1,a1,tool] kept; [u2,a2] shadowed + carrier
     expect(agent.followup).toHaveBeenCalledTimes(1)
     const [sent] = agent.followup.mock.calls[0]
     expect(sent).toMatchObject({
@@ -294,7 +310,7 @@ describe('editAndResend', () => {
     expect(result.ok).toBe(true)
     expect(result.value.fromScratch).toBe(true)
     expect(result.value.shadowed).toBe(5)
-    expect(surfaceSeqs(session)).toEqual([8])
+    expect(surfaceSeqs(session)).toEqual([lastMarker(session).seq])
     expect(agent.followup).toHaveBeenCalledTimes(1)
   })
 
@@ -319,23 +335,28 @@ describe('editAndResend', () => {
   it('returns agent-unavailable without a live agent (and shadows nothing)', async () => {
     const session = standardSession()
     const api = makeApi(session, undefined)
-    const before = session.events.length
+    const before = sessionEvents(session).length
 
     const result = await api.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'hi' })
 
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('agent-unavailable')
-    expect(session.events.length).toBe(before) // no partial application
+    expect(sessionEvents(session).length).toBe(before) // no partial application
   })
 
-  it('marks the replaced original text in the marker (host-authoritative, v3.5/v3.6)', async () => {
+  it('business provenance lives outside the carrier: targetSeq derives from the range start', async () => {
     const session = standardSession()
     const api = makeApi(session, makeAgent())
 
-    await api.editAndResend({ sessionId: 's1', messageId: 'u2', text: 'edited' })
+    const result = await api.editAndResend({ sessionId: 's1', messageId: 'u2', text: 'edited' })
 
     const marker = lastMarker(session)
-    expect(marker.data.editor).toEqual({ targetSeq: 4, text: 'second question' })
+    // editor 已不再落盘(官方词表无位置):targetSeq 由区间起点派生,
+    // 原文按需从日志回填(editor.text 不再冗余存储)
+    expect(marker.data.editor).toBeUndefined()
+    expect(carrierTargetSeq(marker)).toBe(4)
+    // host 结果里仍带原文(重发/展示用):回填口径由读端从日志取,不由 marker 承载
+    expect(result.value.originalText).toBe('second question')
   })
 })
 
@@ -349,7 +370,7 @@ describe('regenerate', () => {
 
     expect(result.ok).toBe(true)
     expect(result.value).toMatchObject({ op: 'regenerate', seq: 5, shadowed: 2 })
-    expect(surfaceSeqs(session)).toEqual([1, 2, 3, 8])
+    expect(surfaceSeqs(session)).toEqual([1, 2, 3, lastMarker(session).seq])
     expect(agent.followup).toHaveBeenCalledTimes(1)
     const [sent] = agent.followup.mock.calls[0]
     expect(sent.content[0].text).toBe('second question')
@@ -441,181 +462,82 @@ describe('concurrency and result envelope', () => {
   })
 })
 
-describe('R2 路径一：打开 step 内编辑写合法 turn/step（2026-08-30 事故修复）', () => {
-  it('findOpenStep：无 step/start → null（轮次间编辑）', async () => {
-    const { findOpenStep } = await import('../lib/adapter/dsh-writer.js')
-    const session = makeSession().seed(userMessage('u1', 'hi'))
-    expect(findOpenStep(session)).toBeNull()
-  })
-
-  it('findOpenStep：step 已关闭 → null', async () => {
-    const { findOpenStep } = await import('../lib/adapter/dsh-writer.js')
-    const session = makeSession().seed(
-      userMessage('u1', 'hi'),
-      { type: 'step/start', data: { turn: 3, step: 1 } },
-      assistantMessage('a1', 'yo'),
-      { type: 'step/end', data: { turn: 3, step: 1 } },
-    )
-    expect(findOpenStep(session)).toBeNull()
-  })
-
-  it('findOpenStep：step 仍打开 → 返回 turn/step', async () => {
-    const { findOpenStep } = await import('../lib/adapter/dsh-writer.js')
-    const session = makeSession().seed(
-      userMessage('u1', 'hi'),
-      { type: 'step/start', data: { turn: 3, step: 1 } },
-      assistantMessage('a1', 'yo'),
-    )
-    expect(findOpenStep(session)).toEqual({ turn: 3, step: 1 })
-  })
-
-  it('回合中编辑：marker 携带当前 step 的 turn/step（非 null），T1 通过', async () => {
+describe('两段结构:不再写 turn/step,载体 source.kind=\'model\'(改造后的位置语义)', () => {
+  /**
+   * 三情形 turn/step 翻译整体作废的依据:`dsh-token-meter/lib/index.js:753` 只要求
+   * `assistant/message` 匹配打开中的 step/start;两段结构的第 2 段是 `user/message`,
+   * 官方对它没有 step 配对要求(它连 turn/step 成员都没有)⇒ 信封/计数器推进全部消失。
+   */
+  it('回合中(有打开 step)编辑:不写任何 step/turn 信封,载体仍合法落盘', async () => {
     const { createEditorApi } = await import('../lib/host-core.js')
     const session = makeSession().seed(
-      userMessage('u1', 'hi'),
+      headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'),
+      { type: 'turn/start', data: { turn: 3 } },
       { type: 'step/start', data: { turn: 3, step: 1 } },
-      assistantMessage('a1', 'yo'),
     )
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    // 校验钩子：契约通过 + T1 自检通过（step 内 marker 不再破坏 token meter）
-    const validateMarker = async () => ({ t1Ok: true })
-    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
+    const before = sessionEvents(session).length
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
-    const marker = session.events[session.events.length - 1]
-    expect(marker.type).toBe('assistant/message')
-    expect(marker.data.turn).toBe(3) // 携带当前 step 的 turn
-    expect(marker.data.step).toBe(1) // 携带当前 step 的 step
-    expect(marker.data.editor?.markerT1Broken).toBeUndefined() // 无标注
-    expect(result.value.markerT1Broken).toBe(false)
+    // 只多两个事件:审计段 + 载体段(没有 step/end、turn/end 包裹)
+    expect(sessionEvents(session).length).toBe(before + 2)
+    expect(eventAt(session, before).type).toBe(AUDIT_EVENT_TYPE)
+    expect(eventAt(session, before + 1).type).toBe('user/message')
+    const marker = lastMarker(session)
+    expect(marker.data.turn).toBeUndefined()
+    expect(marker.data.step).toBeUndefined()
   })
 
-  it('轮次间编辑（无打开 step、无打开 turn = 情形③）：完整 turn 信封 + 推进 loop 计数器，T1 通过（0.4.17v3 P1/D8 治本）', async () => {
+  it('轮次间(无打开 turn)编辑:不再新建 turn/start·step/start 信封', async () => {
     const { createEditorApi } = await import('../lib/host-core.js')
-    const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
-    // 带 phase 的 agent：lastTurn=0 → 信封消费 turn 1 → 推进到 1（重发落到 2）
-    const agent = makeAgent({ phase: { kind: 'idle', lastTurn: 0 } })
-    const { sessions, agents } = makeEnv(session, { agent })
-    // 校验钩子收到完整序列（turn/start → step/start → marker → step/end → turn/end）→ T1 恒通过
-    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
-    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
+    const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
+    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
+    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
+    const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+    expect(result.ok).toBe(true)
+    expect(sessionEvents(session).some((e) => e?.type === 'turn/start' || e?.type === 'step/start')).toBe(false)
+    // agent-loop 计数器不再需要推进(agent 未被触碰)
+    expect(agents.get('s1').phase).toBeUndefined()
+  })
+
+  it('审计段先写、载体后写:第 2 段首元素 === 第 1 段 seq(两者都引用更早 seq)', async () => {
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    const result = await api.recall({ sessionId: 's1', messageId: 'u2' })
     expect(result.ok).toBe(true)
     const marker = lastMarker(session)
-    expect(marker.data.turn).toBe(1) // 真实 turn 号（铁律：不得为 null——白屏）
-    expect(marker.data.step).toBe(1)
-    expect(marker.data.editor?.markerT1Broken).toBeUndefined() // 不再标注
-    expect(result.value.markerT1Broken).toBe(false)
-    // 校验钩子收到完整序列（before + envelope + after）
-    expect(validateMarker).toHaveBeenCalledTimes(1)
-    const hookArgs = validateMarker.mock.calls[0]
-    expect(hookArgs[2]).toEqual({
-      wrappedBefore: [
-        { type: 'turn/start', data: { turn: 1 } },
-        { type: 'step/start', data: { turn: 1, step: 1 } },
-      ],
-      wrappedAfter: [
-        { type: 'step/end', data: { turn: 1, step: 1 } },
-        { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
-      ],
-    })
-    // 完整 turn 信封落盘
-    const idx = session.events.indexOf(marker)
-    expect(session.events[idx - 2].type).toBe('turn/start')
-    expect(session.events[idx - 1].type).toBe('step/start')
-    expect(session.events[idx + 1].type).toBe('step/end')
-    expect(session.events[idx + 2].type).toBe('turn/end')
-    expect(session.events[idx - 2].data).toEqual({ turn: 1 })
-    expect(session.events[idx - 1].data).toEqual({ turn: 1, step: 1 })
-    // loop 计数器已推进：重发/下一条消息落到 turn 2（防 duplicate start）
-    expect(agent.phase.lastTurn).toBe(1)
+    const audit = lastAudit(session)
+    expect(audit.seq).toBeLessThan(marker.seq)
+    expect(marker.sourceEventSeqs[0]).toBe(audit.seq)
+    // 审计段声明的被遮蔽段 === 载体区间(读写两端同一份 range 推出)
+    expect(audit.data.shadowedRange).toEqual({ start: marker.surfaceOp.start, end: marker.surfaceOp.end })
+    expect(audit.data.shadowedSeqs).toEqual(carrierShadowedSeqs(marker))
   })
 
-  it('情形②（有打开着的 turn、无打开的 step）：marker 用该 turn 号 + 新 step 号（D8 现场）', async () => {
-    const { createEditorApi } = await import('../lib/host-core.js')
-    // turn 5 打开着（turn/start 无 turn/end），step 1 已关
+  it('写前断言:targetSeq ≠ 被遮蔽区间起点 → 记一行诊断(派生值 = 区间起点),写入照常', async () => {
+    const { createDshMarkerWriter } = await import('../lib/adapter/dsh-writer.js')
+    const logged = []
+    const writer = createDshMarkerWriter({ log: (line) => logged.push(line), meter: officialSurfaceMeter(), deriveMessage })
     const session = makeSession().seed(
-      { type: 'turn/start', data: { turn: 5 } },
-      userMessage('u1', 'hi'),
-      { type: 'step/start', data: { turn: 5, step: 1 } },
-      assistantMessage('a1', 'yo'),
-      { type: 'step/end', data: { turn: 5, step: 1 } },
+      headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'),
+      userMessage('u2', 'q2'), assistantMessage('a2', 'r2'),
     )
-    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
-    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
-    expect(result.ok).toBe(true)
-    const marker = lastMarker(session)
-    expect(marker.data.turn).toBe(5) // 用打开着的 turn 号（非 null、非 nextTurn）
-    expect(marker.data.step).toBe(2) // 新 step 号 = max step + 1（不覆盖旧 step draft）
-    // 信封 = 只有 step/start + step/end（turn/start 早已存在，无需新建）
-    const hookArgs = validateMarker.mock.calls[0]
-    expect(hookArgs[2]).toEqual({
-      wrappedBefore: [{ type: 'step/start', data: { turn: 5, step: 2 } }],
-      wrappedAfter: [{ type: 'step/end', data: { turn: 5, step: 2 } }],
-    })
-    const idx = session.events.indexOf(marker)
-    expect(session.events[idx - 1].data).toEqual({ turn: 5, step: 2 })
-    expect(session.events[idx + 1].data).toEqual({ turn: 5, step: 2 })
-  })
-
-  it('情形② step = max(内存,文件)+1：文件滞后时内存覆盖（连续编辑不冲突，2026-09-02 处置）', async () => {
-    const { createEditorApi } = await import('../lib/host-core.js')
-    const session = makeSession().seed(
-      { type: 'turn/start', data: { turn: 5 } },
-      { type: 'step/start', data: { turn: 5, step: 1 } },
-      userMessage('u1', 'hi'),
-      assistantMessage('a1', 'yo'),
-      { type: 'step/end', data: { turn: 5, step: 1 } },
-      { type: 'step/start', data: { turn: 5, step: 2 } },
-      userMessage('u2', 'again'),
-      assistantMessage('a2', 'more'),
-      { type: 'step/end', data: { turn: 5, step: 2 } },
+    // ① 区间之外(targetSeq 4 ∉ [1..3]):旧守卫也拦;
+    const outside = await writer.writeMarker(session, { start: 1, end: 3, shadowedSeqs: [1, 2, 3] }, { op: 'recall', targetSeq: 4, originalText: '' })
+    expect(carrierTargetSeq(outside)).toBe(1)
+    // ② **区间之内但非起点**(targetSeq 2 ∈ [1..3]、start = 1):这正是旧守卫
+    //    (`!shadowedSeqs.includes(targetSeq)`)放过去、读端却无法还原的形态 ——
+    //    实测:业务 targetSeq = 2、派生 0/1 时旧实现零诊断(静默错位)。
+    const session2 = makeSession().seed(
+      headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'),
+      userMessage('u2', 'q2'), assistantMessage('a2', 'r2'),
     )
-    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    // 文件滞后:readMaxStep 恒返回 2(flush 未落盘,文件看不到本进程刚写的 marker step)
-    const readMaxStep = vi.fn(async () => 2)
-    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker, readMaxStep }))
-    // 同一打开 turn 内连续两次情形②(recall 已改 tail 会互相遮蔽 → 用 edit 不同轮,
-    // round 轮内遮蔽互不覆盖;情形② step 分配逻辑不变)
-    const r1 = await api.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'x1' })
-    const m1 = lastMarker(session)
-    expect(r1.ok).toBe(true)
-    expect(m1.data.step).toBe(3) // max(内存2, 文件2)+1 = 3
-    const r2 = await api.editAndResend({ sessionId: 's1', messageId: 'u2', text: 'x2' })
-    const m2 = lastMarker(session)
-    expect(r2.ok).toBe(true)
-    expect(m2.data.step).toBe(4) // 内存已见 step 3 → max(内存3, 文件2)+1 = 4,不与 m1 冲突
-    expect(m1.data.step).not.toBe(m2.data.step) // step key 唯一
-  })
-
-  it('情形② + readMaxStep：从文件全量算 step（窗口化内存不可信，事故复盘）', async () => {
-    const { createEditorApi } = await import('../lib/host-core.js')
-    // turn 5 打开着;内存视图只含 step 1,但文件全量含 step 1..45(窗口外)
-    const session = makeSession().seed(
-      { type: 'turn/start', data: { turn: 5 } },
-      userMessage('u1', 'hi'),
-      { type: 'step/start', data: { turn: 5, step: 1 } },
-      assistantMessage('a1', 'yo'),
-      { type: 'step/end', data: { turn: 5, step: 1 } },
-    )
-    const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    const validateMarker = vi.fn(async () => ({ t1Ok: true }))
-    // readMaxStep 模拟从文件读全量:turn 5 实际已有 step 45(窗口外,内存看不到);
-    // 现在经 writer 依赖注入(makeHooks),不再经 args 传递
-    const readMaxStep = vi.fn(async () => 45)
-    const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker, readMaxStep }))
-    const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
-    expect(result.ok).toBe(true)
-    const marker = lastMarker(session)
-    expect(marker.data.turn).toBe(5)
-    expect(marker.data.step).toBe(46) // 用文件全量 max(45)+1,不与窗口外 step 冲突
-    expect(readMaxStep).toHaveBeenCalledWith('s1', 5)
-    const idx = session.events.indexOf(marker)
-    expect(session.events[idx - 1].data).toEqual({ turn: 5, step: 46 })
-    expect(session.events[idx + 1].data).toEqual({ turn: 5, step: 46 })
+    const inRange = await writer.writeMarker(session2, { start: 1, end: 3, shadowedSeqs: [1, 2, 3] }, { op: 'recall', targetSeq: 2, originalText: '' })
+    expect(carrierTargetSeq(inRange)).toBe(1) // 读端派生 = 区间起点,与业务目标 2 不同
+    const diagnostics = logged.filter((line) => line.includes('≠ 被遮蔽区间起点'))
+    expect(diagnostics.length).toBe(2) // 两种偏离各记一行(旧实现第一种之外零诊断)
+    expect(diagnostics[1]).toContain('targetSeq 2')
   })
 })
 
@@ -623,7 +545,7 @@ describe('「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」�
   /**
    * 「提交中」会话:目标消息已进内存 events(findMessageSeq 可见),但 surface.nodes
    * 尚未纳入(刚 commit/文件 flush 滞后,本次 span 快照看不到)——模拟用户点击落在
-   * turn 收尾窗口(真实会话 seq 7000018 与 step/end、turn/end 同一毫秒,
+   * turn 收尾窗口(某真实会话的收尾窗口 seq 与 step/end、turn/end 同一毫秒,
    * turn/end reason=aborted-user;文件尚未 flush 刚 commit 消息)。
    * lastType='assistant' → 尾部最新 assistant 回复(a2,seq 4)提交中;
    * lastType='user' → 尾部最新 user 输入(u3,seq 4)刚发出、尚未进快照。
@@ -848,7 +770,8 @@ describe('「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」�
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('second')
     const marker = lastMarker(session)
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
-    expect(marker.data.editor).toEqual({ targetSeq: 3, text: 'second' })
+    expect(carrierTargetSeq(marker)).toBe(3) // 派生值 = 区间起点(该轮 user)
+    expect(marker.data.editor).toBeUndefined()
   })
 })
 
@@ -867,7 +790,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
       userMessage('u2', 'SAME ROUND PROMPT'), // seq 3(该轮 user → 洞)
       assistantMessage('a2', 'current answer'), // seq 4(目标,内存 events 有)
     )
-    delete session.events[3] // 洞:该轮 user 未被 materialize(窗口化视图)
+    session.dropAt(3) // 洞:该轮 user 未被 materialize(窗口化视图)
     session.surface.nodes.pop() // 内存 surface 滞后:目标 seq 4 未纳入 → idx === -1
     return session
   }
@@ -892,7 +815,8 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
     const marker = lastMarker(session)
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 }) // 遮蔽范围 = 该轮
-    expect(marker.data.editor).toEqual({ targetSeq: 3, text: 'SAME ROUND PROMPT' }) // targetSeq = 该轮 user
+    // targetSeq 由区间起点派生(editor 不再落盘):区间起点 = 该轮 user seq 3
+    expect(carrierTargetSeq(marker)).toBe(3)
   })
 
   it('文件 span 注入但 probe 带不出 prompt(内存该点也是洞)→ 保守 no-prompt,不重发错文本', async () => {
@@ -924,7 +848,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
 
     expect(result.ok).toBe(true)
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
-    expect(lastMarker(session).data.editor.targetSeq).toBe(3)
+    expect(carrierTargetSeq(lastMarker(session))).toBe(3)
   })
 
   it('跨遮蔽区(更早轮已被 fold 遮蔽成幽灵) + 当前轮 user 是洞 → 只重发当前轮原文', async () => {
@@ -945,7 +869,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
       editor: { targetSeq: 1, text: '' },
     }, { surfaceOp: { op: 'replace', start: 1, end: 2 }, sourceEventSeqs: [1, 2] })
     session.surface.nodes.pop() // 内存 surface 滞后:目标 a2 未纳入
-    delete session.events[3] // 当前轮 user 是洞
+    session.dropAt(3) // 当前轮 user 是洞
 
     const result = await api.regenerate({
       sessionId: 's1',
@@ -958,8 +882,8 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('CURRENT PROMPT')
     expect(agent.followup.mock.calls[0][0].content[0].text).not.toBe('SHADOWED OLD PROMPT')
     const marker = lastMarker(session)
-    expect(marker.data.message.id).toMatch(/^retrace-regenerate-/)
-    expect(marker.data.editor.targetSeq).toBe(3) // 不是被遮蔽幽灵轮的 seq 1
+    expect(marker.data.id).toMatch(/^retrace-regenerate-/)
+    expect(carrierTargetSeq(marker)).toBe(3) // 不是被遮蔽幽灵轮的 seq 1
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
   })
 })

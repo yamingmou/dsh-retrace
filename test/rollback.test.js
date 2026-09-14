@@ -5,7 +5,9 @@
  * ctx / subprocess stand in for the host services.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createRollbackExecutor } from '../lib/rollback.js'
+import { carrierTargetSeq } from '../lib/marker-carrier.js'
 import { makeAgent, makeHooks } from './helpers.js'
 
 /** User message event (real user input → round boundary). */
@@ -208,13 +210,20 @@ describe('rollback execute', () => {
     )
     const { rollback, sessions } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'context' })
-    expect(result.markerSeq).toBe(7)
+    // 两段结构：第 1 段（审计）@5、第 2 段（载体）@6（不再有 turn/step 信封）
+    expect(result.markerSeq).toBe(6)
     expect(result.context.messages).toBe(1)
-    const marker = session.events[7] // 情形③完整 turn 信封：turn/start@5, step/start@6, marker@7
-    expect(marker.type).toBe('assistant/message')
+    const audit = eventAt(session, 5)
+    expect(audit.type).toBe('compaction/prune')
+    expect(audit.data.shadowedSeqs).toEqual([4])
+    const marker = eventAt(session, 6)
+    expect(marker.type).toBe('user/message')
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 4 })
-    expect(marker.sourceEventSeqs).toEqual([4])
-    expect(marker.data.editor.targetSeq).toBe(3)
+    expect(marker.sourceEventSeqs).toEqual([5, 4])
+    // 业务溯源 targetSeq 由区间起点派生（editor 已不再落盘；restore 的边界 seq 3
+    // 不等于区间起点 4 ⇒ 该场景读到的派生值是区间起点，见报告「能力损失」一节）
+    expect(carrierTargetSeq(marker)).toBe(4)
+    expect(marker.data.source.kind).toBe('model')
     expect(sessions.flush).toHaveBeenCalled()
   })
 
@@ -280,7 +289,7 @@ describe('rollback execute', () => {
     )
     const { rollback, writes } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'both' })
-    expect(result.markerSeq).toBe(7)
+    expect(result.markerSeq).toBe(6)
     expect(writes.length).toBe(1)
   })
 })
