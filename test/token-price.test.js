@@ -17,6 +17,7 @@
  *  5. 节点估不出价(内存视图有洞)⇒ 显著诊断 + 只写可估部分(不静默编价)。
  */
 import { describe, it, expect } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createDshMarkerWriter } from '../lib/adapter/dsh-writer.js'
 import { AUDIT_EVENT_TYPE, CARRIER_EVENT_TYPE, carrierShadowedSeqs } from '../lib/marker-carrier.js'
 import { headerEvent, makeSession, userMessage, assistantMessage } from './helpers.js'
@@ -34,7 +35,7 @@ function priceSession() {
 
 const SPAN = { start: 1, end: 3, shadowedSeqs: [1, 2, 3] }
 /** 官方口径的区间价:Σ estimateMessage(deriveEventMessage(event))(官方 surface-fold 同式)。 */
-const officialRangePrice = (session, span) => span.shadowedSeqs.reduce((total, seq) => total + officialNodePrice(session.events[seq]), 0)
+const officialRangePrice = (session, span) => span.shadowedSeqs.reduce((total, seq) => total + officialNodePrice(eventAt(session, seq)), 0)
 
 function writerWith(overrides = {}) {
   const logged = []
@@ -53,7 +54,7 @@ describe('shadow-price 口径:写入值 === 官方 estimateMessage 口径', () =
     const { writer, logged } = writerWith()
     await writer.writeMarker(session, SPAN, { op: 'recall', targetSeq: 1, originalText: '' })
 
-    const audit = session.events.find((e) => e?.type === AUDIT_EVENT_TYPE)
+    const audit = sessionEvents(session).find((e) => e?.type === AUDIT_EVENT_TYPE)
     const expected = officialRangePrice(session, SPAN)
     expect(audit.data.shadowedTokenCount).toBe(expected)
     expect(expected).toBeGreaterThan(2000) // 量级:3 个节点 ≈ 两千令牌
@@ -65,7 +66,7 @@ describe('shadow-price 口径:写入值 === 官方 estimateMessage 口径', () =
     const session = priceSession()
     const { writer } = writerWith()
     const carrier = await writer.writeMarker(session, SPAN, { op: 'recall', targetSeq: 1, originalText: '' })
-    const audit = session.events.find((e) => e?.type === AUDIT_EVENT_TYPE)
+    const audit = sessionEvents(session).find((e) => e?.type === AUDIT_EVENT_TYPE)
 
     // ① 审计段确实被官方 fold 当成 claim 武装(零增量),且字段名/形状都对得上
     const armed = officialSurfaceProjection.foldSurfaceProjection(undefined, audit)
@@ -93,7 +94,7 @@ describe('shadow-price 口径:写入值 === 官方 estimateMessage 口径', () =
       .reduce((total, node) => total + node.tokens, 0)
     const { writer } = writerWith()
     await writer.writeMarker(session, SPAN, { op: 'recall', targetSeq: 1, originalText: '' })
-    const audit = session.events.find((e) => e?.type === AUDIT_EVENT_TYPE)
+    const audit = sessionEvents(session).find((e) => e?.type === AUDIT_EVENT_TYPE)
     expect(audit.data.shadowedTokenCount).toBe(surfacePrice)
     expect(surfacePrice).toBe(officialRangePrice(session, SPAN))
   })
@@ -103,40 +104,45 @@ describe('shadow-price 口径:写入值 === 官方 estimateMessage 口径', () =
     const writer = createDshMarkerWriter({}) // 未注入 meter
     await expect(writer.writeMarker(session, SPAN, { op: 'recall', targetSeq: 1, originalText: '' }))
       .rejects.toThrow(/契约违规\[dshAdapter\.writeMarker\.meter\].*token-meter/)
-    expect(session.events.some((e) => e?.type === AUDIT_EVENT_TYPE)).toBe(false) // 零写入(无审计段)
-    expect(session.events.filter((e) => e?.surfaceOp?.op === 'replace').length).toBe(0) // 无载体段
+    expect(sessionEvents(session).some((e) => e?.type === AUDIT_EVENT_TYPE)).toBe(false) // 零写入(无审计段)
+    expect(sessionEvents(session).filter((e) => e?.surfaceOp?.op === 'replace').length).toBe(0) // 无载体段
   })
 
-  it('claim 被并发 append 顶掉 ⇒ 重挂审计段(claim 与 replace 相邻)', async () => {
+  it('并发 append 发生在 pair 校验期 ⇒ 写前重测追加位并重跑校验;两段严格相邻、claim 被消费', async () => {
     const session = priceSession()
-    const { writer, logged } = writerWith({
+    let injected = false
+    const { writer } = writerWith({
       validateMarker: async (s, _envelope, options) => {
-        // post 阶段(审计段已落盘、载体未落盘)插入一个并发事件 —— 顶掉已武装的 claim
-        if (options?.phase === 'post') s.append('assistant/chunk', { turn: 9, step: 0, text: 'concurrent' })
+        // pair 阶段(两段都还没落盘)插入一个并发事件:模拟"校验期间日志尾部被顶"
+        if (options?.phase === 'pair' && !injected) {
+          injected = true
+          s.append('assistant/chunk', { turn: 9, step: 0, text: 'concurrent' })
+        }
       },
     })
     const carrier = await writer.writeMarker(session, SPAN, { op: 'recall', targetSeq: 1, originalText: '' })
 
-    const audits = session.events.filter((e) => e?.type === AUDIT_EVENT_TYPE)
-    expect(audits.length).toBe(2) // 第一次的 claim 被顶掉 ⇒ 重挂
-    expect(audits[1].data).toEqual(audits[0].data) // 同一个价
-    expect(carrier.sourceEventSeqs[0]).toBe(audits[1].seq)
+    const audits = sessionEvents(session).filter((e) => e?.type === AUDIT_EVENT_TYPE)
+    expect(audits.length).toBe(1) // 校验前移 ⇒ 无需重挂,也没有孤儿
+    expect(carrier.sourceEventSeqs[0]).toBe(audits[0].seq)
     // 相邻性:载体前一个事件就是被引用的审计段(官方协议要求)
-    expect(session.events[session.events.indexOf(carrier) - 1]).toBe(audits[1])
-    expect(logged.some((line) => line.includes('顶掉'))).toBe(true)
-    // 官方 fold:重挂后的 claim 仍能给出正确增量
-    const armed = officialSurfaceProjection.foldSurfaceProjection(undefined, audits[1])
-    const delta = officialSurfaceProjection.foldSurfaceProjection(armed.claim, carrier).deltaTokens
-    expect(delta).toBe(officialNodePrice(carrier) - audits[1].data.shadowedTokenCount)
+    const all = sessionEvents(session)
+    expect(all[all.indexOf(carrier) - 1]).toBe(audits[0])
+    // 官方 fold:claim 与 replace 相邻 ⇒ 正确增量,且校验后不残留 claim
+    const armed = officialSurfaceProjection.foldSurfaceProjection(undefined, audits[0])
+    expect(armed.claim).toBeDefined()
+    const consumed = officialSurfaceProjection.foldSurfaceProjection(armed.claim, carrier)
+    expect(consumed.deltaTokens).toBe(officialNodePrice(carrier) - audits[0].data.shadowedTokenCount)
+    expect(consumed.claim).toBeUndefined() // 无存活孤儿 claim(否则下一次 replace 以 0 增量折叠 → surfaceTokens 漂移)
   })
 
   it('节点取不到价(内存视图有洞)⇒ 显著诊断 + 只写可估部分(不静默编价)', async () => {
     const session = priceSession()
-    delete session.events[2] // 洞:被遮蔽节点 seq 2 不在当前视图里
+    session.dropAt(2) // 洞:被遮蔽节点 seq 2 不在当前视图里
     const { writer, logged } = writerWith()
     await writer.writeMarker(session, SPAN, { op: 'recall', targetSeq: 1, originalText: '' })
 
-    const audit = session.events.find((e) => e?.type === AUDIT_EVENT_TYPE)
+    const audit = sessionEvents(session).find((e) => e?.type === AUDIT_EVENT_TYPE)
     expect(audit.data.shadowedTokenCount).toBe(officialRangePrice(session, { shadowedSeqs: [1, 3] }))
     const diag = logged.filter((line) => line.includes('shadow-price 降级'))
     expect(diag.length).toBe(1)
@@ -147,7 +153,7 @@ describe('shadow-price 口径:写入值 === 官方 estimateMessage 口径', () =
     const session = priceSession()
     const { writer } = writerWith()
     const carrier = await writer.writeMarker(session, SPAN, { op: 'recall', targetSeq: 1, originalText: '' })
-    const audit = session.events.find((e) => e?.type === AUDIT_EVENT_TYPE)
+    const audit = sessionEvents(session).find((e) => e?.type === AUDIT_EVENT_TYPE)
     expect(audit.data.shadowedSeqs).toEqual(carrierShadowedSeqs(carrier))
     expect(Object.keys(audit.data).sort()).toEqual(['shadowedRange', 'shadowedSeqs', 'shadowedTokenCount'])
   })

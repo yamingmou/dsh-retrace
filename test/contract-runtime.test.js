@@ -8,6 +8,7 @@
  *  - 端到端:业务层传入坏 span / 适配器返回坏 marker → 立刻 contract-violation。
  */
 import { describe, it, expect, vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import {
   CONTRACT_VIOLATION, contractViolation, assertContract, assertSpanShape, assertSpanResult,
   assertSpanFacts, assertEventListShape, assertMarkerShape, assertAuditShape, markerSurfaceRange,
@@ -336,7 +337,7 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
   it('出口断言失败时**先落盘再报错**(不留"客户端报失败、面上其实已改"的半状态)', async () => {
     const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const flushed = []
-    const sessions = { get: () => session, flush: async (s) => { flushed.push(s.events.length) } }
+    const sessions = { get: () => session, flush: async (s) => { flushed.push(sessionEvents(s).length) } }
     const agents = { get: () => makeAgent() }
     const badWriter = async (s, span) => s.append('assistant/message', { turn: 1, message: { id: 'retrace-recall-bad', content: [] } }) // 缺 surfaceOp/editor
     const api = createEditorApi({}, sessions, agents, () => {}, { writeMarker: badWriter })
@@ -344,12 +345,12 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe(CONTRACT_VIOLATION)
     expect(flushed.length).toBe(1) // 已写内容先落盘(拒绝半状态)
-    expect(flushed[0]).toBe(session.events.length)
+    expect(flushed[0]).toBe(sessionEvents(session).length)
   })
 
   it('传入坏 span 时**任何写入都不发生**(断言先于 append;不留半关闭 turn)', async () => {
     const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const sessions = { get: () => session, flush: async () => {} }
     const agents = { get: () => makeAgent() }
     // 写入器本身合规,但业务层传了坏 span(空 shadowedSeqs)→ 必须在任何 append 前拦住
@@ -358,7 +359,7 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
     const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe(CONTRACT_VIOLATION)
-    expect(session.events.length).toBe(before) // 零写入(无半关闭 turn/信封残留)
+    expect(sessionEvents(session).length).toBe(before) // 零写入(无半关闭 turn/信封残留)
   })
 
   it('正常路径不受断言影响(真 writer + 真 api 全绿)', async () => {
@@ -366,17 +367,17 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
     const api = makeApi(session, makeAgent())
     const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
     expect(result.ok).toBe(true)
-    const marker = session.events.find((e) => e?.surfaceOp?.op === 'replace')
+    const marker = sessionEvents(session).find((e) => e?.surfaceOp?.op === 'replace')
     expect(() => assertMarkerShape(marker)).not.toThrow()
   })
 
   it('断言不改变调用方可见行为:坏 span 只在写前拦住,会话未被改坏', async () => {
     const session = makeSession().seed(headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const writer = createDshMarkerWriter({ meter: officialSurfaceMeter(), deriveMessage })
     await expect(writer.writeMarker(session, null, { op: 'recall', targetSeq: 0, originalText: '' }))
       .rejects.toMatchObject({ code: CONTRACT_VIOLATION })
-    expect(session.events.length).toBe(before) // 没有半写状态
+    expect(sessionEvents(session).length).toBe(before) // 没有半写状态
   })
 })
 

@@ -8,6 +8,7 @@
  * exchange (v3.3), and edit references are host-authoritative (v3.5/v3.6).
  */
 import { describe, it, expect, vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import {
   makeSession,
   userMessage,
@@ -50,8 +51,8 @@ function lastMarker(session) {
 
 /** 最近一次写入的审计段(compaction/prune)。 */
 function lastAudit(session) {
-  for (let i = session.events.length - 1; i >= 0; i--) {
-    const e = session.events[i]
+  for (let i = sessionEvents(session).length - 1; i >= 0; i--) {
+    const e = eventAt(session, i)
     if (e && e.type === AUDIT_EVENT_TYPE) return e
   }
   return null
@@ -101,7 +102,7 @@ describe('recall', () => {
     expect(marker.sourceEventSeqs).toEqual([audit.seq, 4, 5])
     // 第 1 段 shadowedTokenCount = **官方令牌价**(shadow-price claim),不是节点个数:
     // 口径由官方 estimateMessage(deriveEventMessage(event)) 给出(见 test/official-meter.js)
-    const officialPrice = [4, 5].reduce((total, seq) => total + officialNodePrice(session.events[seq]), 0)
+    const officialPrice = [4, 5].reduce((total, seq) => total + officialNodePrice(eventAt(session, seq)), 0)
     expect(audit.data).toEqual({ shadowedRange: { start: 4, end: 5 }, shadowedSeqs: [4, 5], shadowedTokenCount: officialPrice })
     expect(officialPrice).not.toBe(2) // 节点个数口径会写成 2 ⇒ 这就是被修正的高估源
     expect(audit.surfaceOp).toBeUndefined()
@@ -114,8 +115,8 @@ describe('recall', () => {
     // 轮边界红线:载体的 source.kind='model' ⇒ 不被当成真实用户输入切轮
     expect(isRoundBoundaryEvent(marker)).toBe(false)
     // 不再写 turn/step 信封(三情形翻译作废):载体的前一个事件就是审计段
-    const idx = session.events.indexOf(marker)
-    expect(session.events[idx - 1]).toBe(audit)
+    const idx = sessionEvents(session).indexOf(marker)
+    expect(eventAt(session, idx - 1)).toBe(audit)
   })
 
   it('reports the durable text of the recalled message', async () => {
@@ -150,7 +151,7 @@ describe('recall', () => {
     expect(second.ok).toBe(false)
     expect(second.error.code).toBe('target-shadowed')
     // The durable log was never rewritten: u1 is still an event.
-    expect(session.events.some((e) => e.type === 'user/message' && e.data.id === 'u1')).toBe(true)
+    expect(sessionEvents(session).some((e) => e.type === 'user/message' && e.data.id === 'u1')).toBe(true)
   })
 
   it('returns agent-busy while the agent is running and has no cancel API (fallback)', async () => {
@@ -334,13 +335,13 @@ describe('editAndResend', () => {
   it('returns agent-unavailable without a live agent (and shadows nothing)', async () => {
     const session = standardSession()
     const api = makeApi(session, undefined)
-    const before = session.events.length
+    const before = sessionEvents(session).length
 
     const result = await api.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'hi' })
 
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('agent-unavailable')
-    expect(session.events.length).toBe(before) // no partial application
+    expect(sessionEvents(session).length).toBe(before) // no partial application
   })
 
   it('business provenance lives outside the carrier: targetSeq derives from the range start', async () => {
@@ -476,13 +477,13 @@ describe('两段结构:不再写 turn/step,载体 source.kind=\'model\'(改造�
     )
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
     // 只多两个事件:审计段 + 载体段(没有 step/end、turn/end 包裹)
-    expect(session.events.length).toBe(before + 2)
-    expect(session.events[before].type).toBe(AUDIT_EVENT_TYPE)
-    expect(session.events[before + 1].type).toBe('user/message')
+    expect(sessionEvents(session).length).toBe(before + 2)
+    expect(eventAt(session, before).type).toBe(AUDIT_EVENT_TYPE)
+    expect(eventAt(session, before + 1).type).toBe('user/message')
     const marker = lastMarker(session)
     expect(marker.data.turn).toBeUndefined()
     expect(marker.data.step).toBeUndefined()
@@ -495,7 +496,7 @@ describe('两段结构:不再写 turn/step,载体 source.kind=\'model\'(改造�
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
     const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
     expect(result.ok).toBe(true)
-    expect(session.events.some((e) => e?.type === 'turn/start' || e?.type === 'step/start')).toBe(false)
+    expect(sessionEvents(session).some((e) => e?.type === 'turn/start' || e?.type === 'step/start')).toBe(false)
     // agent-loop 计数器不再需要推进(agent 未被触碰)
     expect(agents.get('s1').phase).toBeUndefined()
   })
@@ -789,7 +790,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
       userMessage('u2', 'SAME ROUND PROMPT'), // seq 3(该轮 user → 洞)
       assistantMessage('a2', 'current answer'), // seq 4(目标,内存 events 有)
     )
-    delete session.events[3] // 洞:该轮 user 未被 materialize(窗口化视图)
+    session.dropAt(3) // 洞:该轮 user 未被 materialize(窗口化视图)
     session.surface.nodes.pop() // 内存 surface 滞后:目标 seq 4 未纳入 → idx === -1
     return session
   }
@@ -868,7 +869,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
       editor: { targetSeq: 1, text: '' },
     }, { surfaceOp: { op: 'replace', start: 1, end: 2 }, sourceEventSeqs: [1, 2] })
     session.surface.nodes.pop() // 内存 surface 滞后:目标 a2 未纳入
-    delete session.events[3] // 当前轮 user 是洞
+    session.dropAt(3) // 当前轮 user 是洞
 
     const result = await api.regenerate({
       sessionId: 's1',

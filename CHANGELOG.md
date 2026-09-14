@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.28] — 2026-09-14 · restore edit / recall and view jumps; host-contract drift becomes a pre-release gate
+
+- restore edit / recall and view jumps; host-contract drift becomes a pre-release gate
+
 ## [0.4.26] — 2026-09-14 · pre-release audit fixes: cross-machine defect / gate blind spot / false snapshot warning
 
 - pre-release audit fixes: cross-machine defect / gate blind spot / false snapshot warning

@@ -5,6 +5,7 @@
  * ctx / subprocess stand in for the host services.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createRollbackExecutor } from '../lib/rollback.js'
 import { carrierTargetSeq } from '../lib/marker-carrier.js'
 import { makeAgent, makeHooks } from './helpers.js'
@@ -212,10 +213,10 @@ describe('rollback execute', () => {
     // 两段结构：第 1 段（审计）@5、第 2 段（载体）@6（不再有 turn/step 信封）
     expect(result.markerSeq).toBe(6)
     expect(result.context.messages).toBe(1)
-    const audit = session.events[5]
+    const audit = eventAt(session, 5)
     expect(audit.type).toBe('compaction/prune')
     expect(audit.data.shadowedSeqs).toEqual([4])
-    const marker = session.events[6]
+    const marker = eventAt(session, 6)
     expect(marker.type).toBe('user/message')
     expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 4 })
     expect(marker.sourceEventSeqs).toEqual([5, 4])

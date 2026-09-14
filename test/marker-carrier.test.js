@@ -21,6 +21,9 @@ import {
   auditContextDefinition,
   shadowedSeqsOfAudit,
   isCarrierMarkerEvent,
+  isAuditPairedWithCarrier,
+  isAuditPairedWithSomeCarrier,
+  pairedAuditOf,
   isLegacyMarkerEvent,
   isMarkerId,
   isShadowCarrierEvent,
@@ -151,5 +154,82 @@ describe('marker-carrier · 形状判据', () => {
     expect(CARRIER_SOURCE_KIND).toBe('model')
     expect(CARRIER_DATA_KEYS).toEqual(['role', 'id', 'content', 'source'])
     expect(TRACE_TEXT).toBe('（此处内容已被撤回：原消息已归档，可在恢复视图中查看）')
+  })
+})
+
+/**
+ * 读侧配对:三选一 + 「紧邻性」硬约束(口径 2026-09-14 §一 / 记录 654)。
+ *
+ * 容错**不得**把"审计段在、载体段在很远处或根本不存在"的真孤儿误判成成对 ——
+ * 容错把要检出的缺陷掩盖掉是唯一不可接受的结果。写侧 `assertPairing` 保持严格。
+ */
+describe('marker-carrier · 读侧配对(三选一 + 紧邻硬约束)', () => {
+  const auditAt = (seq, start, end) => ({
+    seq,
+    type: AUDIT_EVENT_TYPE,
+    data: { shadowedRange: { start, end }, shadowedSeqs: [start, end], shadowedTokenCount: 1 },
+  })
+  const carrierAt = (seq, start, end, seqs) => ({
+    seq,
+    type: CARRIER_EVENT_TYPE,
+    surfaceOp: { op: 'replace', start, end },
+    sourceEventSeqs: seqs,
+    data: {
+      role: 'user',
+      id: `${MARKER_ID_PREFIX}-recall-x`,
+      content: [{ type: 'text', text: TRACE_TEXT }],
+      source: { kind: CARRIER_SOURCE_KIND, provider: 'p', model: 'm' },
+    },
+  })
+
+  it('① 审计 seq 置首(现行写侧形态)→ 成对', () => {
+    expect(isAuditPairedWithCarrier(auditAt(10, 2, 4), carrierAt(11, 2, 4, [10, 2, 4])))
+      .toEqual({ paired: true, via: 'ref-first' })
+  })
+
+  it('② 审计 seq 出现在数组非首位 → 成对', () => {
+    expect(isAuditPairedWithCarrier(auditAt(10, 2, 4), carrierAt(15, 2, 4, [2, 4, 10])))
+      .toEqual({ paired: true, via: 'ref-anywhere' })
+  })
+
+  it('③ 历史形态(不含审计 seq)且**紧邻 + 区间一致** → 成对', () => {
+    expect(isAuditPairedWithCarrier(auditAt(10, 2, 4), carrierAt(11, 2, 4, [2, 4])))
+      .toEqual({ paired: true, via: 'adjacent-range' })
+  })
+
+  it('阴性①:审计段没有任何载体 → 仍判孤儿', () => {
+    expect(isAuditPairedWithSomeCarrier(auditAt(10, 2, 4), []).paired).toBe(false)
+    expect(isAuditPairedWithSomeCarrier(auditAt(10, 2, 4), [carrierAt(99, 7, 8, [7, 8])]).paired).toBe(false)
+  })
+
+  it('阴性②:审计与载体**不紧邻**(中间插别的事件)→ 仍判孤儿', () => {
+    const audit = auditAt(10, 2, 4)
+    const far = carrierAt(12, 2, 4, [2, 4]) // 区间一致,但 seq 差 2(不紧邻)且不含审计 seq
+    expect(isAuditPairedWithCarrier(audit, far)).toEqual({ paired: false, via: null })
+    expect(isAuditPairedWithSomeCarrier(audit, [far]).paired).toBe(false)
+    // 引用形态(①②)按口径不依赖紧邻 —— 引用本身就是自证;只有历史形态③要求紧邻
+    expect(isAuditPairedWithCarrier(audit, carrierAt(12, 2, 4, [10, 2, 4])).via).toBe('ref-first')
+  })
+
+  it('阴性③:区间一致但审计 seq 不在 sourceEventSeqs 且不紧邻 → 仍判孤儿', () => {
+    expect(isAuditPairedWithCarrier(auditAt(10, 2, 4), carrierAt(50, 2, 4, [2, 4])))
+      .toEqual({ paired: false, via: null })
+  })
+
+  const readerFor = (events) => {
+    const bySeq = new Map(events.map((event) => [event.seq, event]))
+    return (seq) => bySeq.get(seq)
+  }
+
+  it('pairedAuditOf:历史形态靠紧邻定位;远端载体取不到审计', () => {
+    const adjacentLog = [auditAt(10, 2, 4), carrierAt(11, 2, 4, [])]
+    expect(pairedAuditOf(adjacentLog[1], readerFor(adjacentLog))).toMatchObject({ seq: 10, via: 'adjacent-range' })
+    const remoteLog = [auditAt(10, 2, 4), carrierAt(50, 2, 4, [])]
+    expect(pairedAuditOf(remoteLog[1], readerFor(remoteLog))).toBeNull()
+  })
+
+  it('carrierShadowedSeqs:顶层被剥 + 紧邻 → 取回被遮蔽段(读侧容错生效)', () => {
+    const log = [auditAt(10, 2, 4), carrierAt(11, 2, 4, [])]
+    expect(carrierShadowedSeqs(log[1], readerFor(log))).toEqual([2, 4])
   })
 })

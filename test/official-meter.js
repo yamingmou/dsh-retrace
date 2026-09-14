@@ -20,6 +20,7 @@
  * 本模块**直接抛**(而不是静默降级成"跳过")——否则「与官方口径一致」会变成假绿。
  */
 import { createRequire } from 'node:module'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { pathToFileURL } from 'node:url'
 import { deriveEventMessage } from '@deepseek-ai/dsh-session'
 
@@ -69,7 +70,7 @@ export function officialSurfaceMeter(session) {
   return {
     measure(target) {
       const session0 = target ?? session
-      const events = Array.isArray(session0?.events) ? session0.events : []
+      const events = sessionEvents(session0)
       const seqs = Array.isArray(session0?.surface?.nodes) ? session0.surface.nodes : []
       // 洞(窗口化视图)上的节点估不出价 ⇒ 不出现在面里(与官方 measure 对完整日志的行为一致)
       return { nodes: seqs.filter((seq) => events[seq] !== undefined && events[seq] !== null).map((seq) => ({ seq, tokens: officialNodePrice(events[seq]) })) }
@@ -79,7 +80,7 @@ export function officialSurfaceMeter(session) {
 
 /** 按 seq 取事件的读取器(session-adapter 的 bySeq 同形)。 */
 export function eventAtOf(session) {
-  const events = Array.isArray(session?.events) ? session.events : []
+  const events = sessionEvents(session)
   return (seq) => events[seq]
 }
 

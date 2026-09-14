@@ -18,6 +18,7 @@
  *    自己拿到了集合)。
  */
 import { describe, it, expect } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,12 +48,12 @@ async function writeCarrier() {
   )
   const writer = createDshMarkerWriter({ meter: officialSurfaceMeter(), deriveMessage })
   const carrier = await writer.writeMarker(session, SPAN, { op: 'recall', targetSeq: 3, originalText: '' })
-  const audit = session.events.find((e) => e?.type === AUDIT_EVENT_TYPE)
+  const audit = sessionEvents(session).find((e) => e?.type === AUDIT_EVENT_TYPE)
   return { session, carrier, audit }
 }
 
 /** 事件读取器(session-adapter 的 bySeq 同形)。 */
-const eventAtOf = (session) => (seq) => session.events[seq]
+const eventAtOf = (session) => (seq) => eventAt(session, seq)
 
 /** 客户端 reader 的最小替身:只实现 previous(kind)(真实 reader 也只有这一个入口)。 */
 function previousOnly(auditEvent) {
@@ -120,7 +121,9 @@ describe('回归守卫(防兜底再次被悄悄删掉)', () => {
     const { carrier } = await writeCarrier()
     expect(isCarrierMarkerEvent(carrier)).toBe(true)
     const source = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
-    expect(source).toContain('conversationEvents.register(auditContextDefinition())')
+    // 2026-09-14：注册入口改由 conversationRegistrar 解析（新基座 UI 服务把注册表
+    // 挂在 `.events` 上，服务本身没有 register）——断言只看"审计上下文定义仍被注册"。
+    expect(source).toMatch(/\.register\(auditContextDefinition\(\)\)/)
     expect(source).toContain('shadowedSeqsOfAudit')
     // 生成件(动态客户端 / 打包产物)同样带上兜底(与源码同源由 test/generated.test.js 保证)
     for (const file of ['dynamic-client.js', 'client.bundle.js']) {

@@ -10,6 +10,7 @@
  *    rejecting guard aborts the write (session unchanged, op fails).
  */
 import { describe, it, expect, vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createMarkerGuard, rollbackShareOf, isRestoreMarker, ROLLBACK_MIN_SURFACE } from '../lib/prewrite-guard.js'
 import { createEditorApi } from '../lib/host-core.js'
 import { carrierShadowedSeqs } from '../lib/marker-carrier.js'
@@ -54,8 +55,8 @@ describe('快照点守卫（2026-08-31 问题修复；2026-09-01 改为绝对遮
   // 大事件数会话：events 数组直接构造(模拟大会话,绕过 surface 窗口化)
   function hugeSession(nodeCount, eventCount) {
     const s = bigSession(nodeCount)
-    // 填充到 eventCount(往 events 里塞非 surface 事件,如 chunk)
-    while (s.events.length < eventCount) {
+    // 填充到 eventCount(往 log 里塞非 surface 事件,如 chunk)
+    while (sessionEvents(s).length < eventCount) {
       s.appendRaw({ type: 'assistant/chunk', data: { turn: 999, step: 0, text: 'x' } })
     }
     return s
@@ -109,7 +110,7 @@ describe('快照点守卫（2026-08-31 问题修复；2026-09-01 改为绝对遮
   it('host-core 全链路:edit 用轮内遮蔽(round),编辑早期消息也只遮蔽 1 轮 → 不触发守卫', async () => {
     // 60 surface 节点 + 2000+ chunk = 大会话;编辑 u0 → roundSpanFrom 只遮蔽 u0 轮
     const session = hugeSession(60, 2200)
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async (s, envelope) => {
       const share = rollbackShareOf(s, envelope)
@@ -124,8 +125,8 @@ describe('快照点守卫（2026-08-31 问题修复；2026-09-01 改为绝对遮
     expect(result.ok).toBe(true) // round 遮蔽(1 轮)→ 不触发守卫
     // marker 写入,遮蔽的是 u0 轮(2 个节点)
     let marker = null
-    for (let i = session.events.length - 1; i >= 0; i--) {
-      const e = session.events[i]
+    for (let i = sessionEvents(session).length - 1; i >= 0; i--) {
+      const e = eventAt(session, i)
       if (e.type === 'user/message' && e.surfaceOp?.op === 'replace') { marker = e; break }
     }
     expect(marker).toBeTruthy()
@@ -135,7 +136,7 @@ describe('快照点守卫（2026-08-31 问题修复；2026-09-01 改为绝对遮
 
   it('host-core 全链路:fromScratch 遮蔽到尾部 → 触发 rollback-guide,事件零写入', async () => {
     const session = hugeSession(60, 2200)
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async (s, envelope) => {
       const share = rollbackShareOf(s, envelope)
@@ -149,7 +150,7 @@ describe('快照点守卫（2026-08-31 问题修复；2026-09-01 改为绝对遮
     const result = await api.editAndResend({ sessionId: 's1', messageId: 'u0', text: 'edited', fromScratch: true })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('rollback-guide')
-    expect(session.events.length).toBe(before) // 零写入
+    expect(sessionEvents(session).length).toBe(before) // 零写入
   })
 
   it('host-core 全链路:小范围 recall(撤 1 轮)→ 照常通过', async () => {
@@ -161,13 +162,13 @@ describe('快照点守卫（2026-08-31 问题修复；2026-09-01 改为绝对遮
       userMessage('u3', 'more'),
       assistantMessage('a3', 'done'),
     )
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = vi.fn(async () => ({ t1Ok: true }))
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'u3' })
     expect(result.ok).toBe(true)
-    expect(session.events.length).toBe(before + 2) // 两段结构：审计段 + 载体段(无 turn/step 信封)
+    expect(sessionEvents(session).length).toBe(before + 2) // 两段结构：审计段 + 载体段(无 turn/step 信封)
   })
 
   it('restore(rollback 回档)豁免:即使遮蔽巨大也不拦(问题 A 修复)', async () => {
@@ -201,7 +202,20 @@ describe('createMarkerGuard (fake prewriter)', () => {
     const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
     const guard = createMarkerGuard({ prewriterFactory: factory })
     await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toEqual({ t1Ok: true })
-    expect(factory).toHaveBeenCalledWith({ events: [] })
+    // 2026-09-14：显式传 header（版本单一真相）；缺 header 时由契约按形状推断。
+    expect(factory).toHaveBeenCalledWith({ events: [], header: null })
+  })
+
+  it('把会话 header 传给契约（dsh-log-contract ≥0.3.13 的格式版本单一真相）', async () => {
+    // 只传 events 时 0.3.13 会按事件形状推断版本：一份没有 system/message、也没有任何
+    // replace 的 v3 日志只会推出 2（assistant/attempt 在 v2/v3 都有）⇒ 我们写的现代
+    // {op:'replace',startSeq,endSeq} 会被判 S4/S8 拒写。传 header 即在本次调用内固定版本。
+    const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
+    const guard = createMarkerGuard({ prewriterFactory: factory })
+    const header = { version: 3, id: 's1', createdAt: 1, isSeeded: false }
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [], header }, validEnvelope()))
+      .resolves.toEqual({ t1Ok: true })
+    expect(factory).toHaveBeenCalledWith({ events: [], header })
   })
 
   it('throws marker-rejected on error-level violations', async () => {
@@ -286,7 +300,7 @@ describe('host-core hooks.validateMarker', () => {
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
-    // 两阶段:pre 阶段(审计段未落盘,只有被遮蔽段)+ post 阶段(真 seq,含审计引导项)
+    // 两阶段:pre(业务闸)+ pair(计划中的两段:审计按预期 seq 合成 + 载体一起校验)
     expect(validateMarker).toHaveBeenCalledTimes(2)
     const [calledSession, preEnvelope, preExtra] = validateMarker.mock.calls[0]
     expect(calledSession).toBe(session)
@@ -294,14 +308,18 @@ describe('host-core hooks.validateMarker', () => {
     expect(preEnvelope.type).toBe('user/message')
     expect(preEnvelope.surfaceOp).toEqual({ op: 'replace', start: 0, end: 1 })
     expect(preEnvelope.sourceEventSeqs).toEqual([0, 1])
-    const [, postEnvelope, postExtra] = validateMarker.mock.calls[1]
-    expect(postExtra?.phase).toBe('post')
-    expect(postEnvelope.sourceEventSeqs).toEqual([2, 0, 1]) // 首元素 = 审计段 seq
+    const [, pairEnvelope, pairExtra] = validateMarker.mock.calls[1]
+    expect(pairExtra?.phase).toBe('pair')
+    expect(pairEnvelope.sourceEventSeqs).toEqual([2, 0, 1]) // 首元素 = 审计段 seq(预期值 == 真实值)
+    expect(pairExtra?.auditSeq).toBe(2)
+    expect(pairExtra?.audit?.shadowedSeqs).toEqual([0, 1])
+    // 校验全部发生在写入之前;写完后审计段确实落在 seq 2(两段成对)
+    expect(eventAt(session, 2)?.type).toBe('compaction/prune')
   })
 
   it('aborts the write when the hook rejects (nothing appended)', async () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
-    const before = session.events.length
+    const before = sessionEvents(session).length
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const validateMarker = async () => {
       const error = new Error('Marker write rejected by contract guard')
@@ -312,7 +330,7 @@ describe('host-core hooks.validateMarker', () => {
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(false)
     expect(result.error.code).toBe('marker-rejected')
-    expect(session.events.length).toBe(before) // nothing was committed
+    expect(sessionEvents(session).length).toBe(before) // nothing was committed
   })
 
   it('skips the hook when none is provided (dynamic-plugin path)', async () => {
@@ -345,7 +363,7 @@ describe('T1 折叠自检作废 + 钩子两阶段（载体改造后）', () => {
     expect(result.value.markerT1Broken).toBeUndefined()
   })
 
-  it('钩子两阶段:pre(落盘前,仅业务闸) + post(审计段已落盘,完整契约校验)', async () => {
+  it('钩子两阶段:pre(落盘前,仅业务闸) + pair(计划中的两段,完整契约校验;仍在写之前)', async () => {
     const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'))
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const phases = []
@@ -353,9 +371,10 @@ describe('T1 折叠自检作废 + 钩子两阶段（载体改造后）', () => {
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
-    expect(phases).toEqual(['pre', 'post'])
-    // post 阶段拿到的是真 seq(审计段已在 events 里)
-    const postEnvelope = validateMarker.mock.calls[1][1]
-    expect(postEnvelope.sourceEventSeqs[0]).toBe(session.events[2].seq)
+    expect(phases).toEqual(['pre', 'pair'])
+    // pair 阶段拿到的首元素 = 审计段 seq(载荷把计划中的审计段按同一 seq 合成进事件表,
+    // 故完整契约校验在**任何 append 之前**就能跑 —— 的核心整改)
+    const pairEnvelope = validateMarker.mock.calls[1][1]
+    expect(pairEnvelope.sourceEventSeqs[0]).toBe(eventAt(session, 2).seq)
   })
 })

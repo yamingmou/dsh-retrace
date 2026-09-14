@@ -2,13 +2,14 @@
  * Test helpers — a fake DSH Session/Sessions/Agents shaped like the real
  * runtime objects that `lib/host-core.js` consumes.
  *
- * The host core only reads `session.events` / `session.surface.nodes`, calls
+ * The host core only reads `sessionEvents(session)` / `session.surface.nodes`, calls
  * `session.append(...)` and `sessions.flush(...)`, and queries
  * `agents.get(sessionId).status` / `.followup(...)`. This helper mirrors the
  * append-only log plus a shadow-able surface so the three editor ops can be
  * unit-tested without the real runtime.
  */
 import { vi } from 'vitest'
+import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createEditorApi } from '../lib/host-core.js'
 import { createDshMarkerWriter, carrierContentOf } from '../lib/adapter/dsh-writer.js'
 import { isCarrierMarkerEvent } from '../lib/marker-carrier.js'
@@ -96,14 +97,35 @@ const LOG_ONLY_TYPES = new Set(['request/header', 'compaction/prune', 'compactio
  * event is a surface node. `append` additionally applies `surfaceOp.replace`
  * by dropping the shadowed span from the surface (the replacement carrier
  * becomes the new tail node).
+ *
+ * HOST GENERATION (2026-09-14, independent-review MEDIUM-3/4): the DEFAULT is
+ * the real production shape — DSH Desktop 2.0.9's `Session` exposes
+ * `snapshotEvents()` / `eventAt(seq)` and has **no `events` member at all**.
+ * The legacy array is an EXPLICIT override (`makeSession({ host: 'legacy' })`).
+ * Rationale: while the fake carried only `events`, the whole suite silently
+ * exercised the legacy branch, and a "guarded" regression such as
+ * `Array.isArray(session?.events) ? session.events : []` passed 38/38 — i.e.
+ * it could ship "recall/edit is dead" with a fully green suite.
+ *
+ * Members mirrored from the measured host class (audit table report.md §2.1):
+ * `id`, `header`, `seq`, `surface(.nodes)`, `append`, `snapshotEvents`,
+ * `eventAt`. Test-only additions: `seed` / `appendRaw` / `dropAt`.
+ *
+ * @param {{host?: 'new'|'legacy'}} [options]
  */
-export function makeSession() {
+export function makeSession({ host = 'new' } = {}) {
   const events = []
   const surface = { nodes: [] }
   const session = {
     id: 's1',
-    events,
+    // production header shape (cwd omitted ⇒ undefined, like a session created
+    // without meta.cwd; exercises the `session.header?.cwd` reads in lib/).
+    header: { version: 3, id: 's1', createdAt: 0, isSeeded: false },
     surface,
+    /** Production: `get seq() { return this.log.length }`. */
+    get seq() { return events.length },
+    /** Test-only: drop one slot, simulating a partial/windowed view (a hole). */
+    dropAt(seq) { delete events[seq] },
     seed(...descriptors) {
       for (const event of descriptors) this.appendRaw(event)
       return this
@@ -132,7 +154,20 @@ export function makeSession() {
       return record
     },
   }
+  if (host === 'legacy') {
+    // Explicit old-host override: the plain log array only (no new API).
+    session.events = events
+  } else {
+    // Production shape: cached immutable snapshot + O(1) single-seq accessor.
+    session.snapshotEvents = () => Object.freeze(events.slice())
+    session.eventAt = (seq) => events[seq]
+  }
   return session
+}
+
+/** Explicit legacy-generation fake (readability alias for host tests). */
+export function makeLegacySession() {
+  return makeSession({ host: 'legacy' })
 }
 
 /**
@@ -186,7 +221,7 @@ export function fakeCarrierWriter({ onWrite } = {}) {
 
 /** 最近一次写入的遮蔽载体(两段结构的第 2 段)。 */
 export function lastCarrierMarker(session) {
-  const events = Array.isArray(session?.events) ? session.events : []
+  const events = sessionEvents(session)
   for (let i = events.length - 1; i >= 0; i--) {
     if (isCarrierMarkerEvent(events[i])) return events[i]
   }
