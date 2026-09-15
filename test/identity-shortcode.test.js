@@ -90,8 +90,10 @@ describe('短码规则(长度/字符集/构成)', () => {
     // 机器无关:用当前 home 的编码前缀构造输入(函数按 os.homedir() 剥前缀)
     const homeEnc = homedir().replace(/\//g, '-').replace(/^-+/, '').replace(/-+$/, '')
     expect(workspaceAbbr(`--${homeEnc}-projects--`)).toBe('pr')
-    expect(workspaceAbbr(`--${homeEnc}-Demo-alpha--`)).toBe('dx')
-    expect(workspaceAbbr(`--${homeEnc}-Sample-beta--`)).toBe('wo')
+    // 2026-09-15 隐私审计:此前这里用了**真实工作区名**(`Downloads-xiu` / `WorkBuddy-offerkuai`,
+    // 其中 `xiu` 疑似人名片段)⇒ 换成合成名。断言口径不变(仍是"取前两段首字母")。
+    expect(workspaceAbbr(`--${homeEnc}-Demo-alpha--`)).toBe('da')
+    expect(workspaceAbbr(`--${homeEnc}-Sample-beta--`)).toBe('sb')
     // 不在 home 下的路径走平台前缀分支(平台前缀:Volumes/…)
     expect(workspaceAbbr('--Volumes-Data-project--')).toBe('dp')
   })
