@@ -20,8 +20,15 @@ DeepSeek Harness.
 deserves. But rewinding is not just "delete a message": DeepSeek Harness stores
 conversations in an append-only event log, so a recall only rewinds the context
 while changed **artifact files stay changed**. dsh-retrace versions the
-conversation **and its artifacts** together, and guarantees **every rewind is
-legal — never dirtying the log, never breaking /compact**.
+conversation **and its artifacts** together, and keeps **every new rewind legal** —
+it cannot dirty the log, and new markers create **no token-meter pairing debt**
+(two-segment atomic pairs land by construction).
+
+> ⚠️ **Honest scope (matches the companion contract's own note)**: sessions that
+> already contain **legacy single-segment markers** — written by older versions —
+> are **known design debt**. Before `/compact`, run the companion `check` and
+> clean them up (`fix --remove-markers`); otherwise the host's own T1 self-check
+> blocks compaction. New rewinds do not add to that debt.
 
 > 🛡️ **Write safety** · 🔍 **Deep offline checks** · 🔄 **Detect → repair → guard** — see below.
 
@@ -54,7 +61,7 @@ Full steps in [📦 Installation](#-installation).
 
 | | Capability | What it means |
 |---|---|---|
-| 🛡️ | **Write safety** | Every rewind passes a three-layer pre-write contract guard; running agents are auto-stopped (official `cancel`/`whenIdle`); turn-interval markers are wrapped in a temporary step — **rewinds never dirty the log, /compact never breaks** |
+| 🛡️ | **Write safety** | Every rewind passes a three-layer pre-write contract guard; running agents are auto-stopped (official `cancel`/`whenIdle`); turn-interval markers are wrapped in a temporary step — **new rewinds cannot dirty the log and add no token-meter pairing debt**; **legacy single-segment markers are known debt** (run the companion `check` + `fix --remove-markers` before `/compact`) |
 | 🔍 | **Deep offline checks** | Companion `dsh-log-contract` ships 30+ contract rules (token-meter pairing / cross-step references / physical order / inbox replay), validated against real corrupted-session fixtures — it finds the class of problem that makes /compact permanently fail |
 | 🔄 | **Detect → repair → guard** | A watchdog snapshots the log at the first sign of concurrent writes; offline `fix` neutralizes problem markers and clips cross-step references in place; pre-write validation stops bad events before they land |
 
@@ -417,7 +424,8 @@ the **host surface**, not by semver alone.
 
 - Recall / edit-and-resend / regenerate, each written through a three-layer
   **pre-write contract guard** and a safe-edit path (auto-stop the agent, temp-step
-  markers) — rewinds never corrupt the log or break `/compact`.
+  markers) — new rewinds do not corrupt the log and add no `/compact` debt;
+  **legacy single-segment markers** remain known debt (see the honest note above).
 - In-session **version timeline** + **artifact rollback** (git-first, snapshot
   fallback, dry-run preview, jump-to-conversation).
 - **Fork map + session lineage** in the conversation view.
