@@ -449,9 +449,10 @@ the **host surface**, not by semver alone.
 
 > Command surface: `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP).
 
-**What's next** — see the [public roadmap](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md) for the agent
-business-layer plan (runtime guard, interruption governance, ecosystem-facing
-interfaces). This README only describes what is already shipped.
+**What's next** — the agent business-layer plan (runtime guard, interruption
+governance, ecosystem-facing interfaces) is **not published yet**: it is a plan,
+not a shipped capability. This README describes the **development line (main)**,
+which may run ahead of the latest npm release.
 
 ---
 
@@ -499,9 +500,9 @@ and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 
 Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin).
 
-Part of the **Agent business layer (production-grade guarantees)** — see the
-[public roadmap](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md) for the framework-agnostic layer and how
-dsh-retrace is its DeepSeek Harness implementation. Companion components:
+Part of the **Agent business layer (production-grade guarantees)** — the
+framework-agnostic layer that dsh-retrace implements on DeepSeek Harness.
+Companion components:
 
 - [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) — the
   business layer's "doctor": 30+ offline contract rules + in-place repair

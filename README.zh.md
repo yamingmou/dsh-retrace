@@ -332,7 +332,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.26
 > 桌面说明：Electron 宿主退出时销毁窗口，页面 `beforeunload` 不会触发，宿主也未暴露
 > 插件可用的退出否决点——桌面侧由运行中横幅 + dispose 提示覆盖；Web 端拦截完整生效。
 
-**未来计划**——见 [公开路线图](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md)（agent 业务层规划：运行时守护、中断治理、生态开放接口）。本 README 只描述已上线的能力。
+**未来计划**——agent 业务层规划（运行时守护、中断治理、生态开放接口）**尚未发布**，此节是**计划**而非已上线能力。本 README 描述的是**开发线（main）**，可能领先于 npm 上最新发布版。
 
 ---
 
@@ -379,8 +379,8 @@ npm pack --dry-run    # 校验发布文件清单
 
 收录于 [dsh-plugin topic](https://github.com/topics/dsh-plugin)。
 
-**Agent 业务层（生产级保证）** 的一部分——见 [公开路线图](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md)
-（框架无关的业务层定义，dsh-retrace 是它在 DeepSeek Harness 上的实现）。配套组件：
+**Agent 业务层（生产级保证）** 的一部分——即 dsh-retrace 在 DeepSeek Harness 上实现的
+那层框架无关的业务层定义。配套组件：
 
 - [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) —— 业务层的
   「医生」：30+ 条离线契约规则 + 原地修复（`fix --neutralize` / `--clip-crossstep`）。
