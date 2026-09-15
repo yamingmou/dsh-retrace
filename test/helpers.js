@@ -98,7 +98,7 @@ const LOG_ONLY_TYPES = new Set(['request/header', 'compaction/prune', 'compactio
  * by dropping the shadowed span from the surface (the replacement carrier
  * becomes the new tail node).
  *
- * HOST GENERATION (2026-09-14, review): the DEFAULT is
+ * HOST GENERATION (2026-09-14, independent-review MEDIUM-3/4): the DEFAULT is
  * the real production shape — DSH Desktop 2.0.9's `Session` exposes
  * `snapshotEvents()` / `eventAt(seq)` and has **no `events` member at all**.
  * The legacy array is an EXPLICIT override (`makeSession({ host: 'legacy' })`).

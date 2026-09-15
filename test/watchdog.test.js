@@ -17,7 +17,7 @@ import { createWatchdog } from '../lib/watchdog.js'
  * Production new-host session (DSH Desktop 2.0.9): only `snapshotEvents()` /
  * `eventAt()` — NO `events` member. The watchdog's `memoryLengthFor` reads the
  * in-memory session length through the host-compat accessor, so the default
- * fixture must be the real shape (review).
+ * fixture must be the real shape (independent-review MEDIUM-3).
  */
 function newHostSession(id, length) {
   const log = new Array(length)

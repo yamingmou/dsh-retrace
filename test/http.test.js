@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterAll } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { DEFAULT_CONFIG, parseRetraceConfig, ROUTE_PREFIX, createRetraceHttpHandler } from '../lib/http.js'
 
@@ -136,6 +139,81 @@ function get(handler, url) {
     poll()
   })
 }
+
+describe('GET /summaries — 读档点内容(实机修复 2026-09-15)', () => {
+  const roots = []
+  const freshRoot = () => {
+    const root = mkdtempSync(join(tmpdir(), 'retrace-http-summaries-'))
+    roots.push(root)
+    return root
+  }
+  afterAll(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  it('无存储记录 ⇒ 从日志反推的记录进响应,并带 derived / hostReplacementCount', async () => {
+    const root = freshRoot()
+    const seam = makeSeam()
+    seam.configFor = vi.fn(() => ({ summary: false }))
+    seam.storeRoot = vi.fn(() => root)
+    const derivedRecord = {
+      boundarySeq: 5,
+      versionId: 'v5',
+      derived: true,
+      what: { op: 'edit', at: 1, new: { excerpt: '' }, replaced: [{ seq: 0, role: 'user', excerpt: '被丢弃的原文' }], replacedMore: 2 },
+      discardedSeqs: [],
+      discardedCount: 3,
+    }
+    seam.boundariesFor = vi.fn(() => ({ records: [derivedRecord], derived: 1, hostReplacementCount: 27 }))
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const res = await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)
+    const body = JSON.parse(res.body)
+    expect(body.ok).toBe(true)
+    expect(seam.boundariesFor).toHaveBeenCalledWith('s1', [])
+    expect(body.value.derived).toBe(1)
+    expect(body.value.hostReplacementCount).toBe(27)
+    expect(body.value.records).toHaveLength(1)
+    expect(body.value.records[0].what.replaced[0].excerpt).toBe('被丢弃的原文')
+    // 有 discardedSeqs ⇒ 轮廓树也从这些记录里建出来
+    expect(body.value.tree).toBeDefined()
+    expect(body.value.tree['5']).toMatchObject({ parent: null, children: [] })
+  })
+
+  it('有存储记录 ⇒ 原样交给 seam(存储优先),?boundarySeq= 只挑那一档', async () => {
+    const root = freshRoot()
+    mkdirSync(join(root, 'summaries'), { recursive: true })
+    const storedA = { boundarySeq: 5, versionId: 'v5', what: { op: 'edit', new: { excerpt: '' }, replaced: [{ seq: 0, role: 'user', excerpt: '存储侧原文' }] }, called: true, summary: '存储侧摘要', discardedSeqs: [], discardedCount: 1 }
+    const storedB = { boundarySeq: 9, versionId: 'v9', what: { op: 'recall', new: { excerpt: '' }, replaced: [] }, called: false, discardedSeqs: [], discardedCount: 0 }
+    writeFileSync(join(root, 'summaries', 's1.jsonl'), `${JSON.stringify(storedA)}\n${JSON.stringify(storedB)}\n`)
+    const seam = makeSeam()
+    seam.configFor = vi.fn(() => ({ summary: true }))
+    seam.storeRoot = vi.fn(() => root)
+    seam.boundariesFor = vi.fn((_sessionId, stored) => ({ records: stored, derived: 0, hostReplacementCount: 3 }))
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const all = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)).body)
+    expect(seam.boundariesFor).toHaveBeenCalledWith('s1', [storedA, storedB])
+    expect(all.value.enabled).toBe(true)
+    expect(all.value.hostReplacementCount).toBe(3)
+    expect(all.value.records.map((r) => r.boundarySeq).sort()).toEqual([5, 9])
+    expect(all.value.records.find((r) => r.boundarySeq === 5).summary).toBe('存储侧摘要')
+    const one = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1&boundarySeq=5`)).body)
+    expect(one.value.records.map((r) => r.boundarySeq)).toEqual([5])
+    expect(one.value.derived).toBe(0)
+  })
+
+  it('seam 没有 boundariesFor(旧组合)⇒ 仍然只回存储记录,不抛', async () => {
+    const root = freshRoot()
+    const seam = makeSeam()
+    seam.configFor = vi.fn(() => ({ summary: false }))
+    seam.storeRoot = vi.fn(() => root)
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const body = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)).body)
+    expect(body.ok).toBe(true)
+    expect(body.value.records).toEqual([])
+    expect(body.value.derived).toBe(0)
+    expect(body.value.hostReplacementCount).toBe(0)
+  })
+})
 
 describe('P1 HTTP routes', () => {
   it('GET /git/status proxies the seam', async () => {
