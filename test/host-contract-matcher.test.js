@@ -16,7 +16,7 @@
  *     Object.assign, `.prototype.m`, __defineGetter__, __decorate, computed keys);
  *   - `scopedSlice` / `entrySlice`: the structural slicing the gate relies on.
  * Known escapes that are deliberately NOT chased are listed in
- * the host-contract drift review (review #3), see
+ * the host-contract drift review (independent review #3), see
  * §2.2 (E8 `@dec m = …` same line / E9 `declare m:` / E10 comment between name
  * and `=` / E11 newline before `=`) — do not assume completeness.
  *

@@ -227,14 +227,19 @@ describe('client source guard: slot props are declared by the host contract', ()
     for (const { seat, key, component } of REGISTERED_COMPONENTS) {
       expect(source).toContain(`name: '${seat}'`)
       if (key !== null) expect(source).toContain(`key: '${key}'`)
-      // the component is the second argument of that registration form
-      expect(source).toContain(`}, ${component})`)
+      // The component is the second argument of that registration form — since
+      // 2026-09-15 every surface is wrapped in the shared panel error boundary,
+      // so accept either the bare or the wrapped form (the surface must still be
+      // the one registered; that is what this guard protects).
+      const bare = `}, ${component})`
+      const wrapped = `}, withPanelBoundary(${component}, `
+      expect(source.includes(bare) || source.includes(wrapped), `${component} must be the registered component`).toBe(true)
     }
   })
 })
 
 // ---------------------------------------------------------------------------
-// §8.1 correction (2026-09-14 review): "the host has no `chat`
+// §8.1 correction (2026-09-14 independent review): "the host has no `chat`
 // path" was concluded from a scan for the LITERAL `snapshot.chat` (0 hits) —
 // which missed the live survivor `store.getSnapshot()?.chat?.nodes`
 // (lib/client.js:1391/1405/1407 before this fix). The scan below enumerates
@@ -353,7 +358,8 @@ describe('client source guard: the checkpoint view explains itself', () => {
   })
 
   it('the view wires the concept sentence and the row wires the why line', () => {
-    expect(functionSlice(source, 'RetraceView'), 'RetraceView must render the concept sentence').toContain("t('timeline.intro')")
+    // 页首说明现在带次数（{count}）⇒ 断言到 key 为止
+    expect(functionSlice(source, 'RetraceView'), 'RetraceView must render the concept sentence').toContain("t('timeline.intro'")
     expect(functionSlice(source, 'VersionRow'), 'VersionRow must explain why when there is no marker text').toContain('whyLabel(')
   })
 })
@@ -379,7 +385,7 @@ describe('client source guard: checkpoints copy + summary switch + digest render
   it('the checkpoint tab name and concept sentence are the approved wording', () => {
     expect(zh['timeline.title']).toBe('读档点')
     expect(zh['view.retrace']).toBe('读档点')
-    expect(zh['timeline.intro']).toBe('每次撤回、编辑、重新生成前自动存一档，可回到任一档。')
+    expect(zh['timeline.intro']).toBe('这里是你会话的改动记录：每次撤回 / 编辑 / 重新生成前，原来的内容都会存一档（共 {count} 次）。点任一条可展开看当时的原话。')
   })
 
   it('the retired fork view and its data channel are gone', () => {
@@ -400,13 +406,15 @@ describe('client source guard: checkpoints copy + summary switch + digest render
   })
 
   it('the row wires the digest quote / summary / colour classes', () => {
-    const body = functionSlice(source, 'whatBody')
+    // 2026-09-15: the digest LINES moved into whatLineElement (compact row +
+    // detail block share one line model), so the colour classes live there.
+    const body = functionSlice(source, 'whatLineElement')
     expect(body).toContain('dsh-rt-what-quote')
     expect(body).toContain('dsh-rt-what-summary')
     expect(body).toContain('dsh-rt-what-new')
     expect(body).toContain('dsh-rt-what-old')
     const version = functionSlice(source, 'VersionRow')
-    expect(version).toContain('whatBody(')
+    expect(version).toContain('whatLineElement(')
     expect(version, 'the artifact line must come from the digest, not a raw 0/0/0 count').toContain('artifactsLabel(')
     // the digest read is a single pure-read fetch merged by boundarySeq
     expect(functionSlice(source, 'fetchBoundaryDigests')).toContain('/summaries?sessionId=')

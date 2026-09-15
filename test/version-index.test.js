@@ -411,6 +411,24 @@ describe('viewVersionIndex', () => {
   })
 
   it('is empty for a fresh state', () => {
-    expect(viewVersionIndex(createVersionIndexState())).toEqual({ versions: [] })
+    expect(viewVersionIndex(createVersionIndexState())).toEqual({ versions: [], hostReplacementCount: 0 })
+  })
+
+  it('视图里过滤掉宿主自身的 surface 替换,并如实计数(kind=replace)', () => {
+    // #1 我们的 edit 载体；#2 宿主把一条 tool 结果原地换掉(普通 UUID id)。
+    const hostReplace = {
+      seq: 2,
+      type: 'tool/result',
+      time: 3,
+      surfaceOp: { op: 'replace', startSeq: 0, endSeq: 0 },
+      sourceEventSeqs: [0],
+      data: { id: 'host-surface-replacement-1', turn: 0, step: 0, message: { role: 'tool', content: [] } },
+    }
+    const state = fold([userMessage(0), toolResult(1), editorMarker(2, { start: 0, end: 1, op: 'edit' }), hostReplace])
+    // 两档都在原始 fold state 里(写侧的 artifactCountsOf/boundarySeqsOf 依赖它)
+    expect(state.versions.map((v) => v.kind)).toEqual(['edit', 'replace'])
+    const view = viewVersionIndex(state)
+    expect(view.versions.map((v) => v.kind)).toEqual(['edit'])
+    expect(view.hostReplacementCount).toBe(1)
   })
 })

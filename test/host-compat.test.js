@@ -161,12 +161,12 @@ describe('message-id lookup (findMessageSeq) on both host generations', () => {
 })
 
 /**
- *  (review): returning [] WITHOUT a diagnostic turns the
+ * MEDIUM-1/2 (independent review): returning [] WITHOUT a diagnostic turns the
  * next host-API drift into an empty log — the exact shape of the incident.
  * These tests assert the *diagnostics*, not just the return values, and that
  * distinct broken shapes produce distinct, shape-fingerprinted lines.
  */
-describe('host-compat diagnostics: silent [] is a bug ()', () => {
+describe('host-compat diagnostics: silent [] is a bug (MEDIUM-1/2)', () => {
   const capture = () => {
     const lines = []
     const spy = vi.spyOn(console, 'error').mockImplementation((line) => lines.push(String(line)))

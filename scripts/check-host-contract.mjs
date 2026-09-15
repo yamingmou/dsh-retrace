@@ -249,7 +249,7 @@ const DSH_FS = '/node_modules/@deepseek-ai/dsh-fs/lib/index.js'
 const DSH_SUBPROCESS = '/node_modules/@deepseek-ai/dsh-subprocess/lib/index.js'
 const DSH_JOBS = '/node_modules/@deepseek-ai/dsh-jobs/lib/index.js'
 // Client-side Session controller + its service (the class the plugin's
-// `ctx.get('sessions').binding(id).session` returns; review /).
+// `ctx.get('sessions').binding(id).session` returns; review HIGH-1/HIGH-2).
 const API_SESSION = '/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/session.js'
 const API_SESSIONS_SERVICE = '/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js'
 const CLIENT_LOCALE_PKG = '/node_modules/@deepseek-ai/dsh-client-locale/package.json'
@@ -303,7 +303,7 @@ const CHECKS = [
   { kind: 'present', id: 'sessions.flush', file: SESSION, re: /async flush\(session\)\s*\{/, what: 'SessionStore.flush(session)', usedBy: 'lib/host-core.js:412, lib/rollback.js:283' },
   // reverse: measured hosts (0.1.0-rc.7 and 0.1.5-rc.1) have no values()/keys().
   // The plugin keeps them as DEFENSIVE old-host fallbacks; these assertions record
-  // that neither is the contract of a measured host (review A3/A4//).
+  // that neither is the contract of a measured host (review A3/A4/LOW-2/LOW-3).
   { kind: 'absent', id: 'sessions.values (never existed)', file: SESSION, scope: SESSION_STORE_CLASS, member: 'values', what: 'SessionStore.values() must NOT exist', usedBy: 'lib/index.js:387 dead fallback (list() is the enumerator)', hint: 'keep the fallback for unmeasured hosts, but do not treat it as a live API' },
   { kind: 'absent', id: 'sessions.keys (never existed)', file: SESSION, scope: SESSION_STORE_CLASS, member: 'keys', what: 'SessionStore.keys() must NOT exist', usedBy: 'lib/host-compat.js:sessionIds defensive keys() fallback', hint: 'list() is the measured enumeration API; keys() is a defensive shape only' },
 
@@ -380,15 +380,15 @@ const CHECKS = [
   { kind: 'present', id: 'client.uiConversation.events.register', file: UI_CONVERSATION, re: /ConversationEventRegistry[\s\S]{0,500}?register\(definition\)/, what: 'uiConversation.events.register (official entry)', usedBy: 'lib/client.js:conversationRegistrar (.events.register first)' },
   { kind: 'present', id: 'client.useChat.nodes', file: UI_CHAT, re: /useChat\(\(s\) => s\.nodes\)/, what: 'useChat(s => s.nodes) official shape', usedBy: 'lib/client.js (node lookup; previous snapshot.chat.nodes drift)' },
 
-  // ── client-side Session CONTROLLER (review /) ─────────────────
+  // ── client-side Session CONTROLLER (review HIGH-1/HIGH-2) ─────────────────
   // `lib/client.js` reads `ctx.get('sessions').binding(id).session` and then
   // getSnapshot()/loadOlder/hasMore/rename. That whole object class was missing
-  // from the first audit table AND the first gate — the  break
+  // from the first audit table AND the first gate — the HIGH-1 break
   // (`getSnapshot()?.chat?.nodes`, always undefined) lived in exactly this gap.
   { kind: 'present', id: 'client.sessions.binding', file: API_SESSIONS_SERVICE, re: /^\s+binding\(id\)\s*\{/m, what: 'client sessions service binding(id)', usedBy: 'lib/client.js:2482,2495' },
   { kind: 'present', id: 'clientSession.getSnapshot', file: API_SESSION, re: /getSnapshot\(\)\s*\{/, what: 'client Session.getSnapshot()', usedBy: 'lib/client.js:1391,1405,1407' },
   { kind: 'present', id: 'clientSession.loadOlder', file: API_SESSION, re: /async loadOlder\(\)\s*\{/, what: 'client Session.loadOlder()', usedBy: 'lib/client.js pagination' },
-  { kind: 'present', id: 'clientSession.loadThrough', file: API_SESSION, re: /loadThrough\(seq\)\s*\{/, what: 'client Session.loadThrough(seq) (official jump loader)', usedBy: 'recommended replacement for the  jump path' },
+  { kind: 'present', id: 'clientSession.loadThrough', file: API_SESSION, re: /loadThrough\(seq\)\s*\{/, what: 'client Session.loadThrough(seq) (official jump loader)', usedBy: 'recommended replacement for the HIGH-1 jump path' },
   { kind: 'present', id: 'clientSession.hasMore', file: API_SESSION, re: /^\s+hasMore = false;/m, what: 'client Session.hasMore field', usedBy: 'lib/client.js:1400' },
   { kind: 'present', id: 'clientSession.rename', file: API_SESSION, re: /async rename\(title\)\s*\{/, what: 'client Session.rename(title)', usedBy: 'lib/client.js session rename' },
   { kind: 'present', id: 'clientSession.sessionId', file: API_SESSION, re: /^\s+sessionId;/m, what: 'client Session.sessionId field', usedBy: 'client session identity' },
@@ -402,9 +402,9 @@ const CHECKS = [
   { kind: 'present', id: 'client.conversationView.standardProps', file: CLIENT_RUNNER, entry: 'conversation.view', re: /standardProps: \[[\s\S]*?"useChat: UseChat"[\s\S]*?"useProjection: UseProjection"/, what: 'conversation.view standardProps contains useChat + useProjection', usedBy: 'lib/client.js view slot props (useChat / useProjection)' },
   // reverse: the controller has no getTitle/chat/nodes member — so
   // `store.getTitle(...)` is a dead branch and `getSnapshot()?.chat?` can never
-  // resolve on this host (). Recorded so a future rename is visible.
+  // resolve on this host (HIGH-1). Recorded so a future rename is visible.
   { kind: 'absent', id: 'clientSession.getTitle (never existed)', file: API_SESSION, member: 'getTitle', what: 'client Session.getTitle must NOT exist', usedBy: 'lib/client.js:1852,1924 dead branch (typeof-guarded)', hint: 'title comes from rename()/projection, not from the controller' },
-  { kind: 'absent', id: 'clientSession.chat (never existed)', file: API_SESSION, member: 'chat', what: 'client Session.chat must NOT exist', usedBy: ' was getSnapshot()?.chat?.nodes — undefined on this host', hint: '取节点用 store.loadThrough(seq) 或 slot 的 useChat(s=>s.nodes)' },
+  { kind: 'absent', id: 'clientSession.chat (never existed)', file: API_SESSION, member: 'chat', what: 'client Session.chat must NOT exist', usedBy: 'HIGH-1 was getSnapshot()?.chat?.nodes — undefined on this host', hint: '取节点用 store.loadThrough(seq) 或 slot 的 useChat(s=>s.nodes)' },
   { kind: 'absent', id: 'clientSession.nodes (never existed)', file: API_SESSION, member: 'nodes', what: 'client Session.nodes must NOT exist', usedBy: 'same as above', hint: '同 clientSession.chat' },
 
   // ── reverse assertions: removed members must stay removed ─────────────────

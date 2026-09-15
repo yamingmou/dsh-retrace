@@ -206,6 +206,54 @@ describe('runSummary — gate, call, cache, degrade', () => {
     expect(records[0].rule).toBe('R4')
   })
 
+  it('内容行也带精确 discardedCount(精简集不等于真值;树的计数靠它)', async () => {
+    const { llm, calls } = stubLlm()
+    const what = { op: 'edit', new: { excerpt: '' }, replaced: [{ seq: 1, role: 'user', excerpt: 'x' }], replacedMore: 9 }
+    // discardedSeqs 只存边界 seq(精简集),但真正被丢弃的是 10 条。
+    const record = await runSummary(args({ llm, summaryEnabled: false, what, discardedSeqs: [1], discardedCount: 10 }))
+    expect(record.quiet).toBeUndefined()
+    expect(record.called).toBe(false)
+    expect(record.discardedCount).toBe(10)
+    const { records } = await readSummaries(root, 'session-abc')
+    expect(records[0].discardedSeqs).toEqual([1])
+    // 少了它,outline 读端会退回精简集大小(1),「这次改动丢弃了 N 条消息」就会少报。
+    expect(records[0].discardedCount).toBe(10)
+    expect(calls.count).toBe(0)
+  })
+
+  it('轮次随记录一起存（内容行与安静行都存；取不到就不写这个字段）', async () => {
+    // 人读要求：不点开也知道"这是哪一轮"。轮次在操作时从日志读出后随记录存下，
+    // 读端（/summaries）就不再需要重读日志。
+    const { llm } = stubLlm()
+    const what = { op: 'edit', new: { excerpt: '' }, replaced: [{ seq: 1, role: 'user', excerpt: 'x' }] }
+    const content = await runSummary(args({ llm, summaryEnabled: false, what, turn: 159 }))
+    expect(content.turn).toBe(159)
+    const { records } = await readSummaries(root, 'session-abc')
+    expect(records[0].turn).toBe(159)
+    // 安静行（0/0/0 且闸门不通过）同样带上轮次
+    const quiet = await runSummary(args({
+      llm,
+      spanEvents: [user(1, '12'), assistant(2, '好')],
+      artifactCounts: { created: 0, modified: 0, deleted: 0 },
+      turn: 452,
+      boundarySeq: 43,
+    }))
+    expect(quiet.quiet).toBe(true)
+    expect(quiet.turn).toBe(452)
+    // 取不到（null / 0 / 非整数）⇒ 整个字段不写，读端就不会显示"第 ? 轮"
+    for (const bad of [null, undefined, 0, -1, 1.5, '159']) {
+      const record = await runSummary(args({ llm, summaryEnabled: false, what, turn: bad, boundarySeq: 44 }))
+      expect(record.turn).toBeUndefined()
+    }
+    const quietNoTurn = await runSummary(args({
+      llm,
+      spanEvents: [user(1, '12'), assistant(2, '好')],
+      artifactCounts: { created: 0, modified: 0, deleted: 0 },
+      boundarySeq: 45,
+    }))
+    expect(quietNoTurn.turn).toBeUndefined()
+  })
+
   it('treats UNKNOWN artifact counts as NON-quiet (unknown ≠ zero) and logs it', async () => {
     const { llm, calls } = stubLlm()
     const logs = []

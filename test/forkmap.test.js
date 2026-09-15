@@ -225,16 +225,20 @@ describe('渲染卡死回归（2026-08-30：窗口化列表 O(N²) indexOf）', 
     // 原 bug：visible.map(... top: nodes.indexOf(node) * ROW_H / list.indexOf(record) * ROW_H)
     // 2047 节点 × ~15 可见行 = 每次渲染 ~30K 次比较 → 转圈、Renderer CPU 27.7%
     expect(src).not.toMatch(/top:\s*(nodes|list)\.indexOf\(/)
-    // 修复后：带起始索引切片 + (visibleStart + i) * ROW_H
-    expect(src).toMatch(/visibleStart \+ i\) \* ROW_H/)
-    expect(src).toMatch(/const visibleStart = Math\.max\(0, Math\.floor\(scrollTop \/ ROW_H\) - 2\)/)
+    // 修复后：滚动偏移求可见起点（二分）＋ top 从前缀和数组按下标取。
+    // 2026-09-15：行高不再恒定（展开明细的行更高）⇒ 用 offsets 前缀和，
+    // 仍然只渲染可见行、不做逐行线性查找。
+    expect(src).toMatch(/top: offsets\[visibleStart \+ i\]/)
+    expect(src).toMatch(/const visibleStart = clampIndex\(visibleFrom\(rows, offsets, scrollTop\), rows\.length\)/)
+    expect(src).toMatch(/clampIndex\(visibleTo\(rows, offsets, scrollTop \+ 640\), rows\.length\)/)
+    expect(src).toMatch(/const offsets = new Array\(rows\.length\)/)
   })
 
   it('读档点视图沿用同一处窗口化修复（ForkView 已随第二 tab 删除）', () => {
     const fs = require('node:fs')
     const path = require('node:path')
     const src = fs.readFileSync(path.join(__dirname, '../lib/client.js'), 'utf8')
-    const occurrences = (src.match(/visibleStart \+ i\) \* ROW_H/g) ?? []).length
-    expect(occurrences).toBeGreaterThanOrEqual(1) // VersionRow（ForkView/ForkRow 已删）
+    const occurrences = (src.match(/offsets\[visibleStart \+ i\]/g) ?? []).length
+    expect(occurrences).toBeGreaterThanOrEqual(1) // 读档点视图（ForkView/ForkRow 已删）
   })
 })
