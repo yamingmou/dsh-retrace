@@ -1,5 +1,15 @@
 import { describe, it, expect, vi } from 'vitest'
-import { runningState, runningSessions, sessionRunningState, attachCloseGuard } from '../lib/close-guard.js'
+import {
+  runningState,
+  runningSessions,
+  sessionRunningState,
+  attachCloseGuard,
+  pageSurfaceOf,
+  quitVetoFor,
+  guardSurfaceOf,
+  desktopHostEvidence,
+  PAGE_SURFACE,
+} from '../lib/close-guard.js'
 import { resetHostCompatDiagnostics } from '../lib/host-compat.js'
 
 /** 合成 agent(官方形态:id/status/inbox)。 */
@@ -231,5 +241,63 @@ describe('close-guard 会话枚举:新宿主 list() / 旧宿主 keys()(P1 静默
     expect(spy).toHaveBeenCalledTimes(1)
     expect(String(spy.mock.calls[0][0])).toContain('neither list() nor keys()')
     spy.mockRestore()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 宿主承载面(2026-09-18 外部 issue #1:桌面端托盘退出死锁)
+//
+// 现场:托盘「退出」无反应、App 退不掉;关掉本插件的「退出确认」即恢复;网页端正常。
+// 事实:托盘退出走宿主 quit 路径、会触发页面 beforeunload;而 DSH Desktop 的
+// Electron 壳没有处理 will-prevent-unload(装好的 app.asar 全文 0 命中)⇒ 页面里的
+// preventDefault() 在桌面端既拦不住退出、也不给任何界面 ⇒ 静默卡死。
+// 结论:能不能武装原生 beforeunload 门 = **宿主承载面**的属性,由宿主判定下发。
+// ---------------------------------------------------------------------------
+describe('close-guard 宿主承载面(pageSurfaceOf / quitVetoFor / guardSurfaceOf)', () => {
+  it('请求带 Desktop renderer 能力头 → desktop-renderer / quitVeto=false', () => {
+    const headers = { 'x-dsh-desktop-renderer': 'a'.repeat(43) }
+    expect(pageSurfaceOf(headers, { desktopHost: false })).toBe(PAGE_SURFACE.DESKTOP_RENDERER)
+    expect(pageSurfaceOf(headers, { desktopHost: true })).toBe(PAGE_SURFACE.DESKTOP_RENDERER)
+    expect(quitVetoFor(PAGE_SURFACE.DESKTOP_RENDERER)).toBe(false)
+  })
+
+  it('无能力头 + 宿主看不出 Electron → browser / quitVeto=true(网页端行为不变)', () => {
+    expect(pageSurfaceOf({}, { desktopHost: false })).toBe(PAGE_SURFACE.BROWSER)
+    expect(pageSurfaceOf(undefined, { desktopHost: false })).toBe(PAGE_SURFACE.BROWSER)
+    expect(quitVetoFor(PAGE_SURFACE.BROWSER)).toBe(true)
+  })
+
+  it('无能力头 + 宿主看得出 Electron → unknown / quitVeto=null(中性态取安全侧)', () => {
+    expect(pageSurfaceOf({}, { desktopHost: true })).toBe(PAGE_SURFACE.UNKNOWN)
+    expect(pageSurfaceOf(undefined, { desktopHost: true })).toBe(PAGE_SURFACE.UNKNOWN)
+    expect(quitVetoFor(PAGE_SURFACE.UNKNOWN)).toBe(null)
+    expect(quitVetoFor(undefined)).toBe(null)
+    expect(quitVetoFor('随便一个没见过的值')).toBe(null)
+  })
+
+  it('头值形状容错:空串/空数组不算证据,非 Node 形状按大小写不敏感兜底', () => {
+    expect(pageSurfaceOf({ 'x-dsh-desktop-renderer': '' }, { desktopHost: false })).toBe(PAGE_SURFACE.BROWSER)
+    expect(pageSurfaceOf({ 'x-dsh-desktop-renderer': [] }, { desktopHost: false })).toBe(PAGE_SURFACE.BROWSER)
+    expect(pageSurfaceOf({ 'X-DSH-Desktop-Renderer': 'tok' }, { desktopHost: false })).toBe(PAGE_SURFACE.DESKTOP_RENDERER)
+    expect(pageSurfaceOf(null, { desktopHost: false })).toBe(PAGE_SURFACE.BROWSER)
+  })
+
+  it('desktopHostEvidence:桌面专属服务在场即算桌面宿主;无 get 的 ctx 不抛', () => {
+    expect(desktopHostEvidence({ get: (n) => (n === 'desktopRuntime' ? {} : undefined) })).toBe(true)
+    expect(desktopHostEvidence({ get: (n) => (n === 'desktopBrowserAccess' ? {} : undefined) })).toBe(true)
+    expect(desktopHostEvidence({ get: () => undefined })).toBe(false)
+    expect(desktopHostEvidence({})).toBe(false)
+    expect(desktopHostEvidence(undefined)).toBe(false)
+    // get 抛错(未 inject 的 Proxy 形态)按"没有"处理,不冒泡
+    expect(desktopHostEvidence({ get: () => { throw new Error('without inject') } })).toBe(false)
+  })
+
+  it('guardSurfaceOf 把两面拼成一个载荷片段(HTTP 与 wire 通道同源)', () => {
+    const desktopCtx = { get: (n) => (n === 'desktopRuntime' ? {} : undefined) }
+    expect(guardSurfaceOf(desktopCtx, { 'x-dsh-desktop-renderer': 'tok' }))
+      .toEqual({ surface: 'desktop-renderer', quitVeto: false })
+    expect(guardSurfaceOf(desktopCtx, undefined)).toEqual({ surface: 'unknown', quitVeto: null })
+    expect(guardSurfaceOf({ get: () => undefined }, {}))
+      .toEqual({ surface: 'browser', quitVeto: true })
   })
 })

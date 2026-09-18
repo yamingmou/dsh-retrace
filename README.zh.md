@@ -326,11 +326,16 @@ dsh plugin --profile desktop add dsh-retrace@0.4.26
 | 🛡️ | **运行中检测** | 逐会话扫描运行中工作：agent 正在跑 / inbox 排队 / 后台 jobs / 未闭合轮 |
 | 📋 | **运行中横幅** | 有运行中工作的会话显示页面常驻横幅（会话短码 + 原因），退出前可见 |
 | ⚠️ | **退出提示** | 插件 dispose（应用退出/重载）时中文提示列出每个运行中会话与原因——只提示，绝不代你取消 agent |
-| 🔒 | **页面关闭拦截（Web）** | `beforeunload` 拦截：有运行中任务强确认（明细模态，`[仍关闭]` 即确认离开），无任务轻确认 |
-| 🔎 | **查询面** | `retrace.runningState`（host RPC）+ `GET|POST /api/plugins/retrace/runningState`（HTTP），两入口同形状 |
+| 🔒 | **页面关闭拦截（普通浏览器）** | `beforeunload` 拦截，只在宿主回报会弹原生确认框的页面上武装：有运行中任务强确认（明细模态，`[仍关闭]` 即确认离开），无任务轻确认 |
+| 🔎 | **查询面** | `retrace.runningState`（host RPC）+ `GET|POST /api/plugins/retrace/runningState`（HTTP），两入口同形状；全会话形状另带宿主判定的承载面（`surface` / `quitVeto`） |
 
-> 桌面说明：Electron 宿主退出时销毁窗口，页面 `beforeunload` 不会触发，宿主也未暴露
-> 插件可用的退出否决点——桌面侧由运行中横幅 + dispose 提示覆盖；Web 端拦截完整生效。
+> 桌面说明：**退出入口随版本/平台而变**，而我们检查的 Electron 壳没有处理 `will-prevent-unload`
+> （装好的 2.0.9 `app.asar` 全文检索 0 命中）。**会走到该入口的那类版本**（外部报告所在的
+> DSH Desktop 0.9.0 / Windows）上，页面 `beforeunload` 否决被**静默吞掉**：不弹界面、不给
+> 反馈，表现为退出卡住（只能强退）；**不走该入口的版本**（我们检查的 2.0.9：托盘项走
+> `requestQuit(0) → window.destroy() → app.exit(0)`）上，退出本来就不受影响。页面里分不出
+> 自己属于哪一类，因此**桌面端一律不武装**原生门，保护由运行中横幅 + dispose 提示承担；
+> 只有宿主回报"这个页面会弹原生确认框"（`quitVeto: true`，即普通浏览器页）时才武装。
 
 **未来计划**——agent 业务层规划（运行时守护、中断治理、生态开放接口）**尚未发布**，此节是**计划**而非已上线能力。本 README 描述的是**开发线（main）**，可能领先于 npm 上最新发布版。
 

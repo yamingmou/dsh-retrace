@@ -66,7 +66,7 @@ function makeSeam() {
 /** A POST helper: the handler's body parser waits for 'data'/'end' events;
  * the fake req stores the data listener, delivers the JSON payload, then
  * fires 'end' on a macrotask (matching real socket timing). */
-function post(handler, url, payload) {
+function post(handler, url, payload, extraHeaders = {}) {
   const res = {
     status: 200,
     body: '',
@@ -83,7 +83,7 @@ function post(handler, url, payload) {
   const req = {
     method: 'POST',
     url,
-    headers: { 'x-retrace-config': '' },
+    headers: { 'x-retrace-config': '', ...extraHeaders },
     setEncoding() {},
     on(event, fn) {
       if (event === 'data') dataListener = fn
@@ -108,7 +108,7 @@ function post(handler, url, payload) {
   })
 }
 
-function get(handler, url) {
+function get(handler, url, extraHeaders = {}) {
   const res = {
     status: 200,
     body: '',
@@ -123,7 +123,7 @@ function get(handler, url) {
   const req = {
     method: 'GET',
     url,
-    headers: { 'x-retrace-config': '' },
+    headers: { 'x-retrace-config': '', ...extraHeaders },
     setEncoding() {},
     on() {},
   }
@@ -588,6 +588,56 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
     const handler = createRetraceHttpHandler({}, { sessions: { keys: () => sessions.keys(), get: (id) => sessions.get(id) }, agents: { get: (id) => agents.get(id) }, seam: makeSeam(), rollback: {}, log: () => {} })
     const res = await get(handler, `${ROUTE_PREFIX}/runningState`)
     expect(JSON.parse(res.body).value.running).toHaveLength(1)
+  })
+
+  // ── 宿主承载面(2026-09-18 外部 issue #1:桌面端托盘退出死锁)──────────────
+  // 宿主是唯一能判定"本页宿主是否承载 quit-veto"的一方:Desktop 主进程给 Electron
+  // renderer 的每个请求挂 `x-dsh-desktop-renderer`,普通浏览器页面没有这个头。
+  it('GET:无能力头且宿主不是桌面 → surface=browser / quitVeto=true(网页端照常武装)', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/runningState`)).body)
+    expect(parsed.value.surface).toBe('browser')
+    expect(parsed.value.quitVeto).toBe(true)
+  })
+
+  it('GET:带 Desktop renderer 能力头 → surface=desktop-renderer / quitVeto=false(桌面不武装)', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/runningState`, { 'x-dsh-desktop-renderer': 'a'.repeat(43) })).body)
+    expect(parsed.value.surface).toBe('desktop-renderer')
+    expect(parsed.value.quitVeto).toBe(false)
+    expect(parsed.value.running).toHaveLength(1) // 横幅数据照常下发,只有原生门被摘掉
+  })
+
+  it('POST:与 GET 同承载面判定(两入口不分叉)', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const desktop = JSON.parse((await post(handler, `${ROUTE_PREFIX}/runningState`, {}, { 'x-dsh-desktop-renderer': 'a'.repeat(43) })).body)
+    expect(desktop.value.surface).toBe('desktop-renderer')
+    expect(desktop.value.quitVeto).toBe(false)
+    const browser = JSON.parse((await post(handler, `${ROUTE_PREFIX}/runningState`, {})).body)
+    expect(browser.value.surface).toBe('browser')
+    expect(browser.value.quitVeto).toBe(true)
+  })
+
+  it('无能力头但宿主看得出 Electron(旧版桌面壳/兼容模式浏览器)→ surface=unknown / quitVeto=null', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    // 桌面专属服务在场 = 宿主带 Electron/桌面壳痕迹(不碰进程级判据)。
+    env.ctx.desktopRuntime = { version: 'x' }
+    const ctx = { ...env.ctx, get: (name) => env.ctx[name] }
+    const handler = createRetraceHttpHandler(ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/runningState`)).body)
+    expect(parsed.value.surface).toBe('unknown')
+    expect(parsed.value.quitVeto).toBe(null)
   })
 })
 
