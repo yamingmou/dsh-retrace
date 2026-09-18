@@ -17,8 +17,13 @@
 
 **撤回 / 编辑重发 / 重新生成** —— 每个会话都该有的三个操作。但回退不只是「撤掉一条
 消息」：DeepSeek Harness 把对话存在 append-only 事件日志里，撤回只回退上下文，改过的
-**产物文件不会自动还原**。dsh-retrace 把对话**和它的产物**一起版本化，并且保证
-**每次回退都合法、不弄脏日志、不破坏 /compact**。
+**产物文件不会自动还原**。dsh-retrace 把对话**和它的产物**一起版本化，并保证
+**每一次新的回退都合法**——不会弄脏日志，新写入的 marker **不产生 token-meter 配对债**
+（两段原子对按构造即通过）。
+
+> ⚠️ **诚实的边界（与配套契约自己的说明一致）**：**旧版本留下的单段 marker** 是
+> **已知设计债**。压缩前请用配套 `check` 体检并 `fix --remove-markers` 清理，否则宿主的
+> T1 自检会挡住 `/compact`。新的回退不会增加这笔债。
 
 > 🛡️ **写安全** · 🔍 **深层体检** · 🔄 **检测→修复→守护** —— 详见下方「生产级保证」。
 
@@ -51,7 +56,7 @@ dsh plugin --profile desktop add dshmarket    # 只需一次
 
 | | 能力 | 说明 |
 |---|---|---|
-| 🛡️ | **写安全** | 每次回退过三层写前契约校验；运行中的 agent 自动停止（官方 `cancel`/`whenIdle`）；轮次间 marker 用临时 step 包裹 —— **回退永不弄脏日志，/compact 永不失效** |
+| 🛡️ | **写安全** | 每次回退过三层写前契约校验；运行中的 agent 自动停止（官方 `cancel`/`whenIdle`）；轮次间 marker 用临时 step 包裹 —— **新的回退不会弄脏日志**，新 marker **不产生 token-meter 配对债**；**旧单段 marker 是已知设计债**（压缩前先 `check` + `fix --remove-markers`） |
 | 🔍 | **深层体检** | 配套 `dsh-log-contract` 30+ 条契约规则（token-meter 配对 / 跨 step 引用 / 物理序 / inbox 重放），用真实损坏会话当测试集 —— 能找出让 /compact 永久失效的那类问题 |
 | 🔄 | **检测→修复→守护** | 看门狗在并发写入第一时间快照日志；离线 `fix` 原地中和问题 marker、裁剪跨 step 引用；写前校验在坏事件落盘前拦住 |
 
@@ -309,7 +314,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.26
 
 **当前已具备（0.4.x）：**
 
-- 撤回 / 编辑重发 / 重新生成——每次回退都过**三层写前校验**与安全编辑路径（自动停 agent、临时 step 包裹 marker），**不会损坏日志、不会破坏 /compact**。
+- 撤回 / 编辑重发 / 重新生成——每次回退都过**三层写前校验**与安全编辑路径（自动停 agent、临时 step 包裹 marker），**新的回退不会损坏日志、不新增 `/compact` 债**；**旧单段 marker 需要压缩前清理**（配套 `check` + `fix --remove-markers`）。
 - 单会话**版本时间线** + **产物回退**（git 优先 + 快照兜底、干跑预览、跳转对话）。
 - 对话视图内的**分叉图** + **会话谱系**。
 - **实时看门狗**——并发写入第一时间快照日志。
@@ -321,13 +326,18 @@ dsh plugin --profile desktop add dsh-retrace@0.4.26
 | 🛡️ | **运行中检测** | 逐会话扫描运行中工作：agent 正在跑 / inbox 排队 / 后台 jobs / 未闭合轮 |
 | 📋 | **运行中横幅** | 有运行中工作的会话显示页面常驻横幅（会话谱系标识 + 原因），退出前可见 |
 | ⚠️ | **退出提示** | 插件 dispose（应用退出/重载）时中文提示列出每个运行中会话与原因——只提示，绝不代你取消 agent |
-| 🔒 | **页面关闭拦截（Web）** | `beforeunload` 拦截：有运行中任务强确认（明细模态，`[仍关闭]` 即确认离开），无任务轻确认 |
-| 🔎 | **查询面** | `retrace.runningState`（host RPC）+ `GET|POST /api/plugins/retrace/runningState`（HTTP），两入口同形状 |
+| 🔒 | **页面关闭拦截（普通浏览器）** | `beforeunload` 拦截，只在宿主回报会弹原生确认框的页面上武装：有运行中任务强确认（明细模态，`[仍关闭]` 即确认离开），无任务轻确认 |
+| 🔎 | **查询面** | `retrace.runningState`（host RPC）+ `GET|POST /api/plugins/retrace/runningState`（HTTP），两入口同形状；全会话形状另带宿主判定的承载面（`surface` / `quitVeto`） |
 
-> 桌面说明：Electron 宿主退出时销毁窗口，页面 `beforeunload` 不会触发，宿主也未暴露
-> 插件可用的退出否决点——桌面侧由运行中横幅 + dispose 提示覆盖；Web 端拦截完整生效。
+> 桌面说明：**退出入口随版本/平台而变**，而我们检查的 Electron 壳没有处理 `will-prevent-unload`
+> （装好的 2.0.9 `app.asar` 全文检索 0 命中）。**会走到该入口的那类版本**（外部报告所在的
+> DSH Desktop 0.9.0 / Windows）上，页面 `beforeunload` 否决被**静默吞掉**：不弹界面、不给
+> 反馈，表现为退出卡住（只能强退）；**不走该入口的版本**（我们检查的 2.0.9：托盘项走
+> `requestQuit(0) → window.destroy() → app.exit(0)`）上，退出本来就不受影响。页面里分不出
+> 自己属于哪一类，因此**桌面端一律不武装**原生门，保护由运行中横幅 + dispose 提示承担；
+> 只有宿主回报"这个页面会弹原生确认框"（`quitVeto: true`，即普通浏览器页）时才武装。
 
-**未来计划**——见 [公开路线图](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md)（agent 业务层规划：运行时守护、中断治理、生态开放接口）。本 README 只描述已上线的能力。
+**未来计划**——agent 业务层规划（运行时守护、中断治理、生态开放接口）**尚未发布**，此节是**计划**而非已上线能力。本 README 描述的是**开发线（main）**，可能领先于 npm 上最新发布版。
 
 ---
 
@@ -374,8 +384,8 @@ npm pack --dry-run    # 校验发布文件清单
 
 收录于 [dsh-plugin topic](https://github.com/topics/dsh-plugin)。
 
-**Agent 业务层（生产级保证）** 的一部分——见 [公开路线图](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md)
-（框架无关的业务层定义，dsh-retrace 是它在 DeepSeek Harness 上的实现）。配套组件：
+**Agent 业务层（生产级保证）** 的一部分——即 dsh-retrace 在 DeepSeek Harness 上实现的
+那层框架无关的业务层定义。配套组件：
 
 - [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) —— 业务层的
   「医生」：30+ 条离线契约规则 + 原地修复（`fix --neutralize` / `--clip-crossstep`）。

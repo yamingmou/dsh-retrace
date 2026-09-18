@@ -7,7 +7,7 @@
  * 3. turn/end reason interrupted/aborted → 官方正常闭合，不计未闭合；
  * 4. attachExitWarning：dispose 时对未闭合会话记 warning、闭合会话不记。
  *
- * 会话形状（2026-09-14 独立复查 MEDIUM-3/4）：默认 = **真实生产新宿主**
+ * 会话形状（2026-09-14 复核）：默认 = **真实生产新宿主**
  * （只有 snapshotEvents()/eventAt()，没有 events 成员）；旧宿主 events 数组
  * 由专设 describe 显式覆盖。守卫型静默回退（Array.isArray(session?.events) ? …）
  * 在新宿主默认夹具下必须变红。

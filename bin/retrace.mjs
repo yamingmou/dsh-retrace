@@ -2,7 +2,7 @@
 /**
  * dsh-retrace · bin/retrace.mjs
  *
- * 会话日志考古 CLI（内部任务记录 -）——只读，不写任何日志。
+ * 会话日志考古 CLI——只读，不写任何日志。
  *
  *   retrace index <session> [--json]
  *       工具调用索引：调用数 / 配对率 / 孤儿数 / 命令分布（）

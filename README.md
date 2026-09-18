@@ -20,8 +20,15 @@ DeepSeek Harness.
 deserves. But rewinding is not just "delete a message": DeepSeek Harness stores
 conversations in an append-only event log, so a recall only rewinds the context
 while changed **artifact files stay changed**. dsh-retrace versions the
-conversation **and its artifacts** together, and guarantees **every rewind is
-legal — never dirtying the log, never breaking /compact**.
+conversation **and its artifacts** together, and keeps **every new rewind legal** —
+it cannot dirty the log, and new markers create **no token-meter pairing debt**
+(two-segment atomic pairs land by construction).
+
+> ⚠️ **Honest scope (matches the companion contract's own note)**: sessions that
+> already contain **legacy single-segment markers** — written by older versions —
+> are **known design debt**. Before `/compact`, run the companion `check` and
+> clean them up (`fix --remove-markers`); otherwise the host's own T1 self-check
+> blocks compaction. New rewinds do not add to that debt.
 
 > 🛡️ **Write safety** · 🔍 **Deep offline checks** · 🔄 **Detect → repair → guard** — see below.
 
@@ -54,7 +61,7 @@ Full steps in [📦 Installation](#-installation).
 
 | | Capability | What it means |
 |---|---|---|
-| 🛡️ | **Write safety** | Every rewind passes a three-layer pre-write contract guard; running agents are auto-stopped (official `cancel`/`whenIdle`); turn-interval markers are wrapped in a temporary step — **rewinds never dirty the log, /compact never breaks** |
+| 🛡️ | **Write safety** | Every rewind passes a three-layer pre-write contract guard; running agents are auto-stopped (official `cancel`/`whenIdle`); turn-interval markers are wrapped in a temporary step — **new rewinds cannot dirty the log and add no token-meter pairing debt**; **legacy single-segment markers are known debt** (run the companion `check` + `fix --remove-markers` before `/compact`) |
 | 🔍 | **Deep offline checks** | Companion `dsh-log-contract` ships 30+ contract rules (token-meter pairing / cross-step references / physical order / inbox replay), validated against real corrupted-session fixtures — it finds the class of problem that makes /compact permanently fail |
 | 🔄 | **Detect → repair → guard** | A watchdog snapshots the log at the first sign of concurrent writes; offline `fix` neutralizes problem markers and clips cross-step references in place; pre-write validation stops bad events before they land |
 
@@ -331,9 +338,9 @@ Read it before filing an issue.
   here. It now resolves through the `useChat` snapshot injected by the view and pages
   with the official `store.loadThrough(seq)`; when the jump cannot complete it reports a
   **diagnosable reason** (renderer warning + host-log line) instead of failing silently.
-- **Assigning a short code could overwrite your session title.** The client composed
+- **Assigning a lineage ID could overwrite your session title.** The client composed
   `[CODE] <current title>` locally but had no way to read the current title, so the base
-  degraded to the session-id prefix (`[XXXXXX] 668f9166-648c-4c`). Title tagging now goes
+  degraded to the session-id prefix (`[XXXXXX] <session-id-prefix>`). Title tagging now goes
   through the host route only (`setBadgeTitle`), which reads the current title from the
   session log. Manual renames are unaffected.
 - **Host-side operation failures are logged again** (code + message + stack). They used to
@@ -353,7 +360,7 @@ Read it before filing an issue.
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.28
+dsh plugin --profile desktop add dsh-retrace@0.4.29
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -417,7 +424,8 @@ the **host surface**, not by semver alone.
 
 - Recall / edit-and-resend / regenerate, each written through a three-layer
   **pre-write contract guard** and a safe-edit path (auto-stop the agent, temp-step
-  markers) — rewinds never corrupt the log or break `/compact`.
+  markers) — new rewinds do not corrupt the log and add no `/compact` debt;
+  **legacy single-segment markers** remain known debt (see the honest note above).
 - In-session **version timeline** + **artifact rollback** (git-first, snapshot
   fallback, dry-run preview, jump-to-conversation).
 - **Fork map + session lineage** in the conversation view.
@@ -431,19 +439,26 @@ the **host surface**, not by semver alone.
 | 🛡️ | **Running-work detection** | every session is scanned for live work: agent running, queued inbox items, background jobs, unclosed turns |
 | 📋 | **Running banner** | sessions with live work show a persistent in-page banner (short session code + reasons), so you can see it before quitting |
 | ⚠️ | **Exit prompt** | on plugin dispose (app exit / reload) a Chinese notice lists each running session and why it is considered busy — it only warns, it never cancels your running agent |
-| 🔒 | **Page-close interception (Web)** | `beforeunload` interception: a strong confirm when work is running (details modal, `[仍关闭]` = confirm-and-go), a light confirm otherwise |
-| 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports |
+| 🔒 | **Page-close interception (web browsers)** | `beforeunload` interception, armed only where the host reports a native confirm dialog: a strong confirm when work is running (details modal, `[仍关闭]` = confirm-and-go), a light confirm otherwise |
+| 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports; the all-sessions shape also carries the host-reported page surface (`surface` / `quitVeto`) |
 
-> Desktop note: the Electron shell destroys the window on quit, so the page-level
-> `beforeunload` hook cannot fire there and the host exposes no plugin quit-veto seam —
-> Desktop is covered by the running banner plus the dispose notice; Web gets the full
-> interception.
+> Desktop note: quit entry points differ by version/platform, and the DSH Desktop Electron
+> shell we inspected has no `will-prevent-unload` handler (0 hits across the packaged 2.0.9
+> `app.asar`). Where the entry does reach the page — the external report's DSH Desktop 0.9.0 /
+> Windows — the page `beforeunload` veto is **swallowed silently**: no dialog, no feedback, and
+> the exit looks stuck (only a force-quit works). Where it does not — the 2.0.9 shell we
+> inspected routes the tray item through `requestQuit(0) → window.destroy() → app.exit(0)` — the
+> quit is unaffected either way. The page cannot tell which case it is in, so desktop **never**
+> arms the native gate; it relies on the running banner plus the dispose notice. The gate is
+> armed only where the host reports that the page really surfaces a native dialog
+> (`quitVeto: true`, i.e. browser pages).
 
 > Command surface: `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP).
 
-**What's next** — see the [public roadmap](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md) for the agent
-business-layer plan (runtime guard, interruption governance, ecosystem-facing
-interfaces). This README only describes what is already shipped.
+**What's next** — the agent business-layer plan (runtime guard, interruption
+governance, ecosystem-facing interfaces) is **not published yet**: it is a plan,
+not a shipped capability. This README describes the **development line (main)**,
+which may run ahead of the latest npm release.
 
 ---
 
@@ -491,9 +506,9 @@ and the [issue tracker](https://github.com/yamingmou/dsh-retrace/issues).
 
 Listed on the [dsh-plugin topic](https://github.com/topics/dsh-plugin).
 
-Part of the **Agent business layer (production-grade guarantees)** — see the
-[public roadmap](https://github.com/yamingmou/dsh-retrace/blob/main/docs/ROADMAP.md) for the framework-agnostic layer and how
-dsh-retrace is its DeepSeek Harness implementation. Companion components:
+Part of the **Agent business layer (production-grade guarantees)** — the
+framework-agnostic layer that dsh-retrace implements on DeepSeek Harness.
+Companion components:
 
 - [**dsh-log-contract**](https://github.com/yamingmou/dsh-log-contract) — the
   business layer's "doctor": 30+ offline contract rules + in-place repair

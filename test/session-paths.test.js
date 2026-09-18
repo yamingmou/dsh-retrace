@@ -1,8 +1,8 @@
 /**
- * lib/platform/session-paths.js —— 会话基座/文件名/短码表落点/插件数据家的单一实现。
+ * lib/platform/session-paths.js —— 会话基座/文件名/谱系标识表落点/插件数据家的单一实现。
  *
  * 判据(2026-09-14 口径统一:未设 $DSH_HOME 时**新基座优先于旧 home**,与 archive
- * 侧生成器 tools/gen-session-codes.mjs resolveHome() 逐字同序):
+ * 侧生成器(内部谱系标识生成脚本)resolveHome() 逐字同序):
  *   ① $DSH_HOME 优先(设了就只认它);
  *   ② 未设 $DSH_HOME 且两基座都在 → 选 ~/.dsh(口径统一后的新行为;旧行为选 ~/.dsh);
  *   ③ 未设 $DSH_HOME 且只有 ~/.dsh → 兜底旧 home;
@@ -194,20 +194,20 @@ describe('listSessionFiles', () => {
 describe('matchSessionFiles(id / 前缀 / session-<id>)', () => {
   it('三种 key 都命中,每个会话目录取 mtime 新者;无命中返回 []', () => {
     const home = tmpRoot()
-    const byDir = mkSession(home, '.dsh', '--a--', 'session-abc12345', V0, T0)
-    const byId = mkSession(home, '.dsh', '--b--', 'abc12345', V3, T0 + 1000)
-    const got = matchSessionFiles('abc1', { home, dshHome: null })
+    const byDir = mkSession(home, '.dsh', '--a--', 'session-abz98765', V0, T0)
+    const byId = mkSession(home, '.dsh', '--b--', 'abz98765', V3, T0 + 1000)
+    const got = matchSessionFiles('abz', { home, dshHome: null })
       .sort((x, y) => x.dir.localeCompare(y.dir))
-    expect(got.map((g) => g.dir)).toEqual(['abc12345', 'session-abc12345'])
+    expect(got.map((g) => g.dir)).toEqual(['abz98765', 'session-abz98765'])
     expect(got.map((g) => g.file)).toEqual([byId, byDir])
-    expect(matchSessionFiles('session-abc12345', { home, dshHome: null })).toHaveLength(1)
+    expect(matchSessionFiles('session-abz98765', { home, dshHome: null })).toHaveLength(1)
     expect(matchSessionFiles('zzz', { home, dshHome: null })).toEqual([])
   })
 })
 
 describe('badgeTableCandidates / resolveBadgeTablePath', () => {
   it('覆写 env 排第一;规范落点(插件数据家下)次之;基座旁兜底', () => {
-    // 短码表是**用户自备数据**,不是代码 ⇒ 代码里不得出现任何私有目录名。
+    // 谱系标识表是**用户自备数据**,不是代码 ⇒ 代码里不得出现任何私有目录名。
     // 规范落点 = <pluginDataHome>/dsh-retrace/codes.json(与会话基座同源)。
     const canonical = join(pluginDataHome({ home: '/H' }), 'dsh-retrace', 'codes.json')
     const c = badgeTableCandidates({ home: '/H', override: '/O/t.json' })

@@ -176,7 +176,7 @@ describe('快照点守卫（2026-08-31 问题修复；2026-09-01 改为绝对遮
     const guard = createMarkerGuard({ prewriterFactory: factory })
     const session = hugeSession(60, 2500)
     const env = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49)
-    env.data.id = 'retrace-restore-abcd1234-xyz' // restore marker(id 在两段结构的 data.id 上)
+    env.data.id = 'retrace-restore-synthetic-xyz' // restore marker(id 在两段结构的 data.id 上)
     expect(isRestoreMarker(env)).toBe(true)
     await expect(guard.validateMarkerAppend(session, env)).resolves.toEqual({ t1Ok: true })
   })
@@ -373,7 +373,7 @@ describe('T1 折叠自检作废 + 钩子两阶段（载体改造后）', () => {
     expect(result.ok).toBe(true)
     expect(phases).toEqual(['pre', 'pair'])
     // pair 阶段拿到的首元素 = 审计段 seq(载荷把计划中的审计段按同一 seq 合成进事件表,
-    // 故完整契约校验在**任何 append 之前**就能跑 —— 的核心整改)
+    // 故完整契约校验在**任何 append 之前**就能跑 —— 本轮整改的核心)
     const pairEnvelope = validateMarker.mock.calls[1][1]
     expect(pairEnvelope.sourceEventSeqs[0]).toBe(eventAt(session, 2).seq)
   })

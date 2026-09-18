@@ -255,6 +255,99 @@ describe('createVersioningSeam', () => {
     expect(seam.lineage('root')).toEqual([{ id: 'root', parentId: null }])
   })
 
+  it('boundariesFor:无存储记录 ⇒ 从日志反推;有存储记录 ⇒ 存储优先;并报告被过滤的宿主替换数', async () => {
+    const ctx = fakeCtx()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
+    seam.register()
+    const seamCtx = ctx.inject.seam
+    await settle()
+    const discarded = { ...userMessage(0), data: { ...userMessage(0).data, content: [{ type: 'text', text: '被丢弃的原始提问' }] } }
+    const session = { id: 's1', events: [discarded, userMessage(1), editorMarker(2, { start: 0, end: 1, op: 'edit' })] }
+    ctx.sessions.set('s1', session)
+    // The projection view is what the seam reads (host-side, already filtered).
+    seamCtx.sessionProjections.snapshot = () => ({
+      values: {
+        'retrace/versions': {
+          versions: [{ versionId: 'v2', boundarySeq: 2, kind: 'edit', createdAt: 1, markerText: '', messageCount: 1 }],
+          hostReplacementCount: 27,
+        },
+      },
+    })
+
+    // ① no stored record → derive from the log
+    const derived = seam.boundariesFor('s1', [])
+    expect(derived.hostReplacementCount).toBe(27)
+    expect(derived.derived).toBe(1)
+    expect(derived.records).toHaveLength(1)
+    expect(derived.records[0]).toMatchObject({ boundarySeq: 2, versionId: 'v2', kind: 'edit', derived: true, discardedCount: 2 })
+    expect(derived.records[0].what.replaced[0].excerpt).toContain('被丢弃的原始提问')
+
+    // ② a stored record for that boundary wins (the log is no longer authoritative)
+    const stored = {
+      boundarySeq: 2,
+      versionId: 'v2',
+      what: { op: 'edit', new: { excerpt: '' }, replaced: [{ seq: 0, role: 'user', excerpt: '存储侧的原文' }] },
+      called: true,
+      summary: '存储侧的摘要',
+      discardedSeqs: [0],
+      discardedCount: 2,
+    }
+    const merged = seam.boundariesFor('s1', [stored])
+    expect(merged.derived).toBe(0)
+    expect(merged.records).toEqual([stored])
+    expect(merged.hostReplacementCount).toBe(27)
+  })
+
+  it('boundariesFor 给每条记录补「现在这条」：存储记录与派生记录都补，取不到就不补', async () => {
+    const ctx = fakeCtx()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
+    seam.register()
+    const seamCtx = ctx.inject.seam
+    await settle()
+    const discarded = { ...userMessage(0), data: { ...userMessage(0).data, content: [{ type: 'text', text: '被丢弃的原始提问' }] } }
+    const resend = {
+      ...userMessage(4),
+      data: { id: 'retrace-resend-abc123', role: 'user', content: [{ type: 'text', text: '重发出去的同一句' }] },
+    }
+    ctx.sessions.set('s1', { id: 's1', events: [discarded, userMessage(1), editorMarker(2, { start: 0, end: 1, op: 'edit' }), resend] })
+    seamCtx.sessionProjections.snapshot = () => ({
+      values: {
+        'retrace/versions': {
+          versions: [{ versionId: 'v2', boundarySeq: 2, kind: 'edit', createdAt: 1, markerText: '', messageCount: 1 }],
+          hostReplacementCount: 0,
+        },
+      },
+    })
+    // 派生记录：补上 resend（#4）
+    const derived = seam.boundariesFor('s1', [])
+    expect(derived.records[0].now).toMatchObject({ seq: 4, role: 'user' })
+    expect(derived.records[0].now.excerpt).toContain('重发出去的同一句')
+    // 存储记录同样补（旧产物不需要迁移）
+    const stored = { boundarySeq: 2, versionId: 'v2', what: { op: 'edit', replaced: [] }, called: true }
+    const merged = seam.boundariesFor('s1', [stored])
+    expect(merged.records[0].now?.seq).toBe(4)
+    // 纯撤回：没有"现在这条"⇒ 记录上不出现这个字段（渲染侧如实写说明）
+    seamCtx.sessionProjections.snapshot = () => ({
+      values: {
+        'retrace/versions': {
+          versions: [{ versionId: 'v2', boundarySeq: 2, kind: 'recall', createdAt: 1, markerText: '', messageCount: 1 }],
+          hostReplacementCount: 0,
+        },
+      },
+    })
+    const recall = seam.boundariesFor('s1', [{ boundarySeq: 2, versionId: 'v2', kind: 'recall', what: { op: 'recall', replaced: [] } }])
+    expect(recall.records[0].now).toBeUndefined()
+  })
+
+  it('boundariesFor:版本列表不可读(无 session)⇒ 只给存储记录,不抛', async () => {
+    const ctx = fakeCtx()
+    const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
+    seam.register()
+    await settle()
+    const stored = [{ boundarySeq: 9, what: { op: 'recall', new: { excerpt: '' }, replaced: [] } }]
+    expect(seam.boundariesFor('missing-session', stored)).toEqual({ records: stored, derived: 0, hostReplacementCount: 0 })
+  })
+
   it('lineage stops at a cycle (defensive) and tolerates unknown parents', async () => {
     const ctx = fakeCtx()
     const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })

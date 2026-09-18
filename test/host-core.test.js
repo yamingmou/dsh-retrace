@@ -545,7 +545,7 @@ describe('「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」�
   /**
    * 「提交中」会话:目标消息已进内存 events(findMessageSeq 可见),但 surface.nodes
    * 尚未纳入(刚 commit/文件 flush 滞后,本次 span 快照看不到)——模拟用户点击落在
-   * turn 收尾窗口(真实会话 seq <内部编号> 与 step/end、turn/end 同一毫秒,
+   * turn 收尾窗口(某真实会话的收尾窗口 seq 与 step/end、turn/end 同一毫秒,
    * turn/end reason=aborted-user;文件尚未 flush 刚 commit 消息)。
    * lastType='assistant' → 尾部最新 assistant 回复(a2,seq 4)提交中;
    * lastType='user' → 尾部最新 user 输入(u3,seq 4)刚发出、尚未进快照。

@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterAll } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { DEFAULT_CONFIG, parseRetraceConfig, ROUTE_PREFIX, createRetraceHttpHandler } from '../lib/http.js'
 
@@ -63,7 +66,7 @@ function makeSeam() {
 /** A POST helper: the handler's body parser waits for 'data'/'end' events;
  * the fake req stores the data listener, delivers the JSON payload, then
  * fires 'end' on a macrotask (matching real socket timing). */
-function post(handler, url, payload) {
+function post(handler, url, payload, extraHeaders = {}) {
   const res = {
     status: 200,
     body: '',
@@ -80,7 +83,7 @@ function post(handler, url, payload) {
   const req = {
     method: 'POST',
     url,
-    headers: { 'x-retrace-config': '' },
+    headers: { 'x-retrace-config': '', ...extraHeaders },
     setEncoding() {},
     on(event, fn) {
       if (event === 'data') dataListener = fn
@@ -105,7 +108,7 @@ function post(handler, url, payload) {
   })
 }
 
-function get(handler, url) {
+function get(handler, url, extraHeaders = {}) {
   const res = {
     status: 200,
     body: '',
@@ -120,7 +123,7 @@ function get(handler, url) {
   const req = {
     method: 'GET',
     url,
-    headers: { 'x-retrace-config': '' },
+    headers: { 'x-retrace-config': '', ...extraHeaders },
     setEncoding() {},
     on() {},
   }
@@ -136,6 +139,81 @@ function get(handler, url) {
     poll()
   })
 }
+
+describe('GET /summaries — 读档点内容(实机修复 2026-09-15)', () => {
+  const roots = []
+  const freshRoot = () => {
+    const root = mkdtempSync(join(tmpdir(), 'retrace-http-summaries-'))
+    roots.push(root)
+    return root
+  }
+  afterAll(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  it('无存储记录 ⇒ 从日志反推的记录进响应,并带 derived / hostReplacementCount', async () => {
+    const root = freshRoot()
+    const seam = makeSeam()
+    seam.configFor = vi.fn(() => ({ summary: false }))
+    seam.storeRoot = vi.fn(() => root)
+    const derivedRecord = {
+      boundarySeq: 5,
+      versionId: 'v5',
+      derived: true,
+      what: { op: 'edit', at: 1, new: { excerpt: '' }, replaced: [{ seq: 0, role: 'user', excerpt: '被丢弃的原文' }], replacedMore: 2 },
+      discardedSeqs: [],
+      discardedCount: 3,
+    }
+    seam.boundariesFor = vi.fn(() => ({ records: [derivedRecord], derived: 1, hostReplacementCount: 27 }))
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const res = await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)
+    const body = JSON.parse(res.body)
+    expect(body.ok).toBe(true)
+    expect(seam.boundariesFor).toHaveBeenCalledWith('s1', [])
+    expect(body.value.derived).toBe(1)
+    expect(body.value.hostReplacementCount).toBe(27)
+    expect(body.value.records).toHaveLength(1)
+    expect(body.value.records[0].what.replaced[0].excerpt).toBe('被丢弃的原文')
+    // 有 discardedSeqs ⇒ 轮廓树也从这些记录里建出来
+    expect(body.value.tree).toBeDefined()
+    expect(body.value.tree['5']).toMatchObject({ parent: null, children: [] })
+  })
+
+  it('有存储记录 ⇒ 原样交给 seam(存储优先),?boundarySeq= 只挑那一档', async () => {
+    const root = freshRoot()
+    mkdirSync(join(root, 'summaries'), { recursive: true })
+    const storedA = { boundarySeq: 5, versionId: 'v5', what: { op: 'edit', new: { excerpt: '' }, replaced: [{ seq: 0, role: 'user', excerpt: '存储侧原文' }] }, called: true, summary: '存储侧摘要', discardedSeqs: [], discardedCount: 1 }
+    const storedB = { boundarySeq: 9, versionId: 'v9', what: { op: 'recall', new: { excerpt: '' }, replaced: [] }, called: false, discardedSeqs: [], discardedCount: 0 }
+    writeFileSync(join(root, 'summaries', 's1.jsonl'), `${JSON.stringify(storedA)}\n${JSON.stringify(storedB)}\n`)
+    const seam = makeSeam()
+    seam.configFor = vi.fn(() => ({ summary: true }))
+    seam.storeRoot = vi.fn(() => root)
+    seam.boundariesFor = vi.fn((_sessionId, stored) => ({ records: stored, derived: 0, hostReplacementCount: 3 }))
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const all = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)).body)
+    expect(seam.boundariesFor).toHaveBeenCalledWith('s1', [storedA, storedB])
+    expect(all.value.enabled).toBe(true)
+    expect(all.value.hostReplacementCount).toBe(3)
+    expect(all.value.records.map((r) => r.boundarySeq).sort()).toEqual([5, 9])
+    expect(all.value.records.find((r) => r.boundarySeq === 5).summary).toBe('存储侧摘要')
+    const one = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1&boundarySeq=5`)).body)
+    expect(one.value.records.map((r) => r.boundarySeq)).toEqual([5])
+    expect(one.value.derived).toBe(0)
+  })
+
+  it('seam 没有 boundariesFor(旧组合)⇒ 仍然只回存储记录,不抛', async () => {
+    const root = freshRoot()
+    const seam = makeSeam()
+    seam.configFor = vi.fn(() => ({ summary: false }))
+    seam.storeRoot = vi.fn(() => root)
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: {}, log: () => {} })
+    const body = JSON.parse((await get(handler, `${ROUTE_PREFIX}/summaries?sessionId=s1`)).body)
+    expect(body.ok).toBe(true)
+    expect(body.value.records).toEqual([])
+    expect(body.value.derived).toBe(0)
+    expect(body.value.hostReplacementCount).toBe(0)
+  })
+})
 
 describe('P1 HTTP routes', () => {
   it('GET /git/status proxies the seam', async () => {
@@ -510,6 +588,56 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
     const handler = createRetraceHttpHandler({}, { sessions: { keys: () => sessions.keys(), get: (id) => sessions.get(id) }, agents: { get: (id) => agents.get(id) }, seam: makeSeam(), rollback: {}, log: () => {} })
     const res = await get(handler, `${ROUTE_PREFIX}/runningState`)
     expect(JSON.parse(res.body).value.running).toHaveLength(1)
+  })
+
+  // ── 宿主承载面(2026-09-18 外部 issue #1:桌面端托盘退出死锁)──────────────
+  // 宿主是唯一能判定"本页宿主是否承载 quit-veto"的一方:Desktop 主进程给 Electron
+  // renderer 的每个请求挂 `x-dsh-desktop-renderer`,普通浏览器页面没有这个头。
+  it('GET:无能力头且宿主不是桌面 → surface=browser / quitVeto=true(网页端照常武装)', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/runningState`)).body)
+    expect(parsed.value.surface).toBe('browser')
+    expect(parsed.value.quitVeto).toBe(true)
+  })
+
+  it('GET:带 Desktop renderer 能力头 → surface=desktop-renderer / quitVeto=false(桌面不武装)', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/runningState`, { 'x-dsh-desktop-renderer': 'a'.repeat(43) })).body)
+    expect(parsed.value.surface).toBe('desktop-renderer')
+    expect(parsed.value.quitVeto).toBe(false)
+    expect(parsed.value.running).toHaveLength(1) // 横幅数据照常下发,只有原生门被摘掉
+  })
+
+  it('POST:与 GET 同承载面判定(两入口不分叉)', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const desktop = JSON.parse((await post(handler, `${ROUTE_PREFIX}/runningState`, {}, { 'x-dsh-desktop-renderer': 'a'.repeat(43) })).body)
+    expect(desktop.value.surface).toBe('desktop-renderer')
+    expect(desktop.value.quitVeto).toBe(false)
+    const browser = JSON.parse((await post(handler, `${ROUTE_PREFIX}/runningState`, {})).body)
+    expect(browser.value.surface).toBe('browser')
+    expect(browser.value.quitVeto).toBe(true)
+  })
+
+  it('无能力头但宿主看得出 Electron(旧版桌面壳/兼容模式浏览器)→ surface=unknown / quitVeto=null', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    // 桌面专属服务在场 = 宿主带 Electron/桌面壳痕迹(不碰进程级判据)。
+    env.ctx.desktopRuntime = { version: 'x' }
+    const ctx = { ...env.ctx, get: (name) => env.ctx[name] }
+    const handler = createRetraceHttpHandler(ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/runningState`)).body)
+    expect(parsed.value.surface).toBe('unknown')
+    expect(parsed.value.quitVeto).toBe(null)
   })
 })
 

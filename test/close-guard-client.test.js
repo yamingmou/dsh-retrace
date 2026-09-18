@@ -60,25 +60,25 @@ describe('close-guard-client sessionLine/runningLines(A 明细聚合)', () => {
       .toBe('- session s1: 2 queued')
   })
 
-  it('label 覆盖原始 id(UI 传短码)', () => {
-    expect(sessionLine({ sessionId: 'a-very-long-id', reasons: ['agent-running'] }, { locale: 'zh', label: 'op065op016' }))
-      .toBe('- 会话 op065op016: 正在运行')
+  it('label 覆盖原始 id(UI 传谱系标识)', () => {
+    expect(sessionLine({ sessionId: 'a-very-long-id', reasons: ['agent-running'] }, { locale: 'zh', label: 'zz065zz016' }))
+      .toBe('- 会话 zz065zz016: 正在运行')
   })
 
   it('reasons 缺失兜底不崩', () => {
     expect(sessionLine({ sessionId: 's1' }, { locale: 'zh' })).toBe('- 会话 s1: 运行中(原因未识别)')
   })
 
-  it('runningLines 多会话聚合(labelOf 逐会话短码)', () => {
+  it('runningLines 多会话聚合(labelOf 逐会话谱系标识)', () => {
     const running = [
       { sessionId: 'aaa', reasons: ['agent-running'] },
       { sessionId: 'bbb', reasons: ['jobs-2', 'unclosed-turn-5'] },
     ]
-    const labelOf = (id) => (id === 'aaa' ? 'op001' : 'op002')
+    const labelOf = (id) => (id === 'aaa' ? 'zz001' : 'zz002')
     const lines = runningLines(running, { locale: 'zh', labelOf })
     expect(lines).toEqual([
-      '- 会话 op001: 正在运行',
-      '- 会话 op002: 后台任务 2 个; 未闭合轮次 5',
+      '- 会话 zz001: 正在运行',
+      '- 会话 zz002: 后台任务 2 个; 未闭合轮次 5',
     ])
   })
 })

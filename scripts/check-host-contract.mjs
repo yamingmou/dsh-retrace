@@ -6,7 +6,7 @@
  * that the installed DSH Desktop no longer has — `snapshot.chat.nodes` on the
  * client and `session.events` on the host. Both times the failure was silent
  * (no crash, clean logs), so only a real user noticed. This script turns the
- * audit table (<内部实验目录>/host-contract-drift-20260914/report.md §2) into a
+ * audit table (内部审计报告 §2) into a
  * mechanical check: every host member the plugin reads must still exist, and
  * every member that must NOT exist must stay absent.
  *

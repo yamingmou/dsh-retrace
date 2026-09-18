@@ -1,7 +1,7 @@
 /**
  * lib/migration-traces.js + lib/marker-carrier.js(TRACE 区块)的单元测试。
  *
- * 钉死的东西(记录 448):
+ * 钉死的东西:
  *  ① 承载**形状**:`feedback/record` + `data` 恰一个 `text` 成员(官方冻结词表
  *     `disposition(["text"])` 的精确形状;多一个成员官方 payload 校验器即拒);
  *  ② **保痕迹**:原类型 / 原 seq / 原 time / 原 data 逐成员不丢(空值 `turn:null`/
@@ -29,7 +29,7 @@ import {
   translateLegacyTraces,
 } from '../lib/migration-traces.js'
 
-/** A 类真实样本(生产 `<内部会话号>` @seq 7441 原文形状)。 */
+/** A 类真实样本(生产 `<session>` @seq 7441 原文形状)。 */
 const goalMarker = {
   type: 'retrace/goal-marker',
   seq: 7441,
@@ -38,7 +38,7 @@ const goalMarker = {
   data: { originalOperation: 'clear' },
 }
 
-/** B 类真实样本(生产 `<内部会话号>` @seq 339 原文形状;`turn`/`step` 为 null)。 */
+/** B 类真实样本(生产 `<session>` @seq 339 原文形状;`turn`/`step` 为 null)。 */
 const legacyMarker = {
   type: 'retrace/marker',
   seq: 339,

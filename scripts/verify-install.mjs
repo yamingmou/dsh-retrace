@@ -53,7 +53,7 @@ function parseArgs(argv) {
 }
 
 // ---------- 期望版本：从各 profile 的 package.json 依赖声明解析（caret 范围） ----------
-// 内部任务记录 §2.2：比对「package.json 依赖解析版本」与「node_modules 实装版本」。
+// 比对「package.json 依赖解析版本」与「node_modules 实装版本」。
 // 不依赖本仓库 node_modules（那只是开发依赖解析，可能与发布版不同步）。
 function expectedFromProfile(profileDir, prof, pkg) {
   try {

@@ -95,7 +95,7 @@ describe('verify-install discoverProfiles（profile 清单从磁盘发现）', (
 })
 
 describe('verify-install file: 相对挂载路径按 profile 目录解析（集成）', () => {
-  // 2026-09-14：桌面 profile 的依赖写作 `file:../../../opena/<pkg>`。此前直接交给 cwd 解析
+  // 2026-09-14：桌面 profile 的依赖写作 `file:../../../pkgs/<pkg>`。此前直接交给 cwd 解析
   // ⇒ 只有恰好从同深度目录运行才碰对，换个 cwd 一律误报「仓库不可读」。
   it('从**任意** cwd 运行都能解析相对的 file: 挂载并比对仓库版本', () => {
     const base = mkdtempSync(join(tmpdir(), 'vi-relmount-'))
@@ -106,7 +106,7 @@ describe('verify-install file: 相对挂载路径按 profile 目录解析（集�
       mkdirSync(join(profDir, 'desktop', 'node_modules', 'dsh-log-contract'), { recursive: true })
       mkdirSync(repoAbs, { recursive: true })
       writeFileSync(join(repoAbs, 'package.json'), '{"name":"r","version":"9.9.9"}')
-      // 相对层级：<base>/home/profiles/desktop → ../../../repo = <base>/repo
+      // 相对层级：<base>/<platform>/profiles/desktop → ../../../repo = <base>/repo
       writeFileSync(join(profDir, 'desktop', 'package.json'), JSON.stringify({
         name: 'p', version: '0.0.0',
         dependencies: {

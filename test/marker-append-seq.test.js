@@ -133,12 +133,12 @@ describe('marker append seq — real-machine E2 regression (期望 26033, candid
 })
 
 /**
- * 记录 615 §四.3: the guard used to reject the carrier **after** the audit was
+ * 本轮整改 §四.3: the guard used to reject the carrier **after** the audit was
  * already appended, leaving an orphan `compaction/prune` (the real machine left
  * seq 26032/26033). Now the whole two-segment sequence is validated BEFORE any
  * append, so a rejection writes nothing.
  */
-describe('two-segment pairing (记录 615: no orphan audit on rejection)', () => {
+describe('two-segment pairing (no orphan audit on rejection)', () => {
   it('negative control: a pair the contract rejects leaves NO audit orphan (zero writes)', async () => {
     const session = buildSession(64)
     // Force a contract-level rejection: the writer emits the runtime surfaceOp
@@ -178,7 +178,7 @@ describe('two-segment pairing (记录 615: no orphan audit on rejection)', () =>
 })
 
 /**
- * 记录 615 §四.4 — WHY `contextPressure.surfaceTokens` can fail to converge.
+ * 本轮整改 §四.4 — WHY `contextPressure.surfaceTokens` can fail to converge.
  *
  * These are HOST fields (`@deepseek-ai/dsh-token-meter`), not the plugin's; the
  * plugin never reads or writes them. But our two-segment writes feed the host's

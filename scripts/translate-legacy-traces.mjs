@@ -2,12 +2,12 @@
 /**
  * dsh-retrace — scripts/translate-legacy-traces.mjs
  *
- * **迁移前翻译**的 CLI(记录 448):把历史非法事件类型
+ * **迁移前翻译**的 CLI:把历史非法事件类型
  *   `retrace/goal-marker` / `retrace/marker`
  * 就地翻译成官方合法、读端认得的**痕迹**形态(`feedback/record` + `data.text`)。
  *
  * 为什么需要:官方 v0→v1 边拒绝一切未知历史类型(即使 `ignorable: true`)⇒ 含这两类
- * 事件的会话**永久不可迁移**;记录 382 口径**不删除**(保功能痕迹)⇒ 只能翻译。
+ * 事件的会话**永久不可迁移**;口径**不删除**(保功能痕迹)⇒ 只能翻译。
  * 翻译走的是 `lib/migration-traces.js`(形状/依据/幂等口径都在那里)。
  *
  * 用法:
@@ -15,7 +15,7 @@
  *
  * 选项:
  *   --out <file>      输出文件(默认:输入同目录同名 + `.traced.jsonl`)
- *   --zstd            输出先用 `zstd -19` 压成 `<out>.zstd`(公开分支以外的一般做法)
+ *   --zstd            输出先用 `zstd -19` 压成 `<out>.zstd`(该格式的一般做法)
  *   --report <file>   写 JSON 报告(翻译明细 + 幂等复核结果)
  *   --dry-run         只报告,不写任何文件
  *   --quiet           只打印摘要

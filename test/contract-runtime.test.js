@@ -62,14 +62,14 @@ describe('Span.shape(跨层 span 结构契约)', () => {
 
   it('**不断言 start <= end**:位置序 span 的 seq 数值可非单调(marker 插入 → 合法)', () => {
     // 官方 replacementRange 只按 indexOf(start) <= indexOf(end) 的**位置**判定;
-    // 真实会话实测:位置连续段 [1360270 … 1360265](start 数值 > end)是正常写入。
-    const positional = { start: 1360270, end: 1360265, shadowedSeqs: [1360270, 1360268, 1360265] }
+    // 真实会话实测:位置连续段 [start … end](start 数值 > end)是正常写入。
+    const positional = { start: 420, end: 415, shadowedSeqs: [420, 418, 415] }
     expect(assertSpanShape(positional)).toBe(positional)
     expect(() => assertMarkerShape({
-      seq: 1360272,
+      seq: 12,
       type: 'user/message',
-      surfaceOp: { op: 'replace', start: 1360270, end: 1360265 },
-      sourceEventSeqs: [1360271, 1360270, 1360268, 1360265],
+      surfaceOp: { op: 'replace', start: 420, end: 415 },
+      sourceEventSeqs: [421, 420, 418, 415],
       data: {
         role: 'user',
         id: 'retrace-recall-x',

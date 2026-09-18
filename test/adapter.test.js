@@ -203,7 +203,7 @@ describe('adapter/dsh dshAdapter(DSH 平台适配器)', () => {
   })
 })
 
-describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 ISSUE-20260907113201 回归）', () => {
+describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 回归）', () => {
   // 合成:2 轮对话 + 一个 replace marker(遮蔽轮1,模拟已编辑会话)
   function withMarker() {
     return [
@@ -256,7 +256,7 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 ISSUE
   })
 
   it('位置序 ≠ seq 数值序:marker 插在中间时 span 的 start 数值可 > end(官方只认位置)', () => {
-    // 真实数据实测(2026-09-10):位置连续段 [1360270 … 1360265] 是正常写入——
+    // 真实数据实测:位置连续段数值非单调(start > end)是正常写入——
     // 官方 replacementRange 只判 indexOf(start) <= indexOf(end)(位置),不比较 seq 数值。
     const events = [
       { seq: 0, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a0', content: [] } } },

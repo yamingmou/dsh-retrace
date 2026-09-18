@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.29] — 2026-09-19 · desktop quit deadlock fix + timer unref + public text aligned with facts
+
+- desktop quit deadlock fix + timer unref + public text aligned with facts
+
 ## [0.4.28] — 2026-09-14 · restore edit / recall and view jumps; host-contract drift becomes a pre-release gate
 
 - restore edit / recall and view jumps; host-contract drift becomes a pre-release gate

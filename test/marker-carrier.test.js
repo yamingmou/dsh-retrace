@@ -100,7 +100,7 @@ describe('marker-carrier · 形状判据', () => {
     // 局部数组不完整(缺区间终点)⇒ 不当成被遮蔽段,同样落到兜底
     const partial = { ...carrier(), sourceEventSeqs: [7, 2, 3] }
     expect(carrierShadowedSeqs(partial, (seq) => (seq === 7 ? auditEvent : undefined))).toEqual([2, 3, 4])
-    expect(carrierShadowedSeqs(partial)).toEqual([]) // 无读取器 = 客户端移除形态
+    expect(carrierShadowedSeqs(partial)).toEqual([]) // 无读取器 = 客户端不保留该字段
   })
 
   it('审计段取值判据:区间必须与载体逐值相等(否则不是本载体的审计段)', () => {
@@ -158,7 +158,7 @@ describe('marker-carrier · 形状判据', () => {
 })
 
 /**
- * 读侧配对:三选一 + 「紧邻性」硬约束(口径 2026-09-14 §一 / 记录 654)。
+ * 读侧配对:三选一 + 「紧邻性」硬约束(口径 2026-09-14 §一)。
  *
  * 容错**不得**把"审计段在、载体段在很远处或根本不存在"的真孤儿误判成成对 ——
  * 容错把要检出的缺陷掩盖掉是唯一不可接受的结果。写侧 `assertPairing` 保持严格。
