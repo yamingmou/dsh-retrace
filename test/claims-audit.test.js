@@ -94,6 +94,14 @@ const testsOf = (relPath) => {
  */
 const CLAIM_REGISTRY = [
   {
+    file: 'lib/close-guard-client.js',
+    claims: ['无法保证覆盖所有入口', '而不是"桌面端都不会触发"'],
+    evidence: [
+      { test: 'test/close-guard-desktop-quit.test.js', title: '对外文本都写明了"壳未处理 will-prevent-unload / 退出入口随版本而变 / 桌面端一律不武装"', claim: '无法保证覆盖所有入口', note: '这两条是**设计取舍的免责说明**（不是行为承诺）：用例锁定六份对外文本都写明"入口随版本/平台而变"与"桌面端一律不武装" ⇒ 该判断有文本级校验；它不声称覆盖所有宿主版本（这正是要表达的意思）' },
+      { test: 'test/close-guard-desktop-quit.test.js', title: '宿主回报 quitVeto=false（Desktop Electron 页面）→ running 会话也不 preventDefault', claim: '而不是"桌面端都不会触发"', note: '行为侧真正被钉住的是"桌面端不武装"：该用例断言即便有运行中会话、quitVeto=false 也不调用 preventDefault —— 与"具体哪条入口是否触发 beforeunload"无关' },
+    ],
+  },
+  {
     file: 'lib/marker-carrier.js',
     claims: ['`v` 与 kind 必须有值'],
     evidence: [

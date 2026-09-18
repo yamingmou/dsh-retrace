@@ -360,7 +360,7 @@ Read it before filing an issue.
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.28
+dsh plugin --profile desktop add dsh-retrace@0.4.29
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -439,13 +439,19 @@ the **host surface**, not by semver alone.
 | 🛡️ | **Running-work detection** | every session is scanned for live work: agent running, queued inbox items, background jobs, unclosed turns |
 | 📋 | **Running banner** | sessions with live work show a persistent in-page banner (short session code + reasons), so you can see it before quitting |
 | ⚠️ | **Exit prompt** | on plugin dispose (app exit / reload) a Chinese notice lists each running session and why it is considered busy — it only warns, it never cancels your running agent |
-| 🔒 | **Page-close interception (Web)** | `beforeunload` interception: a strong confirm when work is running (details modal, `[仍关闭]` = confirm-and-go), a light confirm otherwise |
-| 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports |
+| 🔒 | **Page-close interception (web browsers)** | `beforeunload` interception, armed only where the host reports a native confirm dialog: a strong confirm when work is running (details modal, `[仍关闭]` = confirm-and-go), a light confirm otherwise |
+| 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports; the all-sessions shape also carries the host-reported page surface (`surface` / `quitVeto`) |
 
-> Desktop note: the Electron shell destroys the window on quit, so the page-level
-> `beforeunload` hook cannot fire there and the host exposes no plugin quit-veto seam —
-> Desktop is covered by the running banner plus the dispose notice; Web gets the full
-> interception.
+> Desktop note: quit entry points differ by version/platform, and the DSH Desktop Electron
+> shell we inspected has no `will-prevent-unload` handler (0 hits across the packaged 2.0.9
+> `app.asar`). Where the entry does reach the page — the external report's DSH Desktop 0.9.0 /
+> Windows — the page `beforeunload` veto is **swallowed silently**: no dialog, no feedback, and
+> the exit looks stuck (only a force-quit works). Where it does not — the 2.0.9 shell we
+> inspected routes the tray item through `requestQuit(0) → window.destroy() → app.exit(0)` — the
+> quit is unaffected either way. The page cannot tell which case it is in, so desktop **never**
+> arms the native gate; it relies on the running banner plus the dispose notice. The gate is
+> armed only where the host reports that the page really surfaces a native dialog
+> (`quitVeto: true`, i.e. browser pages).
 
 > Command surface: `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP).
 
