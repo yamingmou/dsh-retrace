@@ -214,3 +214,46 @@ describe('close-guard-client shouldArmNativeGate(宿主 + 客户端两道都真�
     expect(shouldArmNativeGate(undefined, page)).toBe(false)
   })
 })
+
+describe('close-guard-client 自绘确认门:纯决策与上报', () => {
+  it('planBeforeUnload:只有"运行中 + 桌面页"才拦;其余一律放行(阴性对照)', async () => {
+    const { planBeforeUnload } = await import('../lib/close-guard-client.js')
+    const running = { running: [{ sessionId: 's1', reasons: ['agent-running'] }] }
+    expect(planBeforeUnload(running, { desktop: true })).toEqual({ action: 'gate', reason: 'running-desktop' })
+    // 无任务 ⇒ 直接关,不打扰(判据 3)
+    expect(planBeforeUnload({ running: [] }, { desktop: true })).toEqual({ action: 'allow', reason: 'no-running' })
+    // 状态未知(宿主读不到)⇒ 不打扰
+    expect(planBeforeUnload(null, { desktop: true })).toEqual({ action: 'allow', reason: 'state-unknown' })
+    // 非桌面页 ⇒ 交给 client.js 的原生确认门(浏览器)
+    expect(planBeforeUnload(running, { desktop: false })).toEqual({ action: 'allow', reason: 'browser-native-gate' })
+    // 已放行 / 守卫关闭 ⇒ 放行
+    expect(planBeforeUnload(running, { desktop: true, armed: true })).toEqual({ action: 'allow', reason: 'armed' })
+    expect(planBeforeUnload(running, { desktop: true, enabled: false })).toEqual({ action: 'allow', reason: 'disabled' })
+    // 页面不可见 ⇒ 不拦(隐藏窗没有可点的确认框,且隐藏页定时器会被节流;判据 ④)
+    expect(planBeforeUnload(running, { desktop: true, visible: false })).toEqual({ action: 'allow', reason: 'hidden' })
+  })
+
+  it('runningCountOf / gateEnabled(直读配置,失败默认开)', async () => {
+    const { runningCountOf, gateEnabled } = await import('../lib/close-guard-client.js')
+    expect(runningCountOf({ running: [1, 2, 3] })).toBe(3)
+    expect(runningCountOf(null)).toBe(0)
+    expect(gateEnabled({ getItem: () => null })).toBe(true)
+    expect(gateEnabled({ getItem: () => JSON.stringify({ closeGuard: false }) })).toBe(false)
+    expect(gateEnabled({ getItem: () => JSON.stringify({ closeGuard: true }) })).toBe(true)
+    expect(gateEnabled({ getItem: () => '{bad json' })).toBe(true)
+    expect(gateEnabled({ getItem: () => { throw new Error('blocked') } })).toBe(true)
+  })
+
+  it('reportGateEvent:搭既有 runningState 通道且 keepalive(关闭瞬间也发得出);失败不抛', async () => {
+    const { reportGateEvent } = await import('../lib/close-guard-client.js')
+    const calls = []
+    reportGateEvent('intercept', { surface: 'desktop-renderer', running: 2 }, (url, init) => { calls.push({ url, init }); return Promise.resolve({}) })
+    expect(calls[0].url).toContain('/api/plugins/retrace/runningState?')
+    expect(calls[0].url).toContain('closeGuardEvent=intercept')
+    expect(calls[0].url).toContain('surface=desktop-renderer')
+    expect(calls[0].url).toContain('running=2')
+    expect(calls[0].init.keepalive).toBe(true)
+    expect(() => reportGateEvent('release', {}, () => { throw new Error('offline') })).not.toThrow()
+    expect(() => reportGateEvent('release', {}, undefined)).not.toThrow()
+  })
+})

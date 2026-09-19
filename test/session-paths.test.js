@@ -209,28 +209,32 @@ describe('badgeTableCandidates / resolveBadgeTablePath', () => {
   it('覆写 env 排第一;规范落点(插件数据家下)次之;基座旁兜底', () => {
     // 短码表是**用户自备数据**,不是代码 ⇒ 代码里不得出现任何私有目录名。
     // 规范落点 = <pluginDataHome>/dsh-retrace/codes.json(与会话基座同源)。
-    const canonical = join(pluginDataHome({ home: '/H' }), 'dsh-retrace', 'codes.json')
-    const c = badgeTableCandidates({ home: '/H', override: '/O/t.json' })
+    const canonical = join(pluginDataHome({ home: '/H', dshHome: null }), 'dsh-retrace', 'codes.json')
+    const c = badgeTableCandidates({ home: '/H', override: '/O/t.json', dshHome: null })
     expect(c[0]).toBe('/O/t.json')
     expect(c[1]).toBe(canonical)
     expect(c).toEqual([...new Set(c)])
-    expect(badgeTableCandidates({ home: '/H', override: null })[0]).toBe(canonical)
+    expect(badgeTableCandidates({ home: '/H', override: null, dshHome: null })[0]).toBe(canonical)
   })
 
   it('取第一个存在的落点;**只读**(不写文件)', () => {
+    // ⚠️ 本用例**必须**显式传 `dshHome: null`:pluginDataHome() 的实现是 `$DSH_HOME` 优先,
+    // 不传就退回读进程环境 ⇒ 在 `DSH_HOME=~/dsh-v3` 下(启动纪律要求显式设)
+    // dataHome 会解析成**活家**,下面的 writeFileSync 就把用户真短码表覆盖成空表
+    // (2026-09-19 实测事故:跑一次全量测试即清空 ~/dsh-v3/dsh-retrace/codes.json)。
     const home = tmpRoot()
-    const dataHome = pluginDataHome({ home })
+    const dataHome = pluginDataHome({ home, dshHome: null })
     const canonical = join(dataHome, 'dsh-retrace', 'codes.json')
     mkdirSync(join(dataHome, 'dsh-retrace'), { recursive: true })
     writeFileSync(canonical, '{"codes":{}}\n')
-    expect(resolveBadgeTablePath({ home, override: null })).toBe(canonical)
+    expect(resolveBadgeTablePath({ home, override: null, dshHome: null })).toBe(canonical)
     const override = join(home, 'override.json')
     writeFileSync(override, '{"codes":{}}\n')
-    expect(resolveBadgeTablePath({ home, override })).toBe(override)
+    expect(resolveBadgeTablePath({ home, override, dshHome: null })).toBe(override)
     // 候选都不存在 → 返回首选(调用方读取失败自行兜底),不抛错
     const empty = tmpRoot()
-    expect(resolveBadgeTablePath({ home: empty, override: null }))
-      .toBe(join(pluginDataHome({ home: empty }), 'dsh-retrace', 'codes.json'))
+    expect(resolveBadgeTablePath({ home: empty, override: null, dshHome: null }))
+      .toBe(join(pluginDataHome({ home: empty, dshHome: null }), 'dsh-retrace', 'codes.json'))
   })
 })
 

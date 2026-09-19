@@ -38,6 +38,7 @@ function makeElement(tag) {
     title: '',
     textContent: '',
     isConnected: false,
+    offsetHeight: 24,
     appendChild(child) {
       this.children.push(child)
       if (this.firstChild === null) this.firstChild = child
@@ -58,6 +59,8 @@ function makeElement(tag) {
     },
     addEventListener() {},
     removeEventListener() {},
+    getBoundingClientRect() { return { width: 100, height: 24 } },
+    focus() {},
   }
 }
 
@@ -92,13 +95,17 @@ function installFakeDom() {
     clearInterval: () => {},
     setTimeout: () => 0,
     clearTimeout: () => {},
-    close: () => {},
+    close: vi.fn(),
   }
   vi.stubGlobal('window', window)
   vi.stubGlobal('document', document)
   return {
+    // [0] = client.js 的原生门(桌面不武装);[1] = 自绘确认门(桌面真正拦下的那条)。
     beforeUnload: () => (listeners.get('beforeunload') ?? [])[0],
+    beforeUnloadAll: () => listeners.get('beforeunload') ?? [],
     intervals,
+    document,
+    window,
   }
 }
 
@@ -122,7 +129,7 @@ const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() 
  * `payload` 形状 = runningState 载荷(`{ running, surface, quitVeto }`)。
  * `page` = 页面自身环境(`{ userAgent, href }`);省略 = 不注入(等于"看不出桌面痕迹")。
  */
-async function mountGuard(payload, page) {
+async function mountAssembly(payload, page) {
   const dom = installFakeDom()
   if (page) {
     // 页面自身证据读的是全局 navigator / location(见 close-guard-client 的
@@ -137,9 +144,15 @@ async function mountGuard(payload, page) {
   })
   apply(makeCtx())
   await flush()
-  const handler = dom.beforeUnload()
-  expect(typeof handler).toBe('function') // 装配失败(抛错被 catch)会让这里先红
-  return handler
+  const all = dom.beforeUnloadAll()
+  expect(all.length).toBe(2) // ① client.js 原生门 ② 自绘确认门
+  expect(typeof all[0]).toBe('function') // 装配失败(抛错被 catch)会让这里先红
+  return { handler: all[0], all, dom }
+}
+
+/** 旧签名的薄包装:返回 [0](client.js 原生门),既有用例语义不变。 */
+async function mountGuard(payload, page) {
+  return (await mountAssembly(payload, page)).handler
 }
 
 const runningPayload = () => ({
@@ -174,7 +187,56 @@ function fire(handler) {
 }
 
 // ---------------------------------------------------------------------------
-// 锁 1：桌面 / 无承载面 ⇒ 不 preventDefault
+// 锁 0(2026-09-19 复核):真实装配有**两条** beforeunload 监听器 —— [0] = client.js
+// 的原生门(桌面不武装),[1] = 自绘确认门(桌面真正拦下的那条)。此前用例只取 [0],
+// 于是"桌面不武装"看着绿、真实装配的拦截没人测(假绿)。这里列出两条并断言**聚合**
+// 行为:有任务 ⇒ 恰一条拦下(自绘门)且确认框在;无任务/隐藏 ⇒ 两条都不拦。
+// ---------------------------------------------------------------------------
+describe('真实装配两条监听器:桌面端谁在拦(复核假绿修复)', () => {
+  const byClass = (root, cls) => {
+    const stack = [...(root?.children ?? [])]
+    while (stack.length > 0) {
+      const node = stack.shift()
+      if (String(node.className ?? '').split(/\s+/).includes(cls)) return node
+      stack.push(...(node.children ?? []))
+    }
+    return null
+  }
+  const modalOf = (doc) => (doc.body.children ?? []).find((child) => child.id === 'dsh-rt-guard-modal')
+  const fireAll = (all) => {
+    const event = { preventDefault: vi.fn(), returnValue: undefined }
+    for (const fn of all) fn(event)
+    return event
+  }
+
+  it('有任务 + 桌面页 + 可见:[0] 原生门不拦;两条聚合恰一条拦(自绘门)+确认框在;确认后真的退', async () => {
+    const { all, dom } = await mountAssembly(runningPayload(), ELECTRON_PAGE)
+    expect(fire(all[0]).preventDefault).not.toHaveBeenCalled() // [0] = client.js 原生门:桌面不武装(旧锁仍真)
+    const event = fireAll(all)
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)      // 真正拦下的是 [1] 自绘门,恰好一条
+    const modal = modalOf(dom.document)
+    expect(modal).toBeTruthy()
+    byClass(modal, 'dsh-rt-guard-btn-primary').onclick()       // [仍要关闭]
+    expect(dom.window.close).toHaveBeenCalledTimes(1)          // 放行 = 真的再关一次
+    expect(fireAll(all).preventDefault).not.toHaveBeenCalled() // 二次关闭两条都放行
+  })
+
+  it('无任务 + 桌面页:两条都不拦(判据 3 不打扰)', async () => {
+    const { all, dom } = await mountAssembly({ running: [], surface: 'desktop-renderer', quitVeto: false }, ELECTRON_PAGE)
+    expect(fireAll(all).preventDefault).not.toHaveBeenCalled()
+    expect(modalOf(dom.document)).toBeFalsy()
+  })
+
+  it('隐藏窗 + 有任务 + 桌面页:两条都不拦(复核 ④:隐藏页定时器会节流,不拿退出赌看门狗)', async () => {
+    const { all, dom } = await mountAssembly(runningPayload(), ELECTRON_PAGE)
+    dom.document.visibilityState = 'hidden'
+    expect(fireAll(all).preventDefault).not.toHaveBeenCalled()
+    expect(modalOf(dom.document)).toBeFalsy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 锁 1：桌面 / 无承载面 ⇒ 不 preventDefault([0] 原生门腿的单元锁;见锁 0 的聚合断言)
 // ---------------------------------------------------------------------------
 describe('桌面端不武装原生门（issue #1 核心修复）', () => {
   it('宿主回报 quitVeto=false（Desktop Electron 页面）→ running 会话也不 preventDefault', async () => {
@@ -412,7 +474,7 @@ describe('对外文本不再把未覆盖的路径写成结论', () => {
     }
   })
 
-  it('对外文本都写明了"壳未处理 will-prevent-unload / 退出入口随版本而变 / 桌面端一律不武装"', () => {
+  it('对外文本都写明了"壳未处理 will-prevent-unload / 退出入口随版本而变 / 桌面端不武装宿主原生确认框(改自绘门)"', () => {
     for (const rel of ['README.md', 'README.zh.md', 'lib/close-guard-client.js']) {
       const text = readRepoFile(rel)
       expect({ file: rel, hasFact: text.includes('will-prevent-unload') }).toEqual({ file: rel, hasFact: true })
@@ -420,8 +482,18 @@ describe('对外文本不再把未覆盖的路径写成结论', () => {
     }
     // README 是折行的 markdown（还带 `> ` 引用前缀）⇒ 内容断言一律在"折叠空白 +
     // 去引用前缀"的视图上做，避免折行位置一变就假红。
-    expect(readFlat('README.md')).toContain('desktop **never** arms the native gate')
-    expect(readFlat('README.zh.md')).toContain('**桌面端一律不武装**原生门')
+    // 2026-09-20 口径更正：桌面端**不武装的是宿主原生确认框**；真正生效的是**页面自绘确认门**
+    //（它确实会 preventDefault）。下面两句钉的就是更正后的措辞。
+    expect(readFlat('README.md')).toContain("desktop never arms the host's native confirm dialog")
+    expect(readFlat('README.zh.md')).toContain('**桌面端一律不武装宿主原生确认框**')
+    // 新增事实锁：自绘确认门 + "壳不经过页面"的已知限制（少了任一条都要红）
+    expect(readFlat('README.zh.md')).toContain('页面自绘确认门')
+    expect(readFlat('README.zh.md')).toContain('壳提供 seam')
+    expect(readFlat('README.md')).toContain('page-drawn confirm gate')
+    expect(readFlat('README.md')).toContain('needs a shell seam')
+    // 短码/名字那条也得上对外文本（0.4.31 已上线）
+    expect(readFlat('README.zh.md')).toContain('opxxxopxxx')
+    expect(readFlat('README.md')).toContain('opxxxopxxx')
     // 2026-09-18（对抗复核追加）：文本必须写明"退出入口随版本/平台而变"，
     // 而不是把某一条入口（app.quit / app.exit）当作全部事实 —— 这正是本 issue 的病因。
     expect(readFlat('README.md')).toContain('by version/platform')
@@ -460,13 +532,18 @@ describe('对外文本不再把未覆盖的路径写成结论', () => {
     expect(unqualifiedTriggerHits('在会走到 beforeunload 的那类版本上，preventDefault 是静默的')).toEqual([])
   })
 
-  it('设置项文案与横幅文案说清了"桌面端不武装、保护由横幅承担"', () => {
+  it('设置项文案与横幅文案：桌面端不武装的是"宿主原生框"，改用页面自绘确认门(锁随行为一起改)', () => {
     const client = readRepoFile('lib/client.js')
     const flat = client.replace(/`/g, '').replace(/\s+/g, ' ')
-    expect(flat).toContain('桌面端（DSH Desktop）一律不武装')
-    expect(flat).toContain('Desktop (DSH Desktop) never arms it')
-    expect(client).toContain('桌面端不武装原生退出确认,请以此横幅为准')
-    expect(client).toContain('no native exit prompt on Desktop')
+    // 新口径:不武装的是宿主原生确认框那条路;桌面改用**页面自绘确认门**,并写明
+    // 看门狗兜底(worker 计时器,不受后台节流)与"先画框可见才拦"。
+    expect(flat).toContain('桌面端（DSH Desktop）不武装**宿主原生确认框**那条路')
+    expect(flat).toContain('页面自绘确认门')
+    expect(flat).toContain('Web Worker 计时器，不受后台节流')
+    expect(flat).toContain('Desktop (DSH Desktop) never arms the host native dialog path')
+    expect(flat).toContain('page-drawn confirm gate')
+    expect(client).toContain('桌面端用页面自绘确认框;若未弹出,以此横幅为准')
+    expect(client).toContain('Desktop uses a page-drawn confirm dialog')
     // 旧文案（把桌面退出写成"宿主原生路径"）不得复活
     expect(oldClaimHits(client)).toEqual([])
   })
