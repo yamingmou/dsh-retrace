@@ -15,7 +15,7 @@ import {
   CANONICAL_CODE_RE, ROOT_PARENT, CODE_LENGTH, isCanonicalCode, foldCode,
   composeCode, extractWsSeq, fnvBadge, LAYERS,
   buildIndex, resolveCode, verifyPair, probeAvailability,
-  allocateCodes, deriveCodes, scanSessions, loadIdentityMapEdges,
+  allocateCodes, deriveCodes, scanSessions, loadIdentityMapEdges, loadTableEntriesSafe,
   recordCodeChange, readCodeChanges, CHANGELOG_FIELDS,
 } from '../lib/identity/shortcode.js'
 import { workspaceAbbr } from '../lib/platform/session-paths.js'
@@ -496,5 +496,39 @@ describe('R7 变更留痕', () => {
 
   it('readCodeChanges 对不存在的文件返回空数组', () => {
     expect(readCodeChanges('/nonexistent/changelog.jsonl')).toEqual([])
+  })
+})
+
+describe('坏短码表不静默:错误必须显式出来(旧实现 catch{return[]} 会伪装成空表)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sc-table-'))
+  const put = (name, text) => { const p = join(dir, name); writeFileSync(p, text); return p }
+
+  it('表缺失 ⇒ missing 为真且无 error(缺失不是"坏")', () => {
+    const r = loadTableEntriesSafe(join(dir, 'nope.json'))
+    expect(r.missing).toBe(true)
+    expect(r.error).toBe(null)
+  })
+
+  it('JSON 解析失败 ⇒ malformed-json(绝不静默当空表)', () => {
+    const r = loadTableEntriesSafe(put('bad.json', '{ not json'))
+    expect(r.entries).toEqual([])
+    expect(String(r.error)).toMatch(/^malformed-json/)
+  })
+
+  it('codes 形状不对 ⇒ bad-shape', () => {
+    const r = loadTableEntriesSafe(put('shape.json', JSON.stringify({ codes: ['x'] })))
+    expect(String(r.error)).toMatch(/^bad-shape/)
+  })
+
+  it('有条目非法 ⇒ bad-entries,且合法条目仍保留', () => {
+    const r = loadTableEntriesSafe(put('entries.json', JSON.stringify({ codes: { a: 'abcdefghij', b: 42 } })))
+    expect(String(r.error)).toMatch(/^bad-entries/)
+    expect(r.entries).toHaveLength(1)
+  })
+
+  it('好表 ⇒ 无 error 且条目齐全', () => {
+    const r = loadTableEntriesSafe(put('ok.json', JSON.stringify({ codes: { a: 'abcdefghij', b: 'klmnopqrst' } })))
+    expect(r.error).toBe(null)
+    expect(r.entries).toHaveLength(2)
   })
 })
