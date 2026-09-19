@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.31] — 2026-09-19 · short code / display name via the title channel + desktop close interception (self-drawn confirm + watchdog)
+
+- short code / display name via the title channel + desktop close interception (self-drawn confirm + watchdog)
+
 ## [0.4.30] — 2026-09-19 · source landed in-repo (desktop quit still blocked, issue #1 second round + surface probes)
 
 - source landed in-repo (desktop quit still blocked, issue #1 second round + surface probes)

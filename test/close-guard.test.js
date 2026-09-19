@@ -469,3 +469,50 @@ describe('close-guard 承载面探针(installSurfaceProbe:按组合去重、不�
     uninstallSurfaceProbe()
   })
 })
+
+describe('客户端自绘确认门事件回执:宿主日志可 grep、按组合去重', () => {
+  it('reportClientGateEvent:无落点/无参数 = 无动作;有参数 = 落一行;同组合只落一次', async () => {
+    const mod = await import('../lib/close-guard.js')
+    const lines = []
+    expect(mod.reportClientGateEvent('/api/plugins/retrace/runningState?closeGuardEvent=intercept&running=2')).toBe(null) // 未装落点
+    mod.installClientGateLog((line) => lines.push(line))
+    const url = '/api/plugins/retrace/runningState?closeGuardEvent=intercept&surface=desktop-renderer&running=2'
+    expect(mod.reportClientGateEvent(url)).toBe('intercept|desktop-renderer|2')
+    expect(mod.reportClientGateEvent(url)).toBe(null) // 去重
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('客户端确认门事件')
+    expect(lines[0]).toContain('event=intercept')
+    expect(lines[0]).toContain('running=2')
+    // 其它事件/其它组合各留一行(拦截→确认→放行三类都要能在日志里分辨)
+    mod.reportClientGateEvent('/api/plugins/retrace/runningState?closeGuardEvent=confirm-shown&surface=desktop-renderer&running=2')
+    mod.reportClientGateEvent('/api/plugins/retrace/runningState?closeGuardEvent=release&surface=desktop-renderer&running=2')
+    mod.reportClientGateEvent('/api/plugins/retrace/runningState?closeGuardEvent=allow-no-running&surface=desktop-renderer&running=0')
+    expect(lines).toHaveLength(4)
+    expect(mod.clientGateEventState()).toEqual({ installed: true, seen: 4 })
+    mod.uninstallClientGateLog()
+    expect(mod.clientGateEventState()).toEqual({ installed: false, seen: 0 })
+  })
+
+  it('guardSurfaceOf 顺带把事件写进日志(runningState 轮询本身不产生事件行)', async () => {
+    const mod = await import('../lib/close-guard.js')
+    const lines = []
+    mod.installClientGateLog((line) => lines.push(line))
+    mod.guardSurfaceOf({ get: () => undefined }, { 'user-agent': 'Mozilla/5.0' }, '/api/plugins/retrace/runningState')
+    expect(lines.filter((l) => l.includes('客户端确认门事件'))).toHaveLength(0) // 裸轮询:无事件
+    mod.guardSurfaceOf({ get: () => undefined }, { 'user-agent': 'Mozilla/5.0' }, '/api/plugins/retrace/runningState?closeGuardEvent=intercept&surface=desktop-renderer&running=1')
+    expect(lines.filter((l) => l.includes('客户端确认门事件'))).toHaveLength(1)
+    mod.uninstallClientGateLog()
+  })
+
+  it('attachCloseGuard 装配时挂落点、dispose 时撤销(且保留原 dispose 提示语义)', async () => {
+    const mod = await import('../lib/close-guard.js')
+    const lines = []
+    const ctx = { sessions: { keys: () => [], get: () => undefined }, agents: { get: () => null }, jobs: { list: () => [] } }
+    const dispose = mod.attachCloseGuard(ctx, (line) => lines.push(line))
+    expect(mod.clientGateEventState().installed).toBe(true)
+    mod.reportClientGateEvent('/api/plugins/retrace/runningState?closeGuardEvent=intercept&running=1')
+    expect(lines.some((l) => l.includes('客户端确认门事件'))).toBe(true)
+    dispose()
+    expect(mod.clientGateEventState().installed).toBe(false)
+  })
+})
