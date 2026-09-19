@@ -120,9 +120,16 @@ const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() 
 /**
  * 起一个"宿主快照 = payload"的客户端，返回已接线的 beforeunload handler。
  * `payload` 形状 = runningState 载荷(`{ running, surface, quitVeto }`)。
+ * `page` = 页面自身环境(`{ userAgent, href }`);省略 = 不注入(等于"看不出桌面痕迹")。
  */
-async function mountGuard(payload) {
+async function mountGuard(payload, page) {
   const dom = installFakeDom()
+  if (page) {
+    // 页面自身证据读的是全局 navigator / location(见 close-guard-client 的
+    // pageEnvironment);这里按真实浏览器那样把它们挂到全局。
+    vi.stubGlobal('navigator', { userAgent: page.userAgent ?? '' })
+    vi.stubGlobal('location', { href: page.href ?? '' })
+  }
   __setMessageEditorWire((op) => {
     // 两个传输通道的回包都是信封 { ok, value }(见 client.js refresh())。
     if (op === 'runningState') return Promise.resolve({ ok: true, value: payload })
@@ -140,6 +147,11 @@ const runningPayload = () => ({
   surface: 'browser',
   quitVeto: true,
 })
+
+/** 页面自身证据的两个样本(与 close-guard-client.test.js 同源)。 */
+const ELECTRON_PAGE = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dsh-desktop/0.9.0 Chrome/126.0.6478.234 Electron/31.3.1 Safari/537.36', href: 'http://127.0.0.1:43120/' }
+const PLAIN_PAGE = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36', href: 'http://127.0.0.1:43120/' }
+const DESKTOP_URL_PAGE = { userAgent: PLAIN_PAGE.userAgent, href: 'http://127.0.0.1:43120/?token=abc&dsh-desktop-mode=advanced' }
 
 let warnSpy
 beforeEach(() => {
@@ -203,17 +215,64 @@ describe('桌面端不武装原生门（issue #1 核心修复）', () => {
 // ---------------------------------------------------------------------------
 describe('网页端仍然武装原生门（行为不变）', () => {
   it('quitVeto=true + kind=running → preventDefault 且写 returnValue', async () => {
-    const handler = await mountGuard(runningPayload())
+    const handler = await mountGuard(runningPayload(), PLAIN_PAGE)
     const event = fire(handler)
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
     expect(event.returnValue).toBe('')
   })
 
   it('quitVeto=true + kind=idle → 仍然轻确认一次（preventDefault）', async () => {
-    const handler = await mountGuard({ running: [], surface: 'browser', quitVeto: true })
+    const handler = await mountGuard({ running: [], surface: 'browser', quitVeto: true }, PLAIN_PAGE)
     const event = fire(handler)
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
     expect(event.returnValue).toBe('')
+  })
+
+  it('载荷不带 quitVeto 但页面是普通浏览器页 → 仍不武装(宿主未知一律取安全侧)', async () => {
+    const handler = await mountGuard({ running: [{ sessionId: 's1', reasons: ['agent-running'] }] }, PLAIN_PAGE)
+    expect(fire(handler).preventDefault).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 锁 2b：客户端一票否决（2026-09-18 第二轮,issue #1 复测仍卡死）
+//
+// 第一轮修复只改了宿主判据;报告人那台壳三条宿主判据**全不成立** ⇒ 宿主错回
+// `surface=browser, quitVeto=true` ⇒ 客户端照旧武装 ⇒ 仍然退不掉。这一组从
+// **装配层**钉死:页面自己的 UA / URL 只要带桌面证据,一律不武装。
+// ---------------------------------------------------------------------------
+describe('客户端一票否决：宿主判错也不许把桌面端卡死（第二轮核心修复）', () => {
+  it('★ 报告人现场回归:宿主回 surface=browser/quitVeto=true,页面 UA 含 Electron → 不 preventDefault', async () => {
+    const handler = await mountGuard({ running: [{ sessionId: 's1', reasons: ['agent-running'] }], surface: 'browser', quitVeto: true }, ELECTRON_PAGE)
+    const event = fire(handler)
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(event.returnValue).toBe(undefined)
+  })
+
+  it('★ 空闲也会被拦的那种形态:running 空 + 宿主回 true + 页面 UA 含 Electron → 不 preventDefault', async () => {
+    const handler = await mountGuard({ running: [], surface: 'browser', quitVeto: true }, ELECTRON_PAGE)
+    expect(fire(handler).preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('★ 页面 URL 带 dsh-desktop-(UA 看不出来) → 同样不 preventDefault', async () => {
+    const handler = await mountGuard({ running: [], surface: 'browser', quitVeto: true }, DESKTOP_URL_PAGE)
+    expect(fire(handler).preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('一票否决 ≠ 停用守卫:桌面页仍然渲染运行中横幅', async () => {
+    await mountGuard({ running: [{ sessionId: 's1', reasons: ['agent-running'] }], surface: 'browser', quitVeto: true }, ELECTRON_PAGE)
+    const banner = globalThis.document.body.children.find((n) => n.id === 'dsh-rt-guard-banner')
+    expect(banner).toBeTruthy()
+  })
+
+  it('变异锁:源码里装配层必须走 shouldArmNativeGate(不能用裸 quitVetoOf 当闸门)', () => {
+    const src = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
+    expect(src).toContain('shouldArmNativeGate(store.get())')
+    expect(src).not.toMatch(/if \(!quitVetoOf\(/)
+    // 客户端模块必须导出两道判据(宿主值 + 页面证据)
+    const mod = readFileSync(path.join(ROOT, 'lib', 'close-guard-client.js'), 'utf8')
+    expect(mod).toContain('export function shouldArmNativeGate')
+    expect(mod).toContain('export function clientDesktopEvidence')
   })
 })
 // ---------------------------------------------------------------------------
@@ -410,5 +469,49 @@ describe('对外文本不再把未覆盖的路径写成结论', () => {
     expect(client).toContain('no native exit prompt on Desktop')
     // 旧文案（把桌面退出写成"宿主原生路径"）不得复活
     expect(oldClaimHits(client)).toEqual([])
+  })
+
+  // -------------------------------------------------------------------------
+  // 第二轮（2026-09-18 复测仍卡死）：两道判据 + 自救开关，都要有文本、且要能被验
+  // -------------------------------------------------------------------------
+  it('第二轮事实逐条钉住：两道判据 / 请求级证据（含 Referer）/ 自救开关（删任一即红）', () => {
+    // ① 设置项文案必须给出自救开关（报告人正是靠它先恢复的）
+    const client = readRepoFile('lib/client.js')
+    expect(client).toContain('桌面端退不掉时先关这一项')
+    expect(client).toMatch(/turn this off first/i)
+    // ② 两条判据都要写出来（宿主"不反对" + 客户端一票否决）
+    const flatClient = client.replace(/`/g, '').replace(/\s+/g, ' ')
+    expect(flatClient).toContain('判据是两道')
+    expect(flatClient).toContain('一票否决')
+    expect(flatClient).toMatch(/no Electron in the UA, no dsh-desktop- in the URL/i)
+    // ③ README（中/英）都要写明补了什么判据、为什么（"完全没有证据"曾被归成浏览器页）
+    const zh = readRepoFile('README.zh.md').replace(/`/g, '').replace(/\s+/g, ' ').replace(/>\s?/g, '')
+    expect(zh).toContain('两道判据都成立才武装')
+    expect(zh).toContain('一票否决')
+    expect(zh).toContain('dsh-desktop-')
+    expect(zh).toContain('完全没有证据')
+    expect(zh).toContain('Referer')  // 生产可达的那条通道必须在文本里写明
+    expect(zh).toContain('桌面端退不掉时')
+    const en = readRepoFile('README.md').replace(/`/g, '').replace(/\s+/g, ' ').replace(/>\s?/g, '')
+    expect(en).toContain('Both criteria must hold')
+    expect(en.toLowerCase()).toContain('veto')
+    expect(en).toContain('dsh-desktop-')
+    expect(en).toContain('no evidence at all')
+    expect(en).toMatch(/Referer/i)
+    expect(en).toMatch(/turning off .*close guard.*recovers/i)
+  })
+
+  it('第二轮判据的源码出口必须在（删掉判据函数即红）', () => {
+    const host = readRepoFile('lib/close-guard.js')
+    expect(host).toContain('export function isElectronRequest')
+    expect(host).toContain('export function hasDesktopUrlMark')
+    expect(host).toContain('export function surfaceEvidenceOf')
+    expect(host).toContain('export function installSurfaceProbe')
+    // 探针必须按组合去重（否则客户端 5s 轮询会把宿主日志刷爆）
+    expect(host).toContain('surfaceProbeSeen')
+    const clientSide = readRepoFile('lib/close-guard-client.js')
+    expect(clientSide).toContain('export function clientDesktopEvidence')
+    expect(clientSide).toContain('export function shouldArmNativeGate')
+    expect(clientSide).toContain("CLIENT_DESKTOP_URL_MARK = 'dsh-desktop-'")
   })
 })

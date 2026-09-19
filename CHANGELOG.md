@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.30] — 2026-09-19 · source landed in-repo (desktop quit still blocked, issue #1 second round + surface probes)
+
+- source landed in-repo (desktop quit still blocked, issue #1 second round + surface probes)
+
 ## [0.4.29] — 2026-09-19 · desktop quit deadlock fix + timer unref + public text aligned with facts
 
 - desktop quit deadlock fix + timer unref + public text aligned with facts

@@ -360,7 +360,7 @@ Read it before filing an issue.
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.29
+dsh plugin --profile desktop add dsh-retrace@0.4.30
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -452,6 +452,21 @@ the **host surface**, not by semver alone.
 > arms the native gate; it relies on the running banner plus the dispose notice. The gate is
 > armed only where the host reports that the page really surfaces a native dialog
 > (`quitVeto: true`, i.e. browser pages).
+>
+> **Both criteria must hold** (2026-09-18, second round): the host side is only a
+> *non-objection*, and the client keeps a **veto** — if this page's `navigator.userAgent`
+> contains `Electron`, or the page URL contains `dsh-desktop-` (the external report's shell
+> puts its desktop marker in the query string), the gate is **never** armed. The host-side
+> criteria were widened to four request-level facts: the `x-dsh-desktop-renderer` capability
+> header, a request `User-Agent` containing `Electron`, or a request URL **or `Referer`**
+> containing `dsh-desktop-` — **any one** of them classifies the page as a desktop page. (Our own
+> polling URL carries no query string, so the page marker is in practice read from `Referer`,
+> which a same-origin `fetch` sends by default.) That covers the
+> hosts that expose no desktop evidence at all (the reporter's: a pure-Node harness plus an
+> Electron renderer, where all three older criteria were false, and the old code filed
+> "no evidence at all" as a browser page ⇒ the gate was still armed ⇒ the exit still hung).
+> If Desktop cannot quit, turning off "Exit confirmation (close guard)" in settings recovers
+> immediately (no restart).
 
 > Command surface: `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP).
 

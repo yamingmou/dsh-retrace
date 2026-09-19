@@ -13,6 +13,9 @@ import {
   isStale,
   buildRunningCopy,
   createGuardStore,
+  clientDesktopEvidence,
+  shouldArmNativeGate,
+  quitVetoOf,
   GUARD_ARM_TTL_MS,
   GUARD_POLL_MS,
 } from '../lib/close-guard-client.js'
@@ -155,5 +158,59 @@ describe('close-guard-client createGuardStore(放行标记:二次触发语义)',
 describe('close-guard-client 轮询常量(与装配一致)', () => {
   it('GUARD_POLL_MS 为 5s(beforeunload 前状态最多落后一轮)', () => {
     expect(GUARD_POLL_MS).toBe(5000)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 客户端一票否决(2026-09-18 第二轮,issue #1 复测仍卡死)
+//
+// 现场:报告人那台壳三条宿主判据全不成立 ⇒ 宿主错回 `surface=browser, quitVeto=true`
+// ⇒ 客户端照旧武装 ⇒ 仍然退不掉。⇒ 页面**自己**的两条属性(UA / URL)成为最后一道。
+// 下面每一格都是变异锁:删掉对应判据必红。
+// ---------------------------------------------------------------------------
+const ELECTRON_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dsh-desktop/0.9.0 Chrome/126.0.6478.234 Electron/31.3.1 Safari/537.36'
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+const DESKTOP_HREF = 'http://127.0.0.1:43120/?token=abc&dsh-desktop-mode=advanced&dsh-desktop-platform=win32'
+const BROWSER_HREF = 'http://127.0.0.1:43120/'
+
+describe('close-guard-client clientDesktopEvidence(页面自身证据)', () => {
+  it('UA 含 Electron / URL 含 dsh-desktop- 各自成立;普通浏览器页两条都不成立', () => {
+    expect(clientDesktopEvidence({ userAgent: ELECTRON_UA, href: BROWSER_HREF }))
+      .toEqual({ electronUa: true, urlMark: false, desktop: true })
+    expect(clientDesktopEvidence({ userAgent: BROWSER_UA, href: DESKTOP_HREF }))
+      .toEqual({ electronUa: false, urlMark: true, desktop: true })
+    expect(clientDesktopEvidence({ userAgent: BROWSER_UA, href: BROWSER_HREF }))
+      .toEqual({ electronUa: false, urlMark: false, desktop: false })
+    // 缺字段/形状不对不抛(装配层拿到什么就喂什么)
+    expect(clientDesktopEvidence({})).toEqual({ electronUa: false, urlMark: false, desktop: false })
+    expect(clientDesktopEvidence({ userAgent: null, href: 42 })).toEqual({ electronUa: false, urlMark: false, desktop: false })
+    // 大小写不敏感(Electron 段大小写各版本都出现过)
+    expect(clientDesktopEvidence({ userAgent: 'x electron/31' }).desktop).toBe(true)
+  })
+})
+
+describe('close-guard-client shouldArmNativeGate(宿主 + 客户端两道都真才武装)', () => {
+  it('★ 报告人现场回归:宿主错回 quitVeto=true,但页面 UA 含 Electron → 不武装', () => {
+    const snapshot = { running: [], surface: 'browser', quitVeto: true }
+    expect(quitVetoOf(snapshot)).toBe(true) // 宿主那条确实说了"可以"
+    expect(shouldArmNativeGate(snapshot, { userAgent: ELECTRON_UA, href: BROWSER_HREF })).toBe(false)
+  })
+
+  it('★ 宿主错回 quitVeto=true,但页面 URL 带 dsh-desktop- → 不武装', () => {
+    expect(shouldArmNativeGate({ running: [], surface: 'browser', quitVeto: true },
+      { userAgent: BROWSER_UA, href: DESKTOP_HREF })).toBe(false)
+  })
+
+  it('正向对照:普通浏览器页(无 Electron、无标记)+ quitVeto=true → 武装(网页端保护不变)', () => {
+    expect(shouldArmNativeGate({ running: [], surface: 'browser', quitVeto: true },
+      { userAgent: BROWSER_UA, href: BROWSER_HREF })).toBe(true)
+  })
+
+  it('宿主那条不成立时,页面再像浏览器也不武装(false/null/缺字段)', () => {
+    const page = { userAgent: BROWSER_UA, href: BROWSER_HREF }
+    expect(shouldArmNativeGate({ quitVeto: false }, page)).toBe(false)
+    expect(shouldArmNativeGate({ quitVeto: null }, page)).toBe(false)
+    expect(shouldArmNativeGate({}, page)).toBe(false)
+    expect(shouldArmNativeGate(undefined, page)).toBe(false)
   })
 })
