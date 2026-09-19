@@ -5,6 +5,29 @@ import { join } from 'node:path'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { DEFAULT_CONFIG, parseRetraceConfig, ROUTE_PREFIX, createRetraceHttpHandler } from '../lib/http.js'
 
+/**
+ * 让"宿主进程是不是 Electron"在本用例内**确定**,不随跑测的 node 而变。
+ * 本机 `pnpm test` 解析到的 node 是 DSH Desktop 自带那份,它的
+ * `process.versions.electron` 有值(实测 43.3.0)⇒ `desktopHostEvidence()` 会判
+ * "宿主是桌面壳",把"网页端"用例判成 unknown(假红)。真宿主不受影响
+ * (外部报告那台 harness 是纯 `node.exe`)。
+ */
+async function withElectronVersion(value, fn) {
+  const had = Object.prototype.hasOwnProperty.call(process.versions, 'electron')
+  const before = process.versions.electron
+  try {
+    if (value === undefined) delete process.versions.electron
+    else process.versions.electron = value
+    // **必须 await**:HTTP handler 是异步的,不等它跑完就恢复的话,请求真正执行时
+    // 看到的还是旧值(第一版就踩了这个:GET 侥幸过、POST 仍判 unknown)。
+    return await fn()
+  } finally {
+    if (had) process.versions.electron = before
+    else delete process.versions.electron
+  }
+}
+
+
 describe('parseRetraceConfig', () => {
   it('returns defaults for missing or empty headers', () => {
     expect(parseRetraceConfig(undefined)).toEqual(DEFAULT_CONFIG)
@@ -598,7 +621,7 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
     const agents = new Map([['s1', { id: 's1', status: 'running' }]])
     const env = makeGuardEnv(sessions, agents)
     const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
-    const parsed = JSON.parse((await get(handler, `${ROUTE_PREFIX}/runningState`)).body)
+    const parsed = JSON.parse((await withElectronVersion(undefined, () => get(handler, `${ROUTE_PREFIX}/runningState`))).body)
     expect(parsed.value.surface).toBe('browser')
     expect(parsed.value.quitVeto).toBe(true)
   })
@@ -622,9 +645,39 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
     const desktop = JSON.parse((await post(handler, `${ROUTE_PREFIX}/runningState`, {}, { 'x-dsh-desktop-renderer': 'a'.repeat(43) })).body)
     expect(desktop.value.surface).toBe('desktop-renderer')
     expect(desktop.value.quitVeto).toBe(false)
-    const browser = JSON.parse((await post(handler, `${ROUTE_PREFIX}/runningState`, {})).body)
+    const browser = JSON.parse((await withElectronVersion(undefined, () => post(handler, `${ROUTE_PREFIX}/runningState`, {}))).body)
     expect(browser.value.surface).toBe('browser')
     expect(browser.value.quitVeto).toBe(true)
+  })
+
+  it('★ 第二轮(issue #1 复测仍卡死):壳不给任何桌面痕迹,但**请求 UA 含 Electron** → desktop-renderer / quitVeto=false', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    // 报告人的宿主:纯 node.exe(process.versions.electron 为假)+ 无桌面服务 + 无能力头。
+    // 旧实现三条判据全不成立(0.4.30 之前)⇒ 判 browser/true ⇒ 客户端武装 ⇒ 退出仍卡死。
+    const parsed = JSON.parse((await withElectronVersion(undefined, () => get(
+      handler,
+      `${ROUTE_PREFIX}/runningState`,
+      { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dsh-desktop/0.9.0 Chrome/126.0.6478.234 Electron/31.3.1 Safari/537.36' },
+    ))).body)
+    expect(parsed.value.surface).toBe('desktop-renderer')
+    expect(parsed.value.quitVeto).toBe(false)
+  })
+
+  it('★ 第二轮:UA 看不出来,但**请求 URL 带 dsh-desktop-** → desktop-renderer / quitVeto=false', async () => {
+    const sessions = new Map([['s1', openTurnSession()]])
+    const agents = new Map([['s1', { id: 's1', status: 'running' }]])
+    const env = makeGuardEnv(sessions, agents)
+    const handler = createRetraceHttpHandler(env.ctx, { sessions: env.sessions, agents: env.agents, seam: makeSeam(), rollback: {}, log: () => {} })
+    const parsed = JSON.parse((await withElectronVersion(undefined, () => get(
+      handler,
+      `${ROUTE_PREFIX}/runningState?token=abc&dsh-desktop-mode=advanced&dsh-desktop-platform=win32`,
+      { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' },
+    ))).body)
+    expect(parsed.value.surface).toBe('desktop-renderer')
+    expect(parsed.value.quitVeto).toBe(false)
   })
 
   it('无能力头但宿主看得出 Electron(旧版桌面壳/兼容模式浏览器)→ surface=unknown / quitVeto=null', async () => {

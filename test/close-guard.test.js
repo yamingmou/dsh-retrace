@@ -8,9 +8,37 @@ import {
   quitVetoFor,
   guardSurfaceOf,
   desktopHostEvidence,
+  surfaceEvidenceOf,
+  installSurfaceProbe,
+  uninstallSurfaceProbe,
+  surfaceProbeState,
   PAGE_SURFACE,
 } from '../lib/close-guard.js'
 import { resetHostCompatDiagnostics } from '../lib/host-compat.js'
+
+/**
+ * 让"宿主进程是不是 Electron"在本用例内**确定**,不随跑测的 node 而变。
+ *
+ * 为什么需要:本机 `pnpm test` 解析到的 node 是 DSH Desktop 自带的那份
+ * (`…/runtime-commands/generations/<id>/private/node-bin/node`),它的
+ * `process.versions.electron` **有值**(实测 43.3.0)。而 `desktopHostEvidence()`
+ * 正是拿这条当"宿主是桌面壳"的证据 ⇒ "网页端"用例会**假红**(判成 unknown)。
+ * 真宿主不受影响:外部报告那台 harness 是纯 `node.exe`(报告人实测该字段为假)。
+ * 本函数只在用例内临时改 `process.versions.electron`,跑完恢复原值。
+ * @param {string|undefined} value `undefined` = 删掉该键(模拟纯 Node 宿主)
+ */
+function withElectronVersion(value, fn) {
+  const had = Object.prototype.hasOwnProperty.call(process.versions, 'electron')
+  const before = process.versions.electron
+  try {
+    if (value === undefined) delete process.versions.electron
+    else process.versions.electron = value
+    return fn()
+  } finally {
+    if (had) process.versions.electron = before
+    else delete process.versions.electron
+  }
+}
 
 /** 合成 agent(官方形态:id/status/inbox)。 */
 function makeAgent(status = 'idle', inbox = {}) {
@@ -283,13 +311,20 @@ describe('close-guard 宿主承载面(pageSurfaceOf / quitVetoFor / guardSurface
   })
 
   it('desktopHostEvidence:桌面专属服务在场即算桌面宿主;无 get 的 ctx 不抛', () => {
+    // "宿主进程不是 Electron"这一格必须**确定**(见 withElectronVersion 的理由)
+    withElectronVersion(undefined, () => {
+      expect(desktopHostEvidence({ get: () => undefined })).toBe(false)
+      expect(desktopHostEvidence({})).toBe(false)
+      expect(desktopHostEvidence(undefined)).toBe(false)
+      // get 抛错(未 inject 的 Proxy 形态)按"没有"处理,不冒泡
+      expect(desktopHostEvidence({ get: () => { throw new Error('without inject') } })).toBe(false)
+    })
+    // 反向:进程确实是 Electron(跑测的 node 就是)⇒ 也是桌面宿主证据
+    withElectronVersion('43.0.0', () => {
+      expect(desktopHostEvidence({ get: () => undefined })).toBe(true)
+    })
     expect(desktopHostEvidence({ get: (n) => (n === 'desktopRuntime' ? {} : undefined) })).toBe(true)
     expect(desktopHostEvidence({ get: (n) => (n === 'desktopBrowserAccess' ? {} : undefined) })).toBe(true)
-    expect(desktopHostEvidence({ get: () => undefined })).toBe(false)
-    expect(desktopHostEvidence({})).toBe(false)
-    expect(desktopHostEvidence(undefined)).toBe(false)
-    // get 抛错(未 inject 的 Proxy 形态)按"没有"处理,不冒泡
-    expect(desktopHostEvidence({ get: () => { throw new Error('without inject') } })).toBe(false)
   })
 
   it('guardSurfaceOf 把两面拼成一个载荷片段(HTTP 与 wire 通道同源)', () => {
@@ -297,7 +332,140 @@ describe('close-guard 宿主承载面(pageSurfaceOf / quitVetoFor / guardSurface
     expect(guardSurfaceOf(desktopCtx, { 'x-dsh-desktop-renderer': 'tok' }))
       .toEqual({ surface: 'desktop-renderer', quitVeto: false })
     expect(guardSurfaceOf(desktopCtx, undefined)).toEqual({ surface: 'unknown', quitVeto: null })
-    expect(guardSurfaceOf({ get: () => undefined }, {}))
-      .toEqual({ surface: 'browser', quitVeto: true })
+    withElectronVersion(undefined, () => {
+      expect(guardSurfaceOf({ get: () => undefined }, {}))
+        .toEqual({ surface: 'browser', quitVeto: true })
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 第二轮(2026-09-18,issue #1 复测仍卡死):四条请求级判据(含 Referer)+ 客户端一票否决
+//
+// 现场:报告人那台壳(纯 Node 跑 harness + Electron 渲染页)**三条旧判据一条都不成立**
+// (能力头 / 桌面服务 / process.versions.electron 全为假)⇒ 旧实现 `pageSurfaceOf`
+// 把"完全没有证据"归成 BROWSER ⇒ 回包实测 `{"running":[],"surface":"browser",
+// "quitVeto":true}` ⇒ 客户端照旧武装原生门 ⇒ 仍然退不掉。
+// 下面每一格都是**该红时红**的变异锁:把对应判据删掉,这一格必红。
+// ---------------------------------------------------------------------------
+/** Electron 渲染页的默认 UA 形状(报告人那台的形态)。 */
+const ELECTRON_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dsh-desktop/0.9.0 Chrome/126.0.6478.234 Electron/31.3.1 Safari/537.36'
+/** 普通浏览器 UA(正向对照:网页端保护不许被这轮改动关掉)。 */
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+/** 报告人那台壳的请求 URL 形状(桌面标记在查询参数里)。 */
+const DESKTOP_URL = '/api/plugins/retrace/runningState?token=abc&dsh-desktop-mode=advanced&dsh-desktop-platform=win32'
+
+describe('close-guard 承载面判据②③:请求 UA / 请求 URL(issue #1 第二轮)', () => {
+  it('★ 报告人现场回归:无能力头 + 无桌面服务,但请求 UA 含 Electron → desktop-renderer/quitVeto=false', () => {
+    // 旧实现在这一格回 `browser`/`true` —— 就是复测仍卡死的直接原因。
+    const headers = { 'user-agent': ELECTRON_UA }
+    expect(pageSurfaceOf(headers, { desktopHost: false })).toBe(PAGE_SURFACE.DESKTOP_RENDERER)
+    expect(quitVetoFor(PAGE_SURFACE.DESKTOP_RENDERER)).toBe(false)
+    // 完整载荷(宿主侧唯一出口):HTTP 面传 url 也一样。
+    expect(guardSurfaceOf({ get: () => undefined }, headers, DESKTOP_URL))
+      .toEqual({ surface: 'desktop-renderer', quitVeto: false })
+  })
+
+  it('★ 无能力头 + 无 UA 证据,但请求 URL 带 dsh-desktop- → desktop-renderer', () => {
+    expect(pageSurfaceOf({}, { desktopHost: false, url: DESKTOP_URL })).toBe(PAGE_SURFACE.DESKTOP_RENDERER)
+  })
+
+  it('UA 判据大小写/数组形状容错;空 UA 不算证据', () => {
+    expect(pageSurfaceOf({ 'User-Agent': 'x electron/1' }, { desktopHost: false })).toBe(PAGE_SURFACE.DESKTOP_RENDERER)
+    expect(pageSurfaceOf({ 'user-agent': [ELECTRON_UA] }, { desktopHost: false })).toBe(PAGE_SURFACE.DESKTOP_RENDERER)
+    expect(pageSurfaceOf({ 'user-agent': '' }, { desktopHost: false })).toBe(PAGE_SURFACE.BROWSER)
+    expect(pageSurfaceOf({}, { desktopHost: false, url: '' })).toBe(PAGE_SURFACE.BROWSER)
+    // URL 里的普通字符串不算证据(标记必须逐字是 dsh-desktop-)
+    expect(pageSurfaceOf({}, { desktopHost: false, url: '/api/plugins/retrace/runningState' })).toBe(PAGE_SURFACE.BROWSER)
+  })
+
+  it('正向对照:普通浏览器 UA + 无标记 → 仍然 browser/quitVeto=true(网页端保护不变)', () => {
+    expect(pageSurfaceOf({ 'user-agent': BROWSER_UA }, { desktopHost: false })).toBe(PAGE_SURFACE.BROWSER)
+    expect(pageSurfaceOf({ 'user-agent': BROWSER_UA }, { desktopHost: false, url: '/api/plugins/retrace/runningState' }))
+      .toBe(PAGE_SURFACE.BROWSER)
+    // 宿主看得出 Electron 但请求无证据(旧壳兼容模式的普通浏览器页)→ 中性态不变
+    expect(pageSurfaceOf({ 'user-agent': BROWSER_UA }, { desktopHost: true })).toBe(PAGE_SURFACE.UNKNOWN)
+  })
+
+  it('surfaceEvidenceOf 是探针的入参快照(四个布尔 + 截断后的 UA)', () => {
+    const ev = surfaceEvidenceOf({ 'user-agent': ELECTRON_UA }, { desktopHost: true, url: DESKTOP_URL })
+    expect(ev).toMatchObject({ header: false, electronUa: true, urlMark: true, desktopHost: true })
+    expect(ev.ua.startsWith('Mozilla/5.0')).toBe(true)
+    expect(ev.ua.length).toBeLessThanOrEqual(161)
+    // 超长 UA 截断(日志不刷屏),但仍保留可判读前缀
+    const long = surfaceEvidenceOf({ 'user-agent': `Electron/${'x'.repeat(400)}` }, {})
+    expect(long.ua.endsWith('…')).toBe(true)
+    expect(long.electronUa).toBe(true)
+    expect(surfaceEvidenceOf(undefined, {})).toMatchObject({ header: false, electronUa: false, urlMark: false, desktopHost: false, ua: '' })
+  })
+})
+
+describe('close-guard 承载面探针(installSurfaceProbe:按组合去重、不刷屏)', () => {
+  it('同入参组合只打一次;不同组合各打一次;行里有四个入参与结果', () => {
+    const lines = []
+    installSurfaceProbe((line) => lines.push(line))
+    const ctx = { get: () => undefined }
+    // 客户端每 5s 轮询一次:同一组合连打 5 次 ⇒ 只应留下 1 行判定
+    // (这段要求"宿主不是 Electron" ⇒ 用 withElectronVersion 固定住)
+    for (let i = 0; i < 5; i++) withElectronVersion(undefined, () => guardSurfaceOf(ctx, { 'user-agent': ELECTRON_UA }, DESKTOP_URL))
+    expect(lines.filter((l) => l.includes('承载面判定'))).toHaveLength(1)
+    const line = lines.find((l) => l.includes('承载面判定'))
+    expect(line).toContain('surface=desktop-renderer')
+    expect(line).toContain('quitVeto=false')
+    expect(line).toContain('能力头=无')
+    expect(line).toContain('请求UA-Electron=有')
+    expect(line).toContain('URL标记=有')
+    expect(line).toContain('宿主桌面痕迹=无')
+    expect(line).toContain('Electron/31.3.1')
+    // 换一个组合(普通浏览器页)⇒ 再打一行
+    withElectronVersion(undefined, () => guardSurfaceOf(ctx, { 'user-agent': BROWSER_UA }, '/api/plugins/retrace/runningState'))
+    expect(lines.filter((l) => l.includes('承载面判定'))).toHaveLength(2)
+    expect(lines.filter((l) => l.includes('surface=browser'))).toHaveLength(1)
+  })
+
+  it('装配时先打一行"探针已启用 + 判据清单";组合空间有界(4 个布尔 ⇒ 最多 16 种)', () => {
+    const lines = []
+    installSurfaceProbe((line) => lines.push(line))
+    expect(lines[0]).toContain('承载面探针已启用')
+    expect(lines[0]).toContain('请求 UA 含 Electron')
+    expect(lines[0]).toContain('x-dsh-desktop-renderer')
+    // 穷举四种证据的全部 16 种组合 ⇒ 判定行数必然 ≤ 16(结构上不可能刷屏),
+    // 而且**不是**靠条数上限挡的(上限那种写法会有死代码/写错风险)。
+    const cases = []
+    withElectronVersion(undefined, () => {
+      for (const header of [false, true]) {
+        for (const ua of [false, true]) {
+          for (const urlMark of [false, true]) {
+            for (const desktopHost of [false, true]) {
+              cases.push(guardSurfaceOf(
+              { get: (n) => (desktopHost && n === 'desktopRuntime' ? {} : undefined) },
+              {
+                ...(header ? { 'x-dsh-desktop-renderer': 'tok' } : {}),
+                ...(ua ? { 'user-agent': ELECTRON_UA } : { 'user-agent': BROWSER_UA }),
+              },
+                urlMark ? DESKTOP_URL : '/api/plugins/retrace/runningState',
+              ))
+            }
+          }
+        }
+      }
+    })
+    expect(cases).toHaveLength(16)
+    const judged = lines.filter((l) => l.includes('承载面判定'))
+    expect(judged.length).toBeGreaterThan(0)
+    expect(judged.length).toBeLessThanOrEqual(16)
+    expect(surfaceProbeState().combos).toBe(judged.length)
+    // 同一组合再打 20 次 ⇒ 行数不变(轮询不刷屏)
+    for (let i = 0; i < 20; i++) guardSurfaceOf({ get: () => undefined }, { 'user-agent': ELECTRON_UA }, DESKTOP_URL)
+    expect(lines.filter((l) => l.includes('承载面判定')).length).toBe(judged.length)
+  })
+
+  it('卸下探针后不再记录(dispose 路径);未装探针时判定照常工作', () => {
+    uninstallSurfaceProbe()
+    const ctx = { get: () => undefined }
+    expect(guardSurfaceOf(ctx, { 'user-agent': ELECTRON_UA }, DESKTOP_URL))
+      .toEqual({ surface: 'desktop-renderer', quitVeto: false })
+    expect(surfaceProbeState()).toEqual({ installed: false, combos: 0 })
+    uninstallSurfaceProbe()
   })
 })

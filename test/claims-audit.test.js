@@ -102,6 +102,13 @@ const CLAIM_REGISTRY = [
     ],
   },
   {
+    file: 'lib/index.js',
+    claims: ['判错也不会把桌面端卡死'],
+    evidence: [
+      { test: 'test/close-guard-desktop-quit.test.js', title: '★ 报告人现场回归:宿主回 surface=browser/quitVeto=true,页面 UA 含 Electron → 不 preventDefault', claim: '判错也不会把桌面端卡死', note: 'wire 通道拿不到请求对象,宿主侧可能把 Electron 页面判成 browser(第二轮的现场);该用例从**装配层**断言:即便宿主回 quitVeto=true,页面自身的桌面证据也会让原生门不武装 ⇒ 判错不会卡死退出。宿主侧请求级判据的独立校验见 test/close-guard.test.js 与 test/close-guard-arming-matrix.test.js' },
+    ],
+  },
+  {
     file: 'lib/marker-carrier.js',
     claims: ['`v` 与 kind 必须有值'],
     evidence: [
