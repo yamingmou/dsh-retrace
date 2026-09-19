@@ -360,7 +360,7 @@ Read it before filing an issue.
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.30
+dsh plugin --profile desktop add dsh-retrace@0.4.32
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -385,7 +385,7 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.26`) and let `dsh-log-contract` resolve to
+Pin an exact plugin version (`dsh-retrace@0.4.32`) and let `dsh-log-contract` resolve to
 `>=0.3.12`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 
@@ -439,34 +439,63 @@ the **host surface**, not by semver alone.
 | 🛡️ | **Running-work detection** | every session is scanned for live work: agent running, queued inbox items, background jobs, unclosed turns |
 | 📋 | **Running banner** | sessions with live work show a persistent in-page banner (short session code + reasons), so you can see it before quitting |
 | ⚠️ | **Exit prompt** | on plugin dispose (app exit / reload) a Chinese notice lists each running session and why it is considered busy — it only warns, it never cancels your running agent |
-| 🔒 | **Page-close interception (web browsers)** | `beforeunload` interception, armed only where the host reports a native confirm dialog: a strong confirm when work is running (details modal, `[仍关闭]` = confirm-and-go), a light confirm otherwise |
+| 🔒 | **Page-close interception** | **Does not arm the host's native confirm dialog**; uses a **page-drawn confirm gate** instead: it draws the box and **verifies visibility synchronously** before blocking (`preventDefault`); if it cannot draw, is not visible, or the page is hidden ⇒ **lets the close through immediately**; the dialog waits for your choice (**Esc = cancel**); a **Web-Worker watchdog** (immune to background throttling) is only the *last* resort; turning the setting off returns to the official behaviour (**no restart**) |
 | 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports; the all-sessions shape also carries the host-reported page surface (`surface` / `quitVeto`) |
 
-> Desktop note: quit entry points differ by version/platform, and the DSH Desktop Electron
-> shell we inspected has no `will-prevent-unload` handler (0 hits across the packaged 2.0.9
-> `app.asar`). Where the entry does reach the page — the external report's DSH Desktop 0.9.0 /
-> Windows — the page `beforeunload` veto is **swallowed silently**: no dialog, no feedback, and
-> the exit looks stuck (only a force-quit works). Where it does not — the 2.0.9 shell we
-> inspected routes the tray item through `requestQuit(0) → window.destroy() → app.exit(0)` — the
-> quit is unaffected either way. The page cannot tell which case it is in, so desktop **never**
-> arms the native gate; it relies on the running banner plus the dispose notice. The gate is
-> armed only where the host reports that the page really surfaces a native dialog
-> (`quitVeto: true`, i.e. browser pages).
+> Desktop wording (corrected 2026-09-20): **desktop never arms the host's native confirm dialog** —
+> quit entry points differ **by version/platform**, and the native dialog either does not exist on a
+> desktop shell or is swallowed: the 2.0.9 shell we inspected has no `will-prevent-unload` handler
+> (0 hits across the packaged `app.asar`) and routes the tray item through
+> `requestQuit(0) → window.destroy() → app.exit(0)`; on the external report's DSH Desktop 0.9.0 /
+> Windows the entry **does reach** the page `beforeunload` (0.9.0), but the veto is **swallowed
+> silently** (no dialog, no feedback — the exit just looks stuck).
 >
-> **Both criteria must hold** (2026-09-18, second round): the host side is only a
-> *non-objection*, and the client keeps a **veto** — if this page's `navigator.userAgent`
-> contains `Electron`, or the page URL contains `dsh-desktop-` (the external report's shell
-> puts its desktop marker in the query string), the gate is **never** armed. The host-side
-> criteria were widened to four request-level facts: the `x-dsh-desktop-renderer` capability
-> header, a request `User-Agent` containing `Electron`, or a request URL **or `Referer`**
-> containing `dsh-desktop-` — **any one** of them classifies the page as a desktop page. (Our own
-> polling URL carries no query string, so the page marker is in practice read from `Referer`,
-> which a same-origin `fetch` sends by default.) That covers the
-> hosts that expose no desktop evidence at all (the reporter's: a pure-Node harness plus an
-> Electron renderer, where all three older criteria were false, and the old code filed
-> "no evidence at all" as a browser page ⇒ the gate was still armed ⇒ the exit still hung).
-> If Desktop cannot quit, turning off "Exit confirmation (close guard)" in settings recovers
-> immediately (no restart).
+> What actually protects on desktop is the **page-drawn confirm gate** (finalised 2026-09-19):
+> it **does call `preventDefault`** — but only after it has **drawn the box and verified it is
+> visible, synchronously**; a `visibilityState` pre-check lets the close through immediately when the
+> box cannot be drawn / is not visible / the page is hidden; the dialog waits for your choice
+> (**Esc = cancel**); a **Web-Worker watchdog** (immune to background throttling) is only the
+> **last** resort.
+>
+> **Both criteria must hold** (2026-09-18, second round): the host side is only a *non-objection*
+> (`quitVeto: true`), and the client keeps a **veto** — if this page's `navigator.userAgent`
+> contains `Electron`, or the page URL contains `dsh-desktop-` (the external report's shell puts its
+> desktop marker in the query string), the native gate is **never** armed. The host-side criteria
+> were widened to four request-level facts: the `x-dsh-desktop-renderer` capability header, a
+> request `User-Agent` containing `Electron`, or a request URL **or `Referer`** containing
+> `dsh-desktop-` — **any one** of them classifies the page as a desktop page. (Our own polling URL
+> carries no query string, so the page marker is in practice read from `Referer`, which a
+> same-origin `fetch` sends by default.) That covers the hosts that expose no desktop evidence at
+> all (the reporter's: a pure-Node harness plus an Electron renderer, where all three older criteria
+> were false, and the old code filed "no evidence at all" as a browser page ⇒ the gate was still
+> armed ⇒ the exit still hung).
+>
+> **Known limitation (stated plainly)**: some desktop shells route quit **around the page entirely**
+> (e.g. `requestQuit → destroy → app.exit`, or the X button merely hides the window) ⇒ on those
+> shells a plugin **cannot** show a confirm dialog at quit time; it **needs a shell seam**
+> (a `will-prevent-unload` handler, or a pre-quit prompt hook). If Desktop cannot quit, turning off
+> "Exit confirmation (close guard)" in settings recovers immediately (no restart).
+
+**Session badge & display name** (**planned / off by default**) — badges are for human
+collaboration; **identity is still decided by the session id**. The transports
+(`sessionBadge` / `setBadgeTitle` / `initBadgeTitles` / `badgeMap`, on both HTTP and harness),
+the resolver and the write guards are **in place**, but the **automatic startup path that writes
+titles is off by default** (after three distinct on-device failures it moves to the **scripting
+layer T3**, which is not implemented yet) — set `__DSH_RETRACE_BADGE_BOOTSTRAP = true` to enable it:
+
+- A session title renders as `[badge] original title` (shape placeholder: `[opxxxopxxx] original title`); the badge
+  shape is **`opxxxopxxx`** and comes from the **real table** `codes.json` (workspace + sequence +
+  parent-chain semantics — **not a hash**).
+- Sessions with **no `session/title` event are left blank on purpose** (the title shows just
+  `[badge]`) — **no project-name fallback, no fabricated name**.
+- If the table / resolver is unavailable it falls back to the **raw session id as a placeholder**,
+  and **never** to FNV.
+- The sidebar row, the running banner and the checkpoint view share **one source**: the same badge
+  map the host hands down (host op `badgeMap`).
+
+> **Planned (not shipped)**: the scripting-layer T3 is not implemented yet (the badge/name
+> **automatic title-writing startup path** is blocked on it); the agent business-layer plan (runtime guard,
+> interruption governance, ecosystem-facing interfaces) is a **plan**, not a shipped capability.
 
 > Command surface: `retrace.runningState` (host RPC) + `GET|POST /api/plugins/retrace/runningState` (HTTP).
 

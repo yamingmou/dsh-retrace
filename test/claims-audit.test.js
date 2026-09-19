@@ -97,7 +97,7 @@ const CLAIM_REGISTRY = [
     file: 'lib/close-guard-client.js',
     claims: ['无法保证覆盖所有入口', '而不是"桌面端都不会触发"'],
     evidence: [
-      { test: 'test/close-guard-desktop-quit.test.js', title: '对外文本都写明了"壳未处理 will-prevent-unload / 退出入口随版本而变 / 桌面端一律不武装"', claim: '无法保证覆盖所有入口', note: '这两条是**设计取舍的免责说明**（不是行为承诺）：用例锁定六份对外文本都写明"入口随版本/平台而变"与"桌面端一律不武装" ⇒ 该判断有文本级校验；它不声称覆盖所有宿主版本（这正是要表达的意思）' },
+      { test: 'test/close-guard-desktop-quit.test.js', title: '对外文本都写明了"壳未处理 will-prevent-unload / 退出入口随版本而变 / 桌面端不武装宿主原生确认框(改自绘门)"', claim: '无法保证覆盖所有入口', note: '这两条是**设计取舍的免责说明**（不是行为承诺）：用例锁定六份对外文本都写明"入口随版本/平台而变"与"桌面端一律不武装" ⇒ 该判断有文本级校验；它不声称覆盖所有宿主版本（这正是要表达的意思）' },
       { test: 'test/close-guard-desktop-quit.test.js', title: '宿主回报 quitVeto=false（Desktop Electron 页面）→ running 会话也不 preventDefault', claim: '而不是"桌面端都不会触发"', note: '行为侧真正被钉住的是"桌面端不武装"：该用例断言即便有运行中会话、quitVeto=false 也不调用 preventDefault —— 与"具体哪条入口是否触发 beforeunload"无关' },
     ],
   },
@@ -379,6 +379,28 @@ const CLAIM_REGISTRY = [
       { test: 'test/identity-shortcode.test.js', title: 'R10 身份一致但文件缺失 → 身份栏仍 consistent,可用性栏独立为 false', claim: '独立分栏，绝不参与上面的判定' },
       { test: 'test/identity-shortcode.test.js', title: 'R9 分配器:已登记码钉住不变,新会话在工作区序号尾部追加', claim: '**已登记(pinned)的码永不变**' },
       { test: 'test/identity-shortcode.test.js', title: 'R9 基座换代:重推导会改码,但已登记码仍不变(钉住优先于推导)', claim: '故运行时**绝不**用推导结果覆盖已登记码', note: '用例先证明"按新集合重推导确实会把码改指",再断言已登记码不动且新会话改用追加号' },
+    ],
+  },
+  // ── 短码"跨载体同源"（B 步:横幅与读档点视图必须同一个码）──────────────────
+  // 横幅 labelOf 旧实现用本地 FNV 兜底模块 `badge.js`,与读档点视图用的宿主 op
+  // 不是同一套值 ⇒ 同一会话两个码。现在客户端只读宿主下发的规范码缓存,拿不到
+  // 就留空/占位。证据 = test/badge-title-wiring.test.js 的缓存用例 + 结构化断言。
+  {
+    file: 'lib/client.js',
+    claims: [
+      '**绝不回落 FNV**。',
+      '**绝不**回落本地 FNV',
+    ],
+    evidence: [
+      { test: 'test/badge-title-wiring.test.js', title: '短码缓存未命中返回空串(占位),绝不自己算出一个值', claim: '**绝不回落 FNV**。', note: '旧横幅走本地 FNV 模块,任何 id 都会算出一个 10 位值;新路径未命中就返回空串,用例同时断言它不匹配 10 位码形状' },
+      { test: 'test/badge-title-wiring.test.js', title: '结构化断言:客户端不再 import 本地 FNV 模块,labelOf 只读宿主缓存', claim: '**绝不**回落本地 FNV', note: '结构断言:源码里已无 `from \'./badge.js\'`,且 labelOf = canonicalBadgeOf(...) || String(sessionId)(占位=原始 id)' },
+    ],
+  },
+  {
+    file: 'lib/index.js',
+    claims: ['保证跨载体同源'],
+    evidence: [
+      { test: 'test/badge-title-wiring.test.js', title: '短码缓存:宿主 badgeMap 下发后命中,两种 id 形态同码且幂等', claim: '保证跨载体同源', note: '同源于宿主 badgeMap:同一份映射供横幅与读档点视图取码,两种 id 形态(带/不带 session- 前缀)同码' },
     ],
   },
 ]
