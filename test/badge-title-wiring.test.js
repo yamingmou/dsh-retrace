@@ -43,7 +43,7 @@ const nodeRequire = createRequire(import.meta.url)
 // 只追加两个**私有**函数；`__setMessageEditorWire` 本来就是 client.js 的公开导出，
 // 会随打包一起出现在 bundle 的 exports 上（bundle 与 ESM import 是两个独立模块
 // 实例，各自的 `wire` 互不相通 ⇒ 必须用 bundle 自己的设置器）。
-const EXTRACTED = ['reportBadgeFailure', 'bootstrapBadgeTitles', 'canonicalBadgeOf', 'rememberBadge', 'rememberBadgeMap']
+const EXTRACTED = ['reportBadgeFailure', 'bootstrapBadgeTitles', 'canonicalBadgeOf', 'rememberBadge', 'rememberBadgeMap', 'safeSchedule']
 const fakeReact = {
   Component: class { constructor(props) { this.props = props ?? {}; this.state = {} } setState() {} },
   createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
@@ -167,7 +167,7 @@ describe('B① 客户端真去调 initBadgeTitles（阴性对照②：旧实现�
   })
 
   it('结构化断言：apply() 里挂了启动 bootstrap（挂 ctx.effect 以便卸载清理）', () => {
-    expect(/ctx\.effect\(\(\) => bootstrapBadgeTitles\(\)/.test(clientSource)).toBe(true)
+    expect(/ctx\.effect\(\(\) => \{\s*try \{ return bootstrapBadgeTitles\(\) \}/.test(clientSource)).toBe(true)
   })
 })
 
@@ -267,4 +267,38 @@ describe('B 阴性对照:无驻留会话不许伪造写入数;失败必须计入
     expect(s0.wrote).toBe(0)
     expect(s0.failed).toBe(1)
   })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('B fail-soft:一次可选拉取绝不许把客户端注册带崩', () => {
+  it('阴性对照:即使 window.setTimeout 是会抛错的"闭包陷阱",bootstrap 也不许抛', () => {
+    const orig = globalThis.window
+    // 复刻 dsh-cordis-client-runner 的 closureTraps:裸 setTimeout 一调就抛
+    globalThis.window = { setTimeout: () => { throw new Error('closure trap: bare setTimeout is banned') } }
+    try {
+      const { wire } = recordingWire({ badgeMap: () => Promise.reject(new Error('HTTP 404')) })
+      client.__setMessageEditorWire(wire)
+      expect(() => client.bootstrapBadgeTitles({ attempts: 1, delayMs: 1 })).not.toThrow()
+    } finally {
+      globalThis.window = orig
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('阴性对照:badgeMap 返回 404/抛错时,bootstrap 依然返回可调用的 disposer', () => {
+    const { wire } = recordingWire({ badgeMap: () => Promise.reject(new Error('HTTP 404')) })
+    client.__setMessageEditorWire(wire)
+    const cancel = client.bootstrapBadgeTitles({ attempts: 1, delayMs: 1 })
+    expect(typeof cancel).toBe('function')
+    expect(() => cancel()).not.toThrow()
+    client.__setMessageEditorWire(null)
+  })
+
+  it('结构化断言:apply 里挂 effect 时兜住了同步异常(不然整段注册会中断)', () => {
+    expect(/try \{ return bootstrapBadgeTitles\(\) \} catch \(error\) \{/.test(clientSource)).toBe(true)
+  })
+
+// 2026-09-20：bootstrap 已改为**默认关闭**（收尾，见 ROADMAP §0.4 T3）
+// 本文件测的是【机制本身】，故显式打开开关；生产默认不打开。
+globalThis.__DSH_RETRACE_BADGE_BOOTSTRAP = true
 })

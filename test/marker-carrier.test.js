@@ -66,9 +66,9 @@ describe('marker-carrier · 形状判据', () => {
     expect(spanRangeOf(null)).toBeNull()
   })
 
-  it('isCarrierMarkerEvent:user/message + replace + 我方 id;旧形态单独识别', () => {
+  it('isCarrierMarkerEvent:user/message + replace + 本插件 id;旧形态单独识别', () => {
     expect(isCarrierMarkerEvent(carrier())).toBe(true)
-    // 缺 surfaceOp / 非我方 id / assistant 形态 → 不是载体
+    // 缺 surfaceOp / 非本插件 id / assistant 形态 → 不是载体
     expect(isCarrierMarkerEvent(carrier({ surfaceOp: undefined }))).toBe(false)
     expect(isCarrierMarkerEvent(carrier({ data: { ...carrier().data, id: 'u1' } }))).toBe(false)
     const legacy = { type: 'assistant/message', seq: 5, data: { editor: { targetSeq: 2, text: 'x' } } }

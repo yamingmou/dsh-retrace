@@ -33,6 +33,7 @@ function makeEl(tag) {
     textContent: '',
     isConnected: false,
     focused: false,
+    offsetHeight: 24,
     onclick: null,
     appendChild(child) { this.children.push(child); child.parentNode = this; if (this.tagName === 'BODY') child.isConnected = true; return child },
     remove() { this.isConnected = false; if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((c) => c !== this) },
@@ -43,6 +44,7 @@ function makeEl(tag) {
 }
 function makeDom() {
   const winListeners = new Map()
+  const docListeners = new Map()
   const body = makeEl('body')
   body.isConnected = true
   const doc = {
@@ -52,8 +54,8 @@ function makeDom() {
     createElement: (tag) => makeEl(tag),
     createTextNode: (t) => ({ textContent: t }),
     querySelector: () => null,
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener(type, fn) { docListeners.set(type, [...(docListeners.get(type) ?? []), fn]) },
+    removeEventListener(type, fn) { docListeners.set(type, (docListeners.get(type) ?? []).filter((f) => f !== fn)) },
   }
   const win = {
     navigator: { language: 'zh-CN' },
@@ -71,7 +73,14 @@ function makeDom() {
     for (const fn of winListeners.get('beforeunload') ?? []) fn(event)
     return event
   }
-  return { win, doc, body, fireBeforeUnload, click: (el) => el.onclick?.({ target: el }) }
+  const fireVisibility = (state) => {
+    doc.visibilityState = state
+    for (const fn of docListeners.get('visibilitychange') ?? []) fn()
+  }
+  const fireKeydown = (key) => {
+    for (const fn of docListeners.get('keydown') ?? []) fn({ key })
+  }
+  return { win, doc, body, fireBeforeUnload, fireVisibility, fireKeydown, click: (el) => el.onclick?.({ target: el }) }
 }
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 const findById = (body, id) => body.children.find((c) => c.id === id)
@@ -151,32 +160,107 @@ describe('桌面自绘确认门:装/拦/确认/取消/失败放行', () => {
     expect(dom.fireBeforeUnload().preventDefault).not.toHaveBeenCalled()
   })
 
-  it('④ 渲染失败(appendChild 抛) ⇒ 立刻 fail-soft 放行(arm + close,不卡死)', () => {
+  it('④ 渲染失败(appendChild 抛) ⇒ **根本不拦**(主保险:没出口不 block),arm+close 放行', () => {
     const dom = makeDom()
     const { store } = makeGate(dom, runningSnapshot(1))
     dom.doc.body.appendChild = () => { throw new Error('inject failed') }
     const event = dom.fireBeforeUnload()
-    expect(event.preventDefault).toHaveBeenCalledTimes(1) // 拦下过
-    expect(store.armed).toBe(true)                        // 但立刻放行
+    expect(event.preventDefault).not.toHaveBeenCalled() // 不再出现"拦下但没出口"
+    expect(store.armed).toBe(true)
     expect(dom.win.close).toHaveBeenCalledTimes(1)
-    expect(reports.map((r) => r.event)).toContain('fail-soft')
-    expect(dom.fireBeforeUnload().preventDefault).not.toHaveBeenCalled()
+    expect(reports.map((r) => r.event)).toContain('fail-soft-ui-not-rendered') // 情形 A:从未渲染
   })
 
-  it('④b 画出来但不可见(尺寸 0) ⇒ 看门狗到点放行', () => {
+  it('④c 页面不可见(hidden)⇒ 不拦、不弹框,留 allow-hidden 回执(看门狗被节流也不怕)', () => {
+    const dom = makeDom()
+    makeGate(dom, runningSnapshot(2))
+    dom.doc.visibilityState = 'hidden'
+    const event = dom.fireBeforeUnload()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(findById(dom.body, GATE_MODAL_ID)).toBeFalsy()
+    expect(reports.map((r) => r.event)).toEqual(['gate-ready', 'allow-hidden'])
+  })
+
+  it('④d 拦下后页面转隐藏(壳把窗藏了/被遮挡)⇒ 走隐藏放行,不再等看门狗', () => {
+    const dom = makeDom()
+    const { store } = makeGate(dom, runningSnapshot(1))
+    dom.fireBeforeUnload()
+    expect(store.armed).toBe(false)
+    dom.fireVisibility('hidden')
+    expect(store.armed).toBe(true)
+    expect(dom.win.close).toHaveBeenCalledTimes(1)
+    expect(reports.map((r) => r.event)).toContain('fail-soft-hidden')
+  })
+
+  it('④e 次保险优先 Web Worker(不受后台节流);worker 到点且框不在 ⇒ 放行', () => {
+    const dom = makeDom()
+    const worker = { onmessage: null, posted: [], postMessage(ms) { this.posted.push(ms) }, terminate: vi.fn() }
+    const revoked = []
+    dom.win.Worker = function Worker() { return worker }
+    dom.win.Blob = function Blob(parts) { this.parts = parts }
+    dom.win.URL = { createObjectURL: () => 'blob:gate', revokeObjectURL: (u) => revoked.push(u) }
+    const { store } = makeGate(dom, runningSnapshot(1), { Worker: dom.win.Worker })
+    dom.fireBeforeUnload()
+    expect(worker.posted).toEqual([GATE_WATCHDOG_MS])      // 走的是 worker 计时器
+    expect(dom.win.__timers.filter((t) => t.ms === GATE_WATCHDOG_MS)).toHaveLength(0) // 没走主线程
+    findById(dom.body, GATE_MODAL_ID).remove()             // 框被撤走
+    worker.onmessage()                                     // worker 到点
+    expect(store.armed).toBe(true)
+    expect(dom.win.close).toHaveBeenCalledTimes(1)
+    expect(revoked).toContain('blob:gate')
+    expect(reports.map((r) => r.event)).toContain('fail-soft-ui-gone') // 情形 B:渲染过但已消失
+  })
+
+  it('④g 框渲染过且在 ⇒ 看门狗**不放行**(只记 waiting);用户不点就一直等', () => {
+    const dom = makeDom()
+    const { store } = makeGate(dom, runningSnapshot(1))
+    dom.fireBeforeUnload()
+    const timer = dom.win.__timers.find((t) => t.ms === GATE_WATCHDOG_MS)
+    expect(timer).toBeTruthy()
+    timer.fn() // 看门狗到点:UI 还在
+    expect(store.armed).toBe(false)                       // 没有放行
+    expect(dom.win.close).not.toHaveBeenCalled()          // 没有自动关
+    expect(findById(dom.body, GATE_MODAL_ID)).toBeTruthy() // UI 还在等
+    expect(reports.map((r) => r.event)).toContain('waiting')
+    expect(reports.map((r) => r.event)).not.toContain('fail-soft-ui-gone')
+  })
+
+  it('④h 键盘逃生:Esc 等同 [取消](不放行、不关窗,可退)', () => {
+    const dom = makeDom()
+    const { store } = makeGate(dom, runningSnapshot(1))
+    dom.fireBeforeUnload()
+    dom.fireKeydown('Escape')
+    expect(store.armed).toBe(false)
+    expect(dom.win.close).not.toHaveBeenCalled()
+    expect(findById(dom.body, GATE_MODAL_ID)).toBeFalsy()
+    expect(reports.map((r) => r.event)).toContain('cancel')
+  })
+
+  it('④f 拿不到 Worker(CSP 拒绝)⇒ 退回主线程计时器,功能不退', () => {
+    const dom = makeDom()
+    dom.win.Worker = function Worker() { throw new Error('blocked by CSP') }
+    dom.win.Blob = function Blob() {}
+    dom.win.URL = { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} }
+    const { store } = makeGate(dom, runningSnapshot(1))
+    dom.fireBeforeUnload()
+    const timer = dom.win.__timers.find((t) => t.ms === GATE_WATCHDOG_MS)
+    expect(timer).toBeTruthy()
+    findById(dom.body, GATE_MODAL_ID).remove()
+    timer.fn()
+    expect(store.armed).toBe(true)
+    expect(reports.map((r) => r.event)).toContain('fail-soft-ui-gone')
+  })
+
+  it('④b 画出来但不可见(高度 0)⇒ 主保险当场放行(不 block、不等看门狗)', () => {
     const dom = makeDom()
     const { store } = makeGate(dom, runningSnapshot(1))
     const original = dom.doc.createElement
-    dom.doc.createElement = (tag) => { const el = original(tag); if (tag === 'div') el.visible = false; return el }
-    dom.fireBeforeUnload()
-    expect(findById(dom.body, GATE_MODAL_ID)).toBeTruthy() // 画了
-    expect(store.armed).toBe(false)                        // 还没放行
-    const watchdog = dom.win.__timers.find((t) => t.ms === GATE_WATCHDOG_MS)
-    expect(watchdog).toBeTruthy()
-    watchdog.fn()                                          // 看门狗到点
+    dom.doc.createElement = (tag) => { const el = original(tag); if (tag === 'div') el.offsetHeight = 0; return el }
+    const event = dom.fireBeforeUnload()
+    expect(event.preventDefault).not.toHaveBeenCalled()
     expect(store.armed).toBe(true)
     expect(dom.win.close).toHaveBeenCalledTimes(1)
-    expect(reports.map((r) => r.event)).toContain('fail-soft')
+    expect(reports.map((r) => r.event)).toContain('fail-soft-ui-not-rendered') // 情形 A:画了但不可见
   })
 
   it('取消:收掉确认框、不放行、不关窗;再次关闭仍受拦(保护还在)', () => {

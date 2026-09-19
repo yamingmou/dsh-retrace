@@ -6,6 +6,10 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.32] — 2026-09-20 · README refreshed (close interception wording + known limits + short-code display name) + copy-lock sync + CHANGELOG
+
+- README refreshed (close interception wording + known limits + short-code display name) + copy-lock sync + CHANGELOG
+
 ## [0.4.31] — 2026-09-19 · short code / display name via the title channel + desktop close interception (self-drawn confirm + watchdog)
 
 - short code / display name via the title channel + desktop close interception (self-drawn confirm + watchdog)

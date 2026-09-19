@@ -229,6 +229,8 @@ describe('close-guard-client 自绘确认门:纯决策与上报', () => {
     // 已放行 / 守卫关闭 ⇒ 放行
     expect(planBeforeUnload(running, { desktop: true, armed: true })).toEqual({ action: 'allow', reason: 'armed' })
     expect(planBeforeUnload(running, { desktop: true, enabled: false })).toEqual({ action: 'allow', reason: 'disabled' })
+    // 页面不可见 ⇒ 不拦(隐藏窗没有可点的确认框,且隐藏页定时器会被节流;判据 ④)
+    expect(planBeforeUnload(running, { desktop: true, visible: false })).toEqual({ action: 'allow', reason: 'hidden' })
   })
 
   it('runningCountOf / gateEnabled(直读配置,失败默认开)', async () => {
