@@ -1,5 +1,5 @@
 /**
- * dsh-retrace — 短码/名字展示层接线测试（B 步）。
+ * dsh-retrace — 谱系标识/名字展示层接线测试（B 步）。
  *
  * 覆盖 本轮复核 §B 三件：① 客户端真去调 `initBadgeTitles`；② `setBadgeTitle`
  * 不静默吞错；③ 名字取 `session/title` 日志真值（无事件 ⇒ 留空，不回落项目名）。
@@ -7,7 +7,7 @@
  * ── 阴性对照（本文件的重点）────────────────────────────────────────────────
  * 每条正向断言旁边都有一条**喂坏的**用例：如果退回旧实现，对照必须转红。
  *   对照 ①（旧：cwd 项目名回落）—— 会话 cwd 有值但日志无 title 事件时，
- *       命名结果不得含项目名；旧实现会产出 `[<短码>] my-project` ⇒ 红。
+ *       命名结果不得含项目名；旧实现会产出 `[<谱系标识>] my-project` ⇒ 红。
  *   对照 ②（旧：客户端从不调 initBadgeTitles）—— 请求 op 名单里必须出现
  *       `initBadgeTitles`；旧实现该 op 永不出现 ⇒ 红。
  *   对照 ③（旧：`.catch(() => {})` 静默吞错）—— 宿主报错/请求抛错时必须有
@@ -83,7 +83,7 @@ beforeAll(async () => {
   client = mod.exports
 })
 
-/** 真实短码形态：工作区2+序号3+父工作区2+父序号3 = 固定 10 位。 */
+/** 真实谱系标识形态：工作区2+序号3+父工作区2+父序号3 = 固定 10 位。 */
 const BADGE = 'abcdefghij'
 
 /** 记录型 wire：把每次 callOp 的 op 名与载荷存下来，按脚本给结果。 */
@@ -127,11 +127,11 @@ describe('B③ 名称真值：session/title 日志，无事件则留空（不回
     expect(tagged).not.toContain('my-project')
   })
 
-  it('有真名字时正常拼接，且先剥掉旧短码前缀（不叠码）', () => {
+  it('有真名字时正常拼接，且先剥掉旧谱系标识前缀（不叠码）', () => {
     expect(tagTitle(BADGE, '项目讨论')).toBe(`[${BADGE}] 项目讨论`)
     expect(tagTitle(BADGE, `[${BADGE}] 项目讨论`)).toBe(`[${BADGE}] 项目讨论`)
     expect(tagTitle(BADGE, '[zyxwvutsrq] 别的码')).toBe(`[${BADGE}] 别的码`)
-    // 剥前缀的判据是「括号内 ≥6 个 [a-z0-9]」（旧版短码/正文里的短括号不误删）
+    // 剥前缀的判据是「括号内 ≥6 个 [a-z0-9]」（旧版谱系标识/正文里的短括号不误删）
     expect(tagTitle(BADGE, '[abc] 正文')).toBe(`[${BADGE}] [abc] 正文`)
   })
 
@@ -224,15 +224,15 @@ describe('B② 失败不静默（阴性对照③：旧实现 0 上报）', () =>
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('B③ 横幅短码同源:只来自宿主下发,绝不回落本地 FNV', () => {
-  it('短码缓存未命中返回空串(占位),绝不自己算出一个值', () => {
+describe('B③ 横幅谱系标识同源:只来自宿主下发,绝不回落本地 FNV', () => {
+  it('谱系标识缓存未命中返回空串(占位),绝不自己算出一个值', () => {
     const key = 'session-fixture-unknown'
     expect(client.canonicalBadgeOf(key)).toBe('')
     // 旧横幅走本地 FNV 模块:任何 id 都会"算出一个"10 位值;新路径拿不到就留空
     expect(client.canonicalBadgeOf(key)).not.toMatch(/^[0-9a-z]{10}$/)
   })
 
-  it('短码缓存:宿主 badgeMap 下发后命中,两种 id 形态同码且幂等', () => {
+  it('谱系标识缓存:宿主 badgeMap 下发后命中,两种 id 形态同码且幂等', () => {
     expect(client.rememberBadgeMap({ 'session-fixture-a': 'abcdefghij' })).toBe(1)
     expect(client.canonicalBadgeOf('session-fixture-a')).toBe('abcdefghij')
     expect(client.canonicalBadgeOf('fixture-a')).toBe('abcdefghij')

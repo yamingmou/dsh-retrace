@@ -158,7 +158,7 @@ describe('marker-carrier · 形状判据', () => {
 })
 
 /**
- * 读侧配对:三选一 + 「紧邻性」硬约束(裁定 2026-09-14 §一)。
+ * 读侧配对:三选一 + 「紧邻性」硬约束(口径 2026-09-14 §一)。
  *
  * 容错**不得**把"审计段在、载体段在很远处或根本不存在"的真孤儿误判成成对 ——
  * 容错把要检出的缺陷掩盖掉是唯一不可接受的结果。写侧 `assertPairing` 保持严格。
@@ -207,7 +207,7 @@ describe('marker-carrier · 读侧配对(三选一 + 紧邻硬约束)', () => {
     const far = carrierAt(12, 2, 4, [2, 4]) // 区间一致,但 seq 差 2(不紧邻)且不含审计 seq
     expect(isAuditPairedWithCarrier(audit, far)).toEqual({ paired: false, via: null })
     expect(isAuditPairedWithSomeCarrier(audit, [far]).paired).toBe(false)
-    // 引用形态(①②)按裁定不依赖紧邻 —— 引用本身就是自证;只有历史形态③要求紧邻
+    // 引用形态(①②)按口径不依赖紧邻 —— 引用本身就是自证;只有历史形态③要求紧邻
     expect(isAuditPairedWithCarrier(audit, carrierAt(12, 2, 4, [10, 2, 4])).via).toBe('ref-first')
   })
 

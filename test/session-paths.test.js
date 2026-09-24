@@ -1,8 +1,8 @@
 /**
- * lib/platform/session-paths.js —— 会话基座/文件名/短码表落点/插件数据家的单一实现。
+ * lib/platform/session-paths.js —— 会话基座/文件名/谱系标识表落点/插件数据家的单一实现。
  *
  * 判据(2026-09-14 口径统一:未设 $DSH_HOME 时**新基座优先于旧 home**,与 archive
- * 侧生成器(内部短码生成脚本)resolveHome() 逐字同序):
+ * 侧生成器(内部谱系标识生成脚本)resolveHome() 逐字同序):
  *   ① $DSH_HOME 优先(设了就只认它);
  *   ② 未设 $DSH_HOME 且两基座都在 → 选 ~/dsh-v3(口径统一后的新行为;旧行为选 ~/.dsh);
  *   ③ 未设 $DSH_HOME 且只有 ~/.dsh → 兜底旧 home;
@@ -207,7 +207,7 @@ describe('matchSessionFiles(id / 前缀 / session-<id>)', () => {
 
 describe('badgeTableCandidates / resolveBadgeTablePath', () => {
   it('覆写 env 排第一;规范落点(插件数据家下)次之;基座旁兜底', () => {
-    // 短码表是**用户自备数据**,不是代码 ⇒ 代码里不得出现任何私有目录名。
+    // 谱系标识表是**用户自备数据**,不是代码 ⇒ 代码里不得出现任何私有目录名。
     // 规范落点 = <pluginDataHome>/dsh-retrace/codes.json(与会话基座同源)。
     const canonical = join(pluginDataHome({ home: '/H', dshHome: null }), 'dsh-retrace', 'codes.json')
     const c = badgeTableCandidates({ home: '/H', override: '/O/t.json', dshHome: null })
@@ -220,7 +220,7 @@ describe('badgeTableCandidates / resolveBadgeTablePath', () => {
   it('取第一个存在的落点;**只读**(不写文件)', () => {
     // ⚠️ 本用例**必须**显式传 `dshHome: null`:pluginDataHome() 的实现是 `$DSH_HOME` 优先,
     // 不传就退回读进程环境 ⇒ 在 `DSH_HOME=~/dsh-v3` 下(启动纪律要求显式设)
-    // dataHome 会解析成**活家**,下面的 writeFileSync 就把用户真短码表覆盖成空表
+    // dataHome 会解析成**活家**,下面的 writeFileSync 就把用户真谱系标识表覆盖成空表
     // (2026-09-19 实测事故:跑一次全量测试即清空 ~/dsh-v3/dsh-retrace/codes.json)。
     const home = tmpRoot()
     const dataHome = pluginDataHome({ home, dshHome: null })

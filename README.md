@@ -338,7 +338,7 @@ Read it before filing an issue.
   here. It now resolves through the `useChat` snapshot injected by the view and pages
   with the official `store.loadThrough(seq)`; when the jump cannot complete it reports a
   **diagnosable reason** (renderer warning + host-log line) instead of failing silently.
-- **Assigning a short code could overwrite your session title.** The client composed
+- **Assigning a lineage ID could overwrite your session title.** The client composed
   `[CODE] <current title>` locally but had no way to read the current title, so the base
   degraded to the session-id prefix (`[XXXXXX] <session-id-prefix>`). Title tagging now goes
   through the host route only (`setBadgeTitle`), which reads the current title from the
