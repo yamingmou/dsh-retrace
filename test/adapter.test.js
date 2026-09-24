@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import { createAdapter, NULL_ADAPTER, assertSpanShape, assertSpanResult, assertMarkerShape, assertEventListShape, CONTRACT_VIOLATION } from '../lib/adapter/contract.js'
 
-import { computeSpan, computeSpanProbe, isRoundBoundary, roundPromptOf, readEventsFromFile, dshAdapter } from '../lib/adapter/dsh.js'
+import { computeSpan, computeSpanProbe, isRoundBoundary, roundPromptOf, readEventsFromFile, dshAdapter, surfaceNodeSeqs } from '../lib/adapter/dsh.js'
 import { SPAN_STATUS, spanMissArgsOf, spanAt, spanForSeq } from '../lib/span-semantics.js'
 import { foldSurface } from '@deepseek-ai/dsh-session'
 
