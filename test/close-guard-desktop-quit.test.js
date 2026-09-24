@@ -491,7 +491,7 @@ describe('对外文本不再把未覆盖的路径写成结论', () => {
     expect(readFlat('README.zh.md')).toContain('壳提供 seam')
     expect(readFlat('README.md')).toContain('page-drawn confirm gate')
     expect(readFlat('README.md')).toContain('needs a shell seam')
-    // 短码/名字那条也得上对外文本（0.4.31 已上线）
+    // 谱系标识/名字那条也得上对外文本（0.4.31 已上线）
     expect(readFlat('README.zh.md')).toContain('opxxxopxxx')
     expect(readFlat('README.md')).toContain('opxxxopxxx')
     // 2026-09-18（对抗复核追加）：文本必须写明"退出入口随版本/平台而变"，

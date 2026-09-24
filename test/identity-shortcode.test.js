@@ -1,9 +1,9 @@
 /**
- * 短码侧身份确认单测（R1–R10）。**全部用合成数据**，不读真实基座/短码表
+ * 谱系标识侧身份确认单测（R1–R10）。**全部用合成数据**，不读真实基座/谱系标识表
  * （公开产物里也能跑）。
  *
  * 覆盖的不变量（与 lib/identity/shortcode.js 的注释逐条对应）：
- *   身份判定只看 session id；短码可解析到唯一 id；已登记码钉住不变、新会话追加；
+ *   身份判定只看 session id；谱系标识可解析到唯一 id；已登记码钉住不变、新会话追加；
  *   不可判必须显式；身份与可用性分栏不合并；只读（纯函数不改入参）。
  */
 import { describe, it, expect } from 'vitest'
@@ -32,7 +32,7 @@ const mk = (id, ws, createdAt, parent = null, path = '/nonexistent') => ({
 })
 
 describe('R1 身份判定只认 session id', () => {
-  it('R1 身份判定只看 uuid:传入短码这类非 uuid 判为不可解析', () => {
+  it('R1 身份判定只看 uuid:传入谱系标识这类非 uuid 判为不可解析', () => {
     expect(sameSession(A, AU).same).toBe(true)
     expect(sameSession(A, B).same).toBe(false)
     const r = sameSession(A, 'qq035qq034')
@@ -58,7 +58,7 @@ describe('R1 身份判定只认 session id', () => {
   })
 })
 
-describe('短码规则(长度/字符集/构成)', () => {
+describe('谱系标识规则(长度/字符集/构成)', () => {
   it('规范形固定 10 位且字符集受控', () => {
     for (const c of ['zz065zz016', 'qq035qq034', 'zz072zz065', 'ww001FF000', 'rr001FF000']) {
       expect(c).toHaveLength(CODE_LENGTH)
@@ -105,7 +105,7 @@ describe('短码规则(长度/字符集/构成)', () => {
   })
 })
 
-describe('R3 短码 → 唯一 session id', () => {
+describe('R3 谱系标识 → 唯一 session id', () => {
   const index = buildIndex({
     entries: [
       { code: 'qq035qq034', sessionId: A, source: 'badge-table' },
@@ -114,7 +114,7 @@ describe('R3 短码 → 唯一 session id', () => {
     sessions: [mk(A, 'qq', 1), mk(B, 'zz', 2)],
   })
 
-  it('A2 短码 → 唯一 session id:已登记码解析到登记的会话', () => {
+  it('A2 谱系标识 → 唯一 session id:已登记码解析到登记的会话', () => {
     const r = resolveCode(index, 'qq035qq034')
     expect(r.status).toBe('unique')
     expect(r.sessionId).toBe(A)
@@ -499,7 +499,7 @@ describe('R7 变更留痕', () => {
   })
 })
 
-describe('坏短码表不静默:错误必须显式出来(旧实现 catch{return[]} 会伪装成空表)', () => {
+describe('坏谱系标识表不静默:错误必须显式出来(旧实现 catch{return[]} 会伪装成空表)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sc-table-'))
   const put = (name, text) => { const p = join(dir, name); writeFileSync(p, text); return p }
 
