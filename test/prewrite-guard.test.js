@@ -79,15 +79,43 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('遮蔽 > 40 节点 + 大会话(>2000 事件)→ 抛 rollback-guide(回档请求拒绝落盘)', async () => {
+  it('口径①(c):超阈值但未达极端 ⇒ **告警不拦**(50 遮蔽 / 2500 事件,占比 0.02)', async () => {
     const log = vi.fn()
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ log, prewriterFactory: factory })
     const session = hugeSession(60, 2500)
-    const envelope = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49) // 遮蔽 50 > 40
+    const envelope = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49) // 遮蔽 50 > 1000? 不, >40 但 <1000 ⇒ 阈值内
+    expect(rollbackShareOf(session, envelope)).toBe(0) // 默认阈值已升到 1000 ⇒ 阈值内直接放行
+    await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
+  })
+
+  it('口径①(c):**超 1000 阈值但非极端** ⇒ 写日志 + 继续(不抛错)', async () => {
+    const log = vi.fn()
+    const factory = () => ({ validateAppend: () => ({ ok: true }) })
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    const session = hugeSession(3000, 40000) // 大会话
+    const envelope = replaceEnvelope(Array.from({ length: 1500 }, (_, i) => i), 0, 1499) // 1500 > 1000,占比 0.0375
     expect(rollbackShareOf(session, envelope)).toBeGreaterThan(0)
-    await expect(guard.validateMarkerAppend(session, envelope)).rejects.toMatchObject({ code: 'rollback-guide' })
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('rollback guard'))
+    await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('告警不拦'))
+  })
+
+  it('口径①(d):**极端**(遮蔽>2000 且 占比>0.9) ⇒ 仍拦,且文案给出路', async () => {
+    const log = vi.fn()
+    const factory = () => ({ validateAppend: () => ({ ok: true }) })
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    const session = hugeSession(2100, 2100)
+    const envelope = replaceEnvelope(Array.from({ length: 2050 }, (_, i) => i), 0, 2049)
+    expect(rollbackShareOf(session, envelope)).toBeGreaterThan(0.9)
+    await expect(guard.validateMarkerAppend(session, envelope)).rejects.toMatchObject({ code: 'rollback-guide', needsConfirm: true })
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('极端回档'))
+  })
+
+  it('口径①(a):阈值可由 DSH_RETRACE_ROLLBACK_MIN_SHADOWED 覆盖', async () => {
+    const { rollbackMinShadowedOf } = require('../lib/prewrite-guard.js')
+    expect(rollbackMinShadowedOf({})).toBe(1000)
+    expect(rollbackMinShadowedOf({ DSH_RETRACE_ROLLBACK_MIN_SHADOWED: '5000' })).toBe(5000)
+    expect(rollbackMinShadowedOf({ DSH_RETRACE_ROLLBACK_MIN_SHADOWED: 'abc' })).toBe(1000)
   })
 
   it('遮蔽 > 40 节点但小会话(<2000 事件)→ 不拦(短会话豁免)', async () => {
@@ -181,19 +209,21 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     await expect(guard.validateMarkerAppend(session, env)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('非 restore 的 遮蔽 >40 节点 仍被拦(问题 A 不误伤编辑)', async () => {
+  it('非 restore 但遮蔽在阈值内(50 ≤ 1000) ⇒ 不拦(口径①(a) 阈值上调后的新边界)', async () => {
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ prewriterFactory: factory })
     const session = hugeSession(60, 2500)
     const env = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49)
     expect(isRestoreMarker(env)).toBe(false)
-    await expect(guard.validateMarkerAppend(session, env)).rejects.toMatchObject({ code: 'rollback-guide' })
+    await expect(guard.validateMarkerAppend(session, env)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('导出常量:ROLLBACK_MIN_SHADOWED=40, ROLLBACK_MIN_EVENTS=2000', () => {
-    const { ROLLBACK_MIN_SHADOWED, ROLLBACK_MIN_EVENTS } = require('../lib/prewrite-guard.js')
-    expect(ROLLBACK_MIN_SHADOWED).toBe(40)
+  it('导出常量:ROLLBACK_MIN_SHADOWED=1000(口径①a), ROLLBACK_MIN_EVENTS=2000, 极端线 0.9/2000', () => {
+    const { ROLLBACK_MIN_SHADOWED, ROLLBACK_MIN_EVENTS, ROLLBACK_EXTREME_RATIO, ROLLBACK_EXTREME_NODES } = require('../lib/prewrite-guard.js')
+    expect(ROLLBACK_MIN_SHADOWED).toBe(1000)
     expect(ROLLBACK_MIN_EVENTS).toBe(2000)
+    expect(ROLLBACK_EXTREME_RATIO).toBe(0.9)
+    expect(ROLLBACK_EXTREME_NODES).toBe(2000)
   })
 })
 

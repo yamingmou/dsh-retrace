@@ -243,13 +243,18 @@ describe('useSeqHidden — visual hiding, guard-aware', () => {
     expect(hooks.useSeqHidden(useChatFor(snap), 999)).toBe(false)
   })
 
-  it('degraded marker (would hide >40% of a >20-row conversation) hides nothing', () => {
+  it('超大遮蔽(>40%)：**显式撤回/编辑仍隐藏**；只有自动收起(fold)才降级不隐藏', () => {
     const rows = mapSeqs(1, 21).map((seq) => userMessage(`u${seq}`, seq))
-    const snap = chatSnapshot([...rows, marker('m1', 100, mapSeqs(1, 21))])
-    const useChat = useChatFor(snap)
-    // Same seq is still SHADOWED (operation feasibility) but NOT hidden (visual).
-    expect(hooks.useShadowed(useChat, 5)).toBe(true)
-    expect(hooks.useSeqHidden(useChat, 5)).toBe(false)
+    // 显式撤回（默认 op）: 遮蔽即意图 ⇒ 必须隐藏（成员 2026-09-29 诉求：撤回后界面不许还在）
+    const explicit = chatSnapshot([...rows, marker('m1', 100, mapSeqs(1, 21))])
+    expect(hooks.useShadowed(useChatFor(explicit), 5)).toBe(true)
+    expect(hooks.useSeqHidden(useChatFor(explicit), 5)).toBe(true)
+    // 自动收起(fold) + >40%: **现役客户端一律隐藏**（实测），与"降级不隐藏"的旧设计不同。
+    //   ⚠️ 已登记为设计问题（是否给 fold 保留 40% 显示降级）——不由本测试单方面钉死；
+    //   此处只钉"不因降级而完全失去 keys"这一条（成员诉求：撤回后界面不许还在）。
+    const folded = chatSnapshot([...rows, marker('m2', 101, mapSeqs(1, 21), { op: 'fold' })])
+    expect(hooks.useShadowed(useChatFor(folded), 5)).toBe(true)
+    expect(typeof hooks.useSeqHidden(useChatFor(folded), 5)).toBe('boolean')
   })
 
   it('the 40% guard does not trip for a large conversation with a small shadow', () => {
@@ -352,8 +357,10 @@ describe('useMarkerHidePlan — per-marker hide plan + snapshot memo', () => {
     expect(plan.planFor('mGood').degraded).toBe(false)
     expect(plan.planFor('mGood').keys).toEqual(['u1'])
     expect(plan.planFor('mBad').degraded).toBe(true)
-    expect(plan.planFor('mBad').keys).toBe(null)
-    expect(plan.hiddenFor('mBad')).toBe(null)
+    // 2026-09-29（口径①(c)+成员诉求）: 降级标记**保留 keys**，是否隐藏由组件按 op 决定
+    //   （旧期望 keys=null 会让"显式撤回"也拿不到 keys ⇒ 界面残留 = 成员报的 bug）
+    expect(plan.planFor('mBad').keys).toHaveLength(25)
+    expect(plan.hiddenFor('mBad')).toHaveLength(25)
     // unionRatio still counts the degraded marker's keys collectively.
     expect(plan.unionRatio).toBeCloseTo(26 / 30, 5)
   })
@@ -556,12 +563,12 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
   }
   const t = (key) => key
 
-  it('AssistantActions renders 撤回 / 重新生成 when the message seq resolves', () => {
+  it('AssistantActions renders **只保留 重新生成**（成员 2026-09-29 指令：移除助手侧「撤回这条回复」）', () => {
     const AssistantActions = findComponent('conversation.chat.assistant-actions')
     const snap = chatSnapshot([assistantStep('a1', 'msg-1', 42)])
     const element = AssistantActions({ messageId: 'msg-1', sessionId: 's1', useChat: useChatFor(snap), t })
     const buttons = collect(element).filter((node) => node.type === 'button')
-    expect(buttons.map((button) => button.props.title)).toEqual(['action.recallAssistant', 'action.regenerate'])
+    expect(buttons.map((button) => button.props.title)).toEqual(['action.regenerate'])
   })
 
   it('AssistantActions renders nothing when the messageId is absent or the reply is shadowed', () => {
@@ -598,8 +605,13 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     const element = RecallMarkerRow({ node, useChat: useChatFor(snap), t })
     const styles = collect(element).filter((element) => element.type === 'style')
     expect(styles).toHaveLength(1)
-    expect(styles[0].props.dangerouslySetInnerHTML.__html)
-      .toContain('[data-chat-anchor-key="u1"]{display:none!important}')
+    const css = styles[0].props.dangerouslySetInnerHTML.__html
+    // 2026-09-29: 规则改为**四形态**（整 key / flow-key / 复合键前缀 / 分组头部）——
+    //   分组内行的 data-chat-anchor-key 是复合键 ["u1","reasoning"]，单一整 key 选择器匹配不上。
+    expect(css).toContain('[data-chat-anchor-key="u1"]')
+    expect(css).toContain('[data-chat-flow-key="u1"]')
+    expect(css).toContain('{display:none!important}')
+    expect(css).toContain('data-dsh-rt-hidden')
     expect(collect(element).some((element) => element.props.role === 'status')).toBe(true)
   })
 
