@@ -47,7 +47,7 @@ vi.mock('react', () => ({
   Fragment: Symbol('react.fragment'),
 }))
 
-import { apply, __setMessageEditorWire, zh, en } from '../lib/client.js'
+import { apply, __setMessageEditorWire, zh, en, __recallMarkerDefinition } from '../lib/client.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const CLIENT_SOURCE_PATH = path.join(ROOT, 'lib', 'client.js')
@@ -623,6 +623,69 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     const legacy = marker('m1', 6, [5], { legacy: true })
     const element = RecallMarkerRow({ node: legacy, useChat: useChatFor(chatSnapshot([userMessage('u1', 5), legacy])), t })
     expect(collect(element).filter((node) => node.type === 'style')).toHaveLength(0)
+  })
+
+  it('回档 marker 显示回档文案(此前落到兜底 edit ⇒ 界面误报「已编辑此消息并重新发送」)', () => {
+    // 2026-09-30 真机:rollback execute 写的是 `retrace-restore-*`,客户端 markerOpFromId
+    // 只认 recall/edit/regenerate/fold ⇒ op='edit' ⇒ RecallMarkerRow 走 marker.edit 分支。
+    const RecallMarkerRow = findComponent('conversation.chat.node', 'recall-marker')
+    const statusOf = (op) => {
+      const node = marker('m1', 6, [5], { op })
+      const element = RecallMarkerRow({ node, useChat: useChatFor(chatSnapshot([userMessage('u1', 5), node])), t })
+      return collect(element).find((element) => element.props?.role === 'status')
+    }
+    expect(statusOf('restore').children).toContain('marker.restore')
+    expect(statusOf('restore').children).not.toContain('marker.edit')
+    // 回档与撤回/编辑一样隐藏被替换的后续节点(只有 fold 才允许 40% 降级)——现状保持
+    const node = marker('m1', 6, [5], { op: 'restore' })
+    const element = RecallMarkerRow({ node, useChat: useChatFor(chatSnapshot([userMessage('u1', 5), node])), t })
+    expect(collect(element).filter((element) => element.type === 'style')).toHaveLength(1)
+    // 既有 op 的文案不得被改动
+    expect(statusOf('edit').children).toContain('marker.edit')
+    expect(statusOf('recall').children).toContain('marker.recallOne')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 回档 marker 的 op 识别 + 中英文案(与 slot 渲染同一条真实链路:
+// match() 命中 → start() 定 op → RecallMarkerRow 选文案)。
+// ---------------------------------------------------------------------------
+describe('回档 marker 的识别与文案', () => {
+  /** A real two-segment carrier as written by rollback execute (`retrace-restore-*`). */
+  const restoreCarrier = {
+    seq: 9,
+    time: 1,
+    type: 'user/message',
+    surfaceOp: { op: 'replace', start: 4, end: 6 },
+    sourceEventSeqs: [7, 4, 5, 6], // 首元素是第 1 段审计 seq(不是被遮蔽节点)
+    data: { id: 'retrace-restore-mf3k-ab12cd34', role: 'user', content: [], source: { kind: 'model' } },
+  }
+
+  it('match() 命中回档载体,start() 定 op="restore"(不再落到兜底 edit)', () => {
+    expect(__recallMarkerDefinition.match(restoreCarrier)).toMatchObject({ role: 'start' })
+    const state = __recallMarkerDefinition.start({}, { event: restoreCarrier }, undefined)
+    expect(state.op).toBe('restore')
+    expect(state.op).not.toBe('edit')
+    expect(state.legacy).toBe(false)
+    expect(state.shadowedSeqs).toEqual([4, 5, 6]) // 审计 seq 7 被截掉
+  })
+
+  it('既有 op 识别不变(recall/edit/regenerate/fold),legacy 前缀同样认 restore', () => {
+    const opOf = (id) => __recallMarkerDefinition
+      .start({}, { event: { ...restoreCarrier, data: { ...restoreCarrier.data, id } } }, undefined).op
+    expect(opOf('retrace-recall-1')).toBe('recall')
+    expect(opOf('retrace-edit-1')).toBe('edit')
+    expect(opOf('retrace-regenerate-1')).toBe('regenerate')
+    expect(opOf('message-editor-restore-1')).toBe('restore')
+    // 无 op 段的 id 仍是兜底 edit(行为不变)
+    expect(opOf('retrace-unknown-1')).toBe('edit')
+  })
+
+  it('zh/en 成对:marker.restore 是回档文案,不是 edit 文案', () => {
+    expect(zh['marker.restore']).toBe('已回退到该档位')
+    expect(en['marker.restore']).toBe('Rolled back to this checkpoint')
+    expect(zh['marker.restore']).not.toBe(zh['marker.edit'])
+    expect(en['marker.restore']).not.toBe(en['marker.edit'])
   })
 })
 
