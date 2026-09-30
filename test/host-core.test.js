@@ -180,6 +180,181 @@ describe('recall', () => {
     expect(lastMarker(session).type).toBe('user/message')
   })
 
+  // ---------------------------------------------------------------------------
+  // ensureIdle 加固（2026-09-30）：①排队窗口 = pending 也算未停；②whenIdle 等待有上限。
+  // 官方形状逐字来源（两版内核）：
+  //   现役 0.1.7-rc.2 @deepseek-ai/dsh-agent-loop/lib/index.js :752/:80/84/88/:790/:815/:870
+  //   旧版 0.1.1-rc.2 @deepseek-ai/dsh-agent/lib/index.js :34/38/40-41；agent-loop :357/:380-382/:405-409/:460-464
+  //   （hasPending = nextTurn/nextStep 两个排队列表非空）
+  // ---------------------------------------------------------------------------
+  describe('ensureIdle hardening (2026-09-30 · 排队窗口 + 等待上限)', () => {
+    /** 官方 Inbox 形状：布尔 hasPending + 两个排队列表。 */
+    const pendingInbox = () => ({ hasPending: true, nextTurn: [{ role: 'user', content: 'queued' }], nextStep: [] })
+
+    it('status=idle 但 inbox 有排队 → 照旧先 cancel({kind:user}) + whenIdle,再写 marker', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const api = makeApi(session, makeAgent({ status: 'idle', inbox: pendingInbox(), cancel, whenIdle }))
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
+      expect(whenIdle).toHaveBeenCalledTimes(1)
+      // 顺序：先 cancel 再等收尾（官方 cancel 负责让 driver 收尾）
+      expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(whenIdle.mock.invocationCallOrder[0])
+      expect(result.ok).toBe(true)
+      expect(lastMarker(session).type).toBe('user/message') // 排队清掉后才写
+    })
+
+    it('idle 且无排队 → 完全不调 cancel/whenIdle（正常路径回归保护）', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const agent = makeAgent({
+        status: 'idle',
+        inbox: { hasPending: false, nextTurn: [], nextStep: [] },
+        cancel,
+        whenIdle,
+      })
+      const api = makeApi(session, agent)
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(cancel).not.toHaveBeenCalled()
+      expect(whenIdle).not.toHaveBeenCalled()
+      expect(result.ok).toBe(true)
+      expect(lastMarker(session).type).toBe('user/message')
+    })
+
+    it('inbox API 缺失/形状不同 → 与改动前一致（status=idle 不拦、不抛）', async () => {
+      const shapes = [
+        ['无 inbox 字段', undefined],
+        ['inbox=null', null],
+        ['inbox={}（空对象）', {}],
+        ['hasPending 非布尔', { hasPending: 'yes' }],
+        ['排队列表都不是数组', { queued: [1, 2], pending: [3] }],
+      ]
+      for (const [label, inbox] of shapes) {
+        const session = standardSession()
+        const cancel = vi.fn()
+        const whenIdle = vi.fn(async () => {})
+        const api = makeApi(session, makeAgent({ status: 'idle', inbox, cancel, whenIdle }))
+
+        const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+        expect(result.ok, label).toBe(true)
+        expect(cancel, label).not.toHaveBeenCalled()
+        expect(whenIdle, label).not.toHaveBeenCalled()
+        expect(lastMarker(session), label).toBeTruthy()
+      }
+    })
+
+    it('status 面不可判定（桩无 status）→ 不因 inbox 有排队改判（与改动前一致）', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const agent = { inbox: pendingInbox(), cancel, whenIdle } // 无 status
+      const api = makeApi(session, agent)
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(result.ok).toBe(true)
+      expect(cancel).not.toHaveBeenCalled()
+      expect(whenIdle).not.toHaveBeenCalled()
+    })
+
+    it('running + 形状不同的 inbox → 照旧走 cancel + whenIdle（改动前后同行为）', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const api = makeApi(session, makeAgent({ status: 'running', inbox: {}, cancel, whenIdle }))
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(whenIdle).toHaveBeenCalledTimes(1)
+      expect(result.ok).toBe(true)
+    })
+
+    it('idle + 有排队但无 cancel/whenIdle（旧桩）→ agent-busy（与 running 无停止入口时同一条回退）', async () => {
+      const session = standardSession()
+      const api = makeApi(session, makeAgent({ status: 'idle', inbox: pendingInbox() })) // 无 cancel
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(result.ok).toBe(false)
+      expect(result.error.code).toBe('agent-busy')
+      expect(surfaceSeqs(session)).toEqual([1, 2, 3, 4, 5]) // 未写 marker
+    })
+
+    it('inbox 读不进去（getter 抛）→ 不抛、按无排队处理，并留痕', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const logs = []
+      const agent = makeAgent({ status: 'idle', cancel, whenIdle })
+      Object.defineProperty(agent, 'inbox', {
+        configurable: true,
+        get() { throw new Error('boom-inbox') },
+      })
+      const { sessions, agents } = makeEnv(session, { agent })
+      const { createEditorApi } = await import('../lib/host-core.js')
+      const api = createEditorApi({}, sessions, agents, (line) => logs.push(String(line)), makeHooks(agents))
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(result.ok).toBe(true)
+      expect(cancel).not.toHaveBeenCalled()
+      expect(logs.join('\n')).toMatch(/inbox unreadable/)
+    })
+
+    it('whenIdle 一直不 settle（driver 卡死）→ 15s 后抛 agent-stop-failed,不永久挂起、不写 marker', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(() => new Promise(() => {}))
+      const api = makeApi(session, makeAgent({ status: 'running', cancel, whenIdle }))
+
+      vi.useFakeTimers()
+      try {
+        const pendingResult = api.recall({ sessionId: 's1', messageId: 'u1' })
+        await vi.advanceTimersByTimeAsync(60000) // 远超 15000ms 上限
+        const result = await pendingResult
+
+        expect(result.ok).toBe(false)
+        expect(result.error.code).toBe('agent-stop-failed')
+        expect(result.error.message).toMatch(/did not settle within 15000ms/)
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(surfaceSeqs(session)).toEqual([1, 2, 3, 4, 5]) // 冻结：marker 未写
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('whenIdle 在超时前 settle → 不抛（上限不误伤正常路径）', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      let release
+      const whenIdle = vi.fn(() => new Promise((resolve) => { release = resolve }))
+      const api = makeApi(session, makeAgent({ status: 'running', cancel, whenIdle }))
+
+      vi.useFakeTimers()
+      try {
+        const pendingResult = api.recall({ sessionId: 's1', messageId: 'u1' })
+        await vi.advanceTimersByTimeAsync(1000) // 未到上限
+        release()
+        await vi.advanceTimersByTimeAsync(1)
+        const result = await pendingResult
+
+        expect(result.ok).toBe(true)
+        expect(lastMarker(session).type).toBe('user/message')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   it('returns session-not-found for an unknown session', async () => {
     const session = standardSession()
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
