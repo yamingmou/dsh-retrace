@@ -349,6 +349,26 @@ describe('P1 HTTP routes', () => {
     expect(res.status).toBe(503)
   })
 
+  it('rollback 的 replay-failed 结构化错误原样透出到 wire(不降级成 internal)', async () => {
+    // 退化路径的自有错误码:sendError 取 error.code ⇒ 客户端能据此给出明确指引,
+    // 而不是把「畸形 sourceEventSeqs」显示成笼统 internal(见 lib/rollback.js targetSurface)。
+    const seam = makeSeam()
+    const replayError = Object.assign(new Error('cannot replay session "s1" up to seq 2: … 畸形 sourceEventSeqs'), {
+      code: 'replay-failed',
+      details: { boundarySeq: 2, versionId: 'v2' },
+    })
+    const rollback = { preview: vi.fn(async () => { throw replayError }), execute: vi.fn(async () => { throw replayError }) }
+    const lines = []
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback, log: (line) => lines.push(line) })
+    const res = await post(handler, `${ROUTE_PREFIX}/rollback/preview`, { sessionId: 's1', versionId: 'v2', scope: 'context' })
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(false)
+    expect(parsed.error.code).toBe('replay-failed') // ← 不是 'internal'
+    expect(parsed.error.boundarySeq).toBe(2) // details 透传
+    expect(parsed.error.message).toContain('畸形 sourceEventSeqs')
+    expect(lines.some((line) => line.includes('[replay-failed]'))).toBe(true) // 服务端也留痕
+  })
+
   it('GET /doctor scans token-meter-breaking markers (B1)', async () => {
     const seam = makeSeam()
     seam.doctorScan = vi.fn(() => ({ enabled: true, markerCount: 2, markers: [{ seq: 5, message: 'assistant/message at seq 5 has no matching step/start' }] }))
