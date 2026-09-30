@@ -2703,6 +2703,9 @@ describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
     const listeners = new Map()
     globalThis.document = {
       querySelector: () => null,
+      // ensureStyle() 会 createElement('style') + document.head.appendChild（真 apply 需要）。
+      createElement: () => ({ dataset: {}, set textContent(_value) {}, remove() {} }),
+      head: { appendChild() {} },
       addEventListener: (type, fn) => listeners.set(type, fn),
       removeEventListener: (type) => listeners.delete(type),
     }
@@ -2726,6 +2729,14 @@ describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
     mini.mount(mini.react.createElement('div', { className: 'host-app' }, mini.react.createElement(client.UserActionsRow, {
       node, sessionId: 's1', useChat: useChatFor(chatSnapshot([node])), inputActions: {}, t: tZh,
     })))
+    mini.flush()
+  }
+
+  /** 点撤回 chip（只开确认）→ 点「确认」（真正发起：暂停在飞轮次 → recall）。 */
+  const clickRecallConfirm = (mini) => {
+    buttons(mini, 'dsh-rt-chip').find((el) => el.props.title === tZh('action.recallUser')).props.onClick()
+    mini.flush()
+    buttons(mini, 'dsh-rt-confirm')[0].props.onClick()
     mini.flush()
   }
 
@@ -2808,6 +2819,214 @@ describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
       expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
 
       expect(calls.filter((call) => call.op === 'recall')).toHaveLength(0)
+    } finally {
+      client.__setMessageEditorWire(null)
+      dom.restore()
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // 2026-09-30 用户需求「撤回应该先暂停运行，然后处理」：
+  // 运行中撤回 ⇒ 先调**官方停止入口**、等它停下（有限超时），**再**发 recall；
+  // 不在运行 ⇒ 不调中断；中断 reject/超时 ⇒ recall 照发 + 可见提示 + 宿主日志。
+  // 顺序用"事件数组"断言（中断事件必须排在 recall 事件之前）。
+  // -------------------------------------------------------------------------
+  it('运行中撤回：先暂停在飞轮次（官方停止入口）→ 再 recall（顺序可断言）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const events = []
+    let probes = 0
+    client.__setMessageEditorWire((op, payload) => {
+      if (op === 'runningState') {
+        probes += 1
+        // ① 点确认时：宿主说"在跑"；② 停止后复查：已停（running=false）。
+        return Promise.resolve({ ok: true, value: { sessionId: payload?.sessionId, running: probes === 1, reasons: probes === 1 ? ['agent-running'] : [] } })
+      }
+      if (op === 'recall') { events.push('recall'); return Promise.resolve({ ok: true, value: { text: 'text 5' } }) }
+      return Promise.resolve({ ok: true })
+    })
+    client.__setRecallPauseDeps({
+      interrupt: (sessionId) => { events.push(`interrupt:${sessionId}`); return Promise.resolve({ ok: true, value: { accepted: true } }) },
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      clickRecallConfirm(mini)
+      // 暂停在飞时**立刻**有可见反馈（不是静默等待）：这就是「正在暂停当前运行…」。
+      const hint = byClass(mini, 'dsh-rt-pause-note')
+      expect(hint, '暂停中必须有可见提示').toBeDefined()
+      expect(textOf(hint)).toContain(tZh('action.recallPausing'))
+      await settle(mini)
+      // 中断**先于** recall —— 这就是"先暂停运行，然后处理"。
+      expect(events).toEqual(['interrupt:s1', 'recall'])
+      expect(probes, '停止后必须复查到 running=false').toBeGreaterThanOrEqual(2)
+      // 暂停成功 ⇒ 不留失败提示（提示只给失败/超时/不可用）。
+      expect(byClass(mini, 'dsh-rt-pause-note')).toBeUndefined()
+      // 暂停中的可见反馈文案（zh/en 成对）真的存在。
+      expect(zh['action.recallPausing']).toContain('暂停')
+      expect(en['action.recallPausing']).toContain('Pausing')
+    } finally {
+      client.__setRecallPauseDeps(null)
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('不在运行中撤回：不调用中断，直接 recall（只查一次运行态）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const ops = []
+    client.__setMessageEditorWire((op) => { ops.push(op); return Promise.resolve({ ok: true, value: { sessionId: 's1', running: false, reasons: [] } }) })
+    let interrupts = 0
+    client.__setRecallPauseDeps({
+      interrupt: () => { interrupts += 1; return Promise.resolve({ ok: true }) },
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      clickRecallConfirm(mini)
+      await settle(mini)
+      expect(interrupts, '空闲会话不得被中断').toBe(0)
+      expect(ops.filter((op) => op === 'recall')).toHaveLength(1)
+      expect(ops.filter((op) => op === 'runningState')).toHaveLength(1)
+      expect(byClass(mini, 'dsh-rt-pause-note')).toBeUndefined()
+    } finally {
+      client.__setRecallPauseDeps(null)
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('中断 reject ⇒ recall 仍被执行，且提示 + 宿主日志（不静默、无未捕获异常）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const ops = []
+    client.__setMessageEditorWire((op) => {
+      ops.push(op)
+      if (op === 'runningState') return Promise.resolve({ ok: true, value: { sessionId: 's1', running: true, reasons: ['agent-running'] } })
+      return Promise.resolve({ ok: true })
+    })
+    client.__setRecallPauseDeps({
+      interrupt: () => Promise.reject(new Error('cancel-rpc-down')),
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      clickRecallConfirm(mini)
+      await settle(mini)
+      // 中断失败**不阻塞**撤回。
+      expect(ops.filter((op) => op === 'recall')).toHaveLength(1)
+      const note = byClass(mini, 'dsh-rt-pause-note')
+      expect(note, '暂停失败必须有可见提示').toBeDefined()
+      expect(textOf(note)).toContain(tZh('action.recallPauseFailed'))
+      expect(ops.filter((op) => op === 'clientReport'), '必须进宿主日志').toHaveLength(1)
+    } finally {
+      client.__setRecallPauseDeps(null)
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('等待暂停超时（有限超时 fail-soft）⇒ recall 仍被执行并提示超时', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const ops = []
+    client.__setMessageEditorWire((op) => {
+      ops.push(op)
+      if (op === 'runningState') return Promise.resolve({ ok: true, value: { sessionId: 's1', running: true, reasons: ['agent-running'] } })
+      return Promise.resolve({ ok: true })
+    })
+    let clock = 0
+    client.__setRecallPauseDeps({
+      interrupt: () => Promise.resolve({ ok: true, value: { accepted: true } }),
+      sleep: () => Promise.resolve(),
+      now: () => { clock += 10000; return clock },   // 每次读钟都跨过 deadline ⇒ 立刻超时
+      timeoutMs: 50,
+      pollMs: 1,
+    })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      clickRecallConfirm(mini)
+      await settle(mini)
+      expect(ops.filter((op) => op === 'recall'), '超时不得阻塞撤回').toHaveLength(1)
+      expect(textOf(byClass(mini, 'dsh-rt-pause-note'))).toContain(tZh('action.recallPauseTimeout'))
+      expect(ops.filter((op) => op === 'clientReport')).toHaveLength(1)
+    } finally {
+      client.__setRecallPauseDeps(null)
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('pauseRunningTurn：读运行态失败=unknown（不猜、不误中断）、未接线=unavailable、中断抛错=failed —— 一律不抛', async () => {
+    const { client } = await buildInteractive(['pauseRunningTurn'])
+    const unknown = await client.pauseRunningTurn('s1', { probe: () => Promise.reject(new Error('HTTP 404')) })
+    expect(unknown.status).toBe('unknown')
+    expect(unknown.detail).toContain('404')
+
+    const unavailable = await client.pauseRunningTurn('s1', {
+      probe: () => Promise.resolve({ running: true }),
+      interrupt: undefined,
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    expect(unavailable.status).toBe('unavailable')
+
+    const failed = await client.pauseRunningTurn('s1', {
+      probe: () => Promise.resolve({ running: true }),
+      interrupt: () => { throw new Error('boom') },
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    expect(failed.status).toBe('failed')
+    expect(failed.detail).toContain('boom')
+
+    const idle = await client.pauseRunningTurn('s1', { probe: () => Promise.resolve({ running: false }) })
+    expect(idle.status).toBe('idle')
+  })
+
+  it('生产接线（真 apply）：撤回前置暂停真的调官方 session.cancel()（sessions.binding(id).session）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const dom = installDom()
+    const cancel = vi.fn(() => Promise.resolve({ ok: true, value: { accepted: true } }))
+    const sessions = { binding: (id) => (id === 's1' ? { session: { cancel } } : undefined) }
+    const services = { sessions }
+    const registered = []
+    const fakeCtx = {
+      effect: (fn) => { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {} },
+      locale: { register: () => () => {}, bind: () => (key) => key },
+      get: (name) => services[name],
+      inject: (names, callback) => { callback({ get: (name) => services[name] }); return () => {} },
+      slots: {
+        inject: (seat, callback) => { callback(); return () => {} },
+        register: (definition, component) => { registered.push({ definition, component }); return () => {} },
+      },
+    }
+    const ops = []
+    let probes = 0
+    client.__setMessageEditorWire((op) => {
+      ops.push(op)
+      if (op === 'runningState') {
+        probes += 1
+        return Promise.resolve({ ok: true, value: { sessionId: 's1', running: probes === 1, reasons: probes === 1 ? ['agent-running'] : [] } })
+      }
+      return Promise.resolve({ ok: true })
+    })
+    try {
+      client.apply(fakeCtx)
+      const slot = registered.find((entry) => entry.definition?.name === 'conversation.chat.node' && entry.definition?.key === 'user-actions')
+      expect(slot, 'user-actions 槽位必须注册').toBeDefined()
+      const node = userMessage('u1', 5)
+      mini.reset()
+      mini.mount(mini.react.createElement(slot.component, {
+        node, sessionId: 's1', useChat: useChatFor(chatSnapshot([node])), inputActions: {}, t: tZh,
+      }))
+      mini.flush()
+      clickRecallConfirm(mini)
+      await settle(mini)
+      // 生产接线用默认 pollMs(200ms) 真等一轮"已停"复查 ⇒ 有界轮询到 recall 出现为止。
+      for (let i = 0; i < 25 && !ops.includes('recall'); i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 30))
+      }
+      mini.flush()
+      // 生产里接的就是官方停止入口本身（同一 RPC：agent.cancel({kind:'user'})）。
+      expect(cancel, '必须调用官方 session.cancel()').toHaveBeenCalledTimes(1)
+      expect(ops.filter((op) => op === 'recall'), '暂停后仍要撤回').toHaveLength(1)
     } finally {
       client.__setMessageEditorWire(null)
       dom.restore()
