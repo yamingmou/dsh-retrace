@@ -29,6 +29,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { build } from 'esbuild'
+import { createMiniReact, collectElements, textOf } from './mini-react.js'
 
 // Mocked so the registered slot components can be invoked as plain functions
 // (they call useState/useEffect; no React renderer is needed for this contract).
@@ -2581,5 +2582,245 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     const source = sourceOf()
     expect(source).toContain('const [pathOpen, setPathOpen] = useState(false)')
     expect(source).toContain('const [quietOpen, setQuietOpen] = useState(false)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 2026-09-30 · 撤回二次确认 + 回档失败不再静默
+//
+// Both behaviours are INTERACTIVE (a click opens a dialog; a rejected op flips
+// state), so they need a real render phase. The extraction at the top of this
+// file injects a STATELESS `useState` stub (``[init, () => {}]``) — enough for
+// display assertions, structurally unable to render a dialog that appears only
+// after a click. So this block bundles the SAME lib/client.js a second time with
+// `test/mini-react.js` (real hook + effect semantics) and drives the REAL
+// components through mount → click → flush → settle.
+// ---------------------------------------------------------------------------
+describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
+  const REC = { versionId: 'v1', boundarySeq: 1, kind: 'edit', createdAt: 0, messageCount: 7, markerText: '', fileCounts: { created: 0, modified: 0, deleted: 0 }, touchedFiles: [], git: null }
+
+  /** Bundle lib/client.js with mini-react as `react`; returns { mini, client }. */
+  const buildInteractive = async (names) => {
+    const mini = createMiniReact()
+    const source = readFileSync(CLIENT_SOURCE_PATH, 'utf8')
+    const bundled = await build({
+      stdin: {
+        contents: `${source}\nexport { ${names.join(', ')} }\n`,
+        loader: 'js',
+        resolveDir: path.dirname(CLIENT_SOURCE_PATH),
+        sourcefile: 'client.js',
+      },
+      bundle: true,
+      format: 'cjs',
+      platform: 'node',
+      target: 'node20',
+      write: false,
+      external: ['react'],
+      logLevel: 'silent',
+    })
+    const mod = { exports: {} }
+    // eslint-disable-next-line no-new-func
+    new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(
+      (id) => (id === 'react' ? mini.react : nodeRequire(id)), mod, mod.exports,
+    )
+    return { mini, client: mod.exports }
+  }
+
+  const buttons = (mini, className) => collectElements(mini.tree())
+    .filter((el) => el.type === 'button' && String(el.props?.className ?? '').includes(className))
+  const byClass = (mini, className) => collectElements(mini.tree())
+    .find((el) => String(el.props?.className ?? '').includes(className))
+  const settle = async (mini) => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    mini.flush()
+  }
+  /** Install a global DOM good enough for ensureStyle / bindListHeight / the Esc listener. */
+  const installDom = () => {
+    const previous = { document: globalThis.document, window: globalThis.window, fetch: globalThis.fetch }
+    const listeners = new Map()
+    globalThis.document = {
+      querySelector: () => null,
+      addEventListener: (type, fn) => listeners.set(type, fn),
+      removeEventListener: (type) => listeners.delete(type),
+    }
+    globalThis.window = { addEventListener() {}, removeEventListener() {}, innerHeight: 900 }
+    const asJson = (value) => Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(value) })
+    globalThis.fetch = (url) => asJson(String(url).includes('/summaries')
+      ? { ok: true, value: { enabled: false, sessionId: 's1', skipped: 0, error: null, records: [], tree: null } }
+      : { ok: true, value: null })
+    return {
+      listeners,
+      restore: () => {
+        globalThis.document = previous.document
+        globalThis.window = previous.window
+        globalThis.fetch = previous.fetch
+      },
+    }
+  }
+
+  const mountRow = (mini, client, node) => {
+    mini.reset()
+    mini.mount(mini.react.createElement('div', { className: 'host-app' }, mini.react.createElement(client.UserActionsRow, {
+      node, sessionId: 's1', useChat: useChatFor(chatSnapshot([node])), inputActions: {}, t: tZh,
+    })))
+    mini.flush()
+  }
+
+  it('撤回：点按钮只开确认（0 次请求）→ 取消仍 0 次 → 确认后恰好 1 次', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const calls = []
+    client.__setMessageEditorWire((op, payload) => { calls.push({ op, payload }); return Promise.resolve({ ok: true, value: { text: 'text 5' } }) })
+    const recallCalls = () => calls.filter((call) => call.op === 'recall')
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      const chip = buttons(mini, 'dsh-rt-chip').find((el) => el.props.title === tZh('action.recallUser'))
+      expect(chip, '撤回 chip 必须存在').toBeDefined()
+
+      // ① 点撤回 = 只开确认：不发任何请求，弹窗先出来。
+      chip.props.onClick()
+      mini.flush()
+      expect(recallCalls()).toHaveLength(0)
+      const scrim = byClass(mini, 'dsh-rt-confirm-scrim')
+      expect(scrim, '确认弹窗必须出现').toBeDefined()
+      const dialog = textOf(scrim)
+      expect(dialog).toContain(tZh('action.recallConfirm'))
+      expect(dialog).toContain(tZh('action.recallConfirmDesc'))
+      // 真实行为必须写进描述：原内容归档 + 可在恢复视图查看。
+      expect(zh['action.recallConfirmDesc']).toContain('归档')
+      expect(zh['action.recallConfirmDesc']).toContain('恢复视图')
+      // 复用既有 modal 样式/按钮类（不是 window.confirm）。
+      expect(byClass(mini, 'dsh-rt-modal')).toBeDefined()
+      expect(buttons(mini, 'dsh-rt-confirm')).toHaveLength(1)
+
+      // ② 取消：弹窗关闭，依然 0 次请求。
+      buttons(mini, 'dsh-rt-editor-cancel')[0].props.onClick()
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
+      expect(recallCalls()).toHaveLength(0)
+
+      // ③ 重新打开 → 点「确认」：恰好 1 次 recall，payload 带上会话与消息 id。
+      buttons(mini, 'dsh-rt-chip').find((el) => el.props.title === tZh('action.recallUser')).props.onClick()
+      mini.flush()
+      buttons(mini, 'dsh-rt-confirm')[0].props.onClick()
+      mini.flush()
+      await settle(mini)
+      expect(recallCalls()).toHaveLength(1)
+      expect(recallCalls()[0].payload).toMatchObject({ sessionId: 's1', messageId: 'u-u1' })
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
+    } finally {
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('确认弹窗：Esc 与点遮罩都关闭；点卡片内部不关闭（且始终不发请求）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const dom = installDom()
+    const calls = []
+    client.__setMessageEditorWire((op, payload) => { calls.push({ op, payload }); return Promise.resolve({ ok: true }) })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      const chip = () => buttons(mini, 'dsh-rt-chip').find((el) => el.props.title === tZh('action.recallUser'))
+      chip().props.onClick()
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeDefined()
+
+      // 点卡片内部：不关闭（只有点遮罩本身才关闭）。
+      const scrim = byClass(mini, 'dsh-rt-confirm-scrim')
+      scrim.props.onClick({ target: {}, currentTarget: {} })
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeDefined()
+
+      // Esc：关闭。
+      expect(typeof dom.listeners.get('keydown')).toBe('function')
+      dom.listeners.get('keydown')({ key: 'Escape' })
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
+
+      // 点遮罩：关闭。
+      chip().props.onClick()
+      mini.flush()
+      const scrim2 = byClass(mini, 'dsh-rt-confirm-scrim')
+      scrim2.props.onClick({ target: scrim2, currentTarget: scrim2 })
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
+
+      expect(calls.filter((call) => call.op === 'recall')).toHaveLength(0)
+    } finally {
+      client.__setMessageEditorWire(null)
+      dom.restore()
+    }
+  })
+
+  it('rollback/preview 被 reject ⇒ 预览显示可读错误（不再永久「加载中…」）', async () => {
+    const { mini, client } = await buildInteractive(['RetraceView'])
+    const dom = installDom()
+    client.__setMessageEditorWire((op) => (op === 'rollback/preview'
+      ? Promise.reject(new Error('preview-transport-down'))
+      : Promise.resolve({ ok: true })))
+    try {
+      const projection = { versions: [REC], hostReplacementCount: 0 }
+      mini.reset()
+      mini.mount(mini.react.createElement('div', { className: 'host-app' }, mini.react.createElement(client.RetraceView, {
+        sessionId: 's1', useChat: () => undefined, useProjection: () => projection, t: tZh, actions: {}, store: {},
+      })))
+      mini.flush()
+      await settle(mini)
+      const restore = buttons(mini, 'dsh-rt-chip-danger')[0]
+      expect(restore, '必须渲染出「回到这一档」').toBeDefined()
+
+      restore.props.onClick()
+      mini.flush()
+      await settle(mini)
+
+      const text = textOf(mini.tree())
+      expect(text).not.toContain(tZh('timeline.loading'))            // 不再卡在 loading
+      expect(text).toContain(tZh('error.rollbackPreview', { message: 'preview-transport-down' }))
+      expect(text).toContain('preview-transport-down')               // 原始信息保留（可诊断）
+      // 预览失败 ⇒ 没有可确认的影响面：确认键停用（这是有信息的安全停用），
+      // 但取消可用，用户能退出/重试，而不是被无声卡死。
+      expect(byClass(mini, 'dsh-rt-confirm').props.disabled).toBe(true)
+      expect(byClass(mini, 'dsh-rt-editor-cancel').props.disabled).toBe(false)
+    } finally {
+      client.__setMessageEditorWire(null)
+      dom.restore()
+    }
+  })
+
+  it('rollback 被 reject ⇒ 报错并复位 busy（不会停在「回退中…」）', async () => {
+    const { mini, client } = await buildInteractive(['RetraceView'])
+    const dom = installDom()
+    client.__setMessageEditorWire((op) => {
+      if (op === 'rollback') return Promise.reject(new Error('rollback-transport-down'))
+      if (op === 'rollback/preview') {
+        return Promise.resolve({ ok: true, value: { context: { messages: 2 }, artifacts: { rows: [] } } })
+      }
+      return Promise.resolve({ ok: true })
+    })
+    try {
+      const projection = { versions: [REC], hostReplacementCount: 0 }
+      mini.reset()
+      mini.mount(mini.react.createElement('div', { className: 'host-app' }, mini.react.createElement(client.RetraceView, {
+        sessionId: 's1', useChat: () => undefined, useProjection: () => projection, t: tZh, actions: {}, store: {},
+      })))
+      mini.flush()
+      await settle(mini)
+      buttons(mini, 'dsh-rt-chip-danger')[0].props.onClick()
+      mini.flush()
+      await settle(mini)
+
+      const confirm = () => byClass(mini, 'dsh-rt-confirm')
+      expect(confirm().props.disabled).toBe(false)
+      confirm().props.onClick()
+      mini.flush()
+      await settle(mini)
+
+      const text = textOf(mini.tree())
+      expect(text).toContain(tZh('error.rollback', { message: 'rollback-transport-down' }))
+      expect(text).not.toContain(tZh('timeline.busy'))              // busy 已复位
+      expect(confirm().props.disabled).toBe(true)                   // 错误态：不可重复提交
+    } finally {
+      client.__setMessageEditorWire(null)
+      dom.restore()
+    }
   })
 })

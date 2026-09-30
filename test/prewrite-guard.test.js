@@ -260,6 +260,62 @@ describe('createMarkerGuard (fake prewriter)', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('S5'))
   })
 
+  // 2026-09-30(独立核查 记录 1665): E6/E9 是**内核版本漂移型误报** —— 判据照
+  //   dsh-session@0.1.5-rc.1 写, 现役内核 0.1.7-rc.2 已改(system/message 用
+  //   source.kind==='system-prompt'; tool/result 的 role 是 'tool')。实测方向相反:
+  //   内核 ACCEPT 的行被 E9 报违规、内核 THROW 的行被 E9 放过。
+  it('剔除版本漂移误报: 仅 E6/E9 时不得拒写(否则编辑/撤回会被误拦)', async () => {
+    const factory = () => ({
+      validateAppend: () => ({
+        ok: false,
+        violations: [
+          { id: 'E9', severity: 'error', message: '系统提示词行：system/message 必须带 plugin source' },
+          { id: 'E6', severity: 'error', message: 'role 必须为 "user"，实际 tool' },
+        ],
+      }),
+      validateEdit: () => ({ violations: [] }),
+    })
+    const log = vi.fn()
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toMatchObject({ t1Ok: true })
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('内核版本漂移'))
+  })
+
+  it('剔除非漂移规则: E9 与真实规则并存时, 仍按真实规则拒写(不能顺带放过)', async () => {
+    const factory = () => ({
+      validateAppend: () => ({
+        ok: false,
+        violations: [
+          { id: 'E9', severity: 'error', message: 'system/message 必须带 plugin source' },
+          { id: 'S5', severity: 'error', message: 'missing seq' },
+        ],
+      }),
+      validateEdit: () => ({ violations: [] }),
+    })
+    const log = vi.fn()
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).rejects.toMatchObject({
+      code: 'marker-rejected',
+    })
+    expect(log.mock.calls.flat().join(' ')).toContain('S5')
+  })
+
+  it('seq 重排场景: 基线里的 E9 因 message 含 seq 而键不同, 也不得因此拒写', async () => {
+    // 这是最危险的一条: `id|message` 是基线差分的键, message 里含 seq ⇒ seq 一变,
+    //   既有违规就被归入 ours 并以 ERROR 拒写(marker-rejected)。
+    const factory = () => ({
+      validateAppend: () => ({
+        ok: false,
+        violations: [{ id: 'E9', severity: 'error', message: '(seq 12) system/message 必须带 plugin source' }],
+      }),
+      validateEdit: () => ({
+        violations: [{ id: 'E9', severity: 'error', message: '(seq 8) system/message 必须带 plugin source' }],
+      }),
+    })
+    const guard = createMarkerGuard({ log: vi.fn(), prewriterFactory: factory })
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toMatchObject({ t1Ok: true })
+  })
+
   it('wraps a throwing prewriter as marker-rejected', async () => {
     const factory = () => ({ validateAppend: () => { throw new Error('boom') } })
     const guard = createMarkerGuard({ prewriterFactory: factory })
