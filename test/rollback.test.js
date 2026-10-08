@@ -414,3 +414,80 @@ describe('rollback replay degradation (malformed sourceEventSeqs)', () => {
     expect(lines.some((line) => line.includes('镜像回退亦失败'))).toBe(true)
   })
 })
+
+// ---------------------------------------------------------------------------
+// 预览的 idle 闸(与 execute 同口径)。
+// 缺陷(独立审计实测):execute() 有 requireIdle,preview() 没有 ⇒ 运行中预览
+// 「成功/可回档」、点确认才被 agent-busy 拒 —— 用户看到「预览说行、确认说不行」。
+// 修法 = preview() 调同一个 requireIdle,code/文案与 execute 逐字一致。
+// ---------------------------------------------------------------------------
+describe('rollback preview idle gate (parity with execute)', () => {
+  /** 运行中的 agent 桩:seam.agentOf 返回 {status:'running'}。 */
+  const runningAgent = { agentOf: () => ({ status: 'running' }) }
+
+  /** 与既有 preview 用例同一夹具:boundary 3 之后还有 u3@4 可回退。 */
+  function previewSession() {
+    return makeSession().seed(
+      userMessage('u1', 'hi'),
+      assistantMessage('a1', 'yo'),
+      userMessage('u2', 'again'),
+      markerEvent('retrace-recall-1', [0, 1], [0, 1]),
+      userMessage('u3', 'more'),
+    )
+  }
+
+  it('运行中 preview 被拒为 agent-busy(与 execute 同 code/同文案),且零副作用', async () => {
+    const session = previewSession()
+    const before = session.events.length
+    const { rollback, seam, writes, spawns, sessions } = makeRollback(session, runningAgent)
+
+    const previewError = await rollback.preview({ sessionId: 's1', versionId: 'v3', scope: 'both' })
+      .then(() => null, (error) => error)
+    expect(previewError?.code).toBe('agent-busy')
+
+    // 文案口径:与 execute 同一句(逐字相等,防止两条闸各自演化)
+    const executeError = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'both' })
+      .then(() => null, (error) => error)
+    expect(executeError?.code).toBe('agent-busy')
+    expect(previewError.message).toBe(executeError.message)
+
+    // 副作用为零:没有事件、没有 fs 写、没有 rm、没有 git、没有 flush
+    expect(session.events.length).toBe(before)
+    expect(session.surface.nodes).toEqual([2, 3, 4])
+    expect(writes.length).toBe(0)
+    expect(spawns.length).toBe(0)
+    expect(seam.resolveSnapshot).not.toHaveBeenCalled()
+    expect(seam.readSnapshot).not.toHaveBeenCalled()
+    expect(seam.gitStatus).not.toHaveBeenCalled()
+    expect(seam.gitCheckout).not.toHaveBeenCalled()
+    expect(sessions.flush).not.toHaveBeenCalled()
+  })
+
+  it('空闲 preview 结果逐字段不变(versionId/diff/messages/artifacts 同旧断言)', async () => {
+    const session = previewSession()
+    const { rollback, seam } = makeRollback(session) // agentOf 默认 undefined ⇒ 无运行中 agent
+    const result = await rollback.preview({ sessionId: 's1', versionId: 'v3', scope: 'both' })
+    expect(result).toEqual({
+      versionId: 'v3',
+      kind: 'recall',
+      boundarySeq: 3,
+      scope: 'both',
+      context: { messages: 1, diff: [4], firstSeq: 4, lastSeq: 4, degraded: false },
+      artifacts: {
+        rows: [{ path: 'src/a.ts', action: 'restore', method: 'snapshot', safe: true }],
+        git: { enabled: false },
+      },
+      applicable: true,
+    })
+    expect(seam.resolveSnapshot).toHaveBeenCalledWith('v3', 'src/a.ts')
+    expect(session.events.length).toBe(5) // 预览不写任何东西
+  })
+
+  it('agent 存在但状态不是 running(如 idle)⇒ 预览照旧放行(不过度拦截)', async () => {
+    const session = previewSession()
+    const { rollback } = makeRollback(session, { agentOf: () => ({ status: 'idle' }) })
+    const result = await rollback.preview({ sessionId: 's1', versionId: 'v3', scope: 'both' })
+    expect(result.context.messages).toBe(1)
+    expect(result.applicable).toBe(true)
+  })
+})
