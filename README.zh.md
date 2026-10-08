@@ -129,7 +129,7 @@ dsh plugin --profile <name> add dsh-retrace
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.127"
+       "dsh-retrace": "^0.4.128"
      },
      "dsh": {
        "profile": {
@@ -372,7 +372,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 ### 升级
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.127
+dsh plugin --profile desktop add dsh-retrace@0.4.128
 # 然后重启 DSH —— 插件不会热重载
 ```
 
@@ -392,7 +392,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.127
 
 ### 版本固定建议
 
-请固定到确切版本（`dsh-retrace@0.4.127`），并让 `dsh-log-contract` 解析到 `>=0.3.12`。
+请固定到确切版本（`dsh-retrace@0.4.128`），并让 `dsh-log-contract` 解析到 `>=0.3.12`。
 **不要在跨宿主升级时依赖 `^0.4` 这种范围**：这里的兼容性由**宿主的面**决定，光看 semver 不够。
 
 ---
