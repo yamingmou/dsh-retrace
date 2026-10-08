@@ -389,14 +389,19 @@ describe('点「恢复显示」(真渲染循环)', () => {
     }))
     try {
       mountRow(mini, client, buildNode(), snapshotFor(false))
-      collectElements(mini.tree()).find((el) => el.type === 'button').props.onClick()
+      // ⚠️ 按 **class 定位**「恢复显示」按钮:0.4.126 起 marker 行上还有第二枚按钮
+      // (「真正恢复」,log-level undo),按 `el.type === 'button'` 计数会把两枚都数进来。
+      collectElements(mini.tree()).find((el) => el.type === 'button' && el.props?.className === 'dsh-rt-chip dsh-rt-marker-unhide').props.onClick()
       await new Promise((resolve) => setTimeout(resolve, 0))
       mini.flush()
 
       expect(collectElements(mini.tree()).filter((el) => el.type === 'style')).toHaveLength(1) // 仍然藏着
       // 未映射 code ⇒ 透传宿主文案(host-core 已是中文,不静默)
       expect(textOf(mini.tree())).toContain('未找到该撤回/编辑标记')
-      expect(collectElements(mini.tree()).filter((el) => el.type === 'button')).toHaveLength(1)
+      // 失败后「恢复显示」按钮还在(可重试);真正恢复按钮也在(两条出路都在,不假装恢复)
+      const buttons = collectElements(mini.tree()).filter((el) => el.type === 'button')
+      expect(buttons.filter((el) => el.props?.className === 'dsh-rt-chip dsh-rt-marker-unhide')).toHaveLength(1)
+      expect(buttons.filter((el) => el.props?.className === 'dsh-rt-chip dsh-rt-marker-true-restore')).toHaveLength(1)
     } finally {
       client.__setMessageEditorWire(null)
     }
@@ -408,11 +413,11 @@ describe('点「恢复显示」(真渲染循环)', () => {
     client.__setMessageEditorWire(() => Promise.reject(new Error('HTTP 404')))
     try {
       mountRow(mini, client, buildNode(), snapshotFor(false))
-      collectElements(mini.tree()).find((el) => el.type === 'button').props.onClick()
+      collectElements(mini.tree()).find((el) => el.type === 'button' && el.props?.className === 'dsh-rt-chip dsh-rt-marker-unhide').props.onClick()
       await new Promise((resolve) => setTimeout(resolve, 0))
       mini.flush()
       expect(textOf(mini.tree())).toContain('HTTP 404')
-      expect(collectElements(mini.tree()).filter((el) => el.type === 'button')).toHaveLength(1)
+      expect(collectElements(mini.tree()).filter((el) => el.type === 'button' && el.props?.className === 'dsh-rt-chip dsh-rt-marker-unhide')).toHaveLength(1)
     } finally {
       client.__setMessageEditorWire(null)
     }
