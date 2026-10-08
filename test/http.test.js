@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { DEFAULT_CONFIG, parseRetraceConfig, ROUTE_PREFIX, createRetraceHttpHandler } from '../lib/http.js'
+import { createRollbackExecutor } from '../lib/rollback.js'
 
 /**
  * 让"宿主进程是不是 Electron"在本用例内**确定**,不随跑测的 node 而变。
@@ -367,6 +368,23 @@ describe('P1 HTTP routes', () => {
     expect(parsed.error.boundarySeq).toBe(2) // details 透传
     expect(parsed.error.message).toContain('畸形 sourceEventSeqs')
     expect(lines.some((line) => line.includes('[replay-failed]'))).toBe(true) // 服务端也留痕
+  })
+
+  it('POST /rollback/preview 运行中 → wire 原样带出 agent-busy(不被改写成 internal)', async () => {
+    // 独立审计的「预览说行、确认说不行」:preview 现在与 execute 同一道 idle 闸
+    // (lib/rollback.js requireIdle)。本用例用**真** rollback 执行器走完整 HTTP 路径,
+    // 证明 sendError 不改写 code、客户端拿到的就是 agent-busy。
+    const seam = makeSeam()
+    seam.agentOf = () => ({ status: 'running' })
+    const session = { id: 's1', header: { cwd: '/work' }, events: [], surface: { nodes: [] } }
+    const sessions = { get: (id) => (id === 's1' ? session : undefined), flush: vi.fn(async () => {}) }
+    const rollback = createRollbackExecutor({ ctx: {}, sessions, seam, writeMarker: () => {} })
+    const handler = createRetraceHttpHandler({}, { sessions, agents: {}, seam, rollback, log: () => {} })
+    const res = await post(handler, `${ROUTE_PREFIX}/rollback/preview`, { sessionId: 's1', versionId: 'v3', scope: 'both' })
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(false)
+    expect(parsed.error.code).toBe('agent-busy')
+    expect(parsed.error.message).toBe('The agent is still responding; stop the current reply before rolling back.')
   })
 
   it('GET /doctor scans token-meter-breaking markers (B1)', async () => {
