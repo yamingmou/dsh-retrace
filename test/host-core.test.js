@@ -111,7 +111,7 @@ describe('recall', () => {
     expect(marker.data.source).toEqual({ kind: 'model', provider: 'test-provider', model: 'test-model' })
     expect(marker.data.id).toMatch(/^retrace-recall-/)
     // 留痕形态(定稿 A2):content 非空且为文本块——空 content 会投影成一条"空消息"
-    expect(marker.data.content).toEqual([{ type: 'text', text: '（此处内容已被撤回：原消息已归档，可在恢复视图中查看）' }])
+    expect(marker.data.content).toEqual([{ type: 'text', text: '（此处内容已被撤回，可在恢复视图中查看）' }])
     // 轮边界红线:载体的 source.kind='model' ⇒ 不被当成真实用户输入切轮
     expect(isRoundBoundaryEvent(marker)).toBe(false)
     // 不再写 turn/step 信封(三情形翻译作废):载体的前一个事件就是审计段
