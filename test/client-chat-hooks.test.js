@@ -2759,9 +2759,14 @@ describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
       const dialog = textOf(scrim)
       expect(dialog).toContain(tZh('action.recallConfirm'))
       expect(dialog).toContain(tZh('action.recallConfirmDesc'))
-      // 真实行为必须写进描述：原内容归档 + 可在恢复视图查看。
-      expect(zh['action.recallConfirmDesc']).toContain('归档')
-      expect(zh['action.recallConfirmDesc']).toContain('恢复视图')
+      // 2026-10-08(既定口径·文案):不再说"归档"——就事论事说「撤回」,并给出**真实可用**
+      // 的出路(该 marker 上的「恢复显示」按钮;host 侧 unhide 已落地,见 test/unhide.test.js)。
+      expect(zh['action.recallConfirmDesc']).toContain('撤回')
+      expect(zh['action.recallConfirmDesc']).toContain('恢复显示')
+      expect(zh['action.recallConfirmDesc']).not.toContain('归档')
+      expect(en['action.recallConfirmDesc']).not.toMatch(/archive/i)
+      expect(zh['action.recallConfirmYes']).toBe('撤回')
+      expect(zh['action.recallConfirmYes']).not.toContain('归档')
       // 复用既有 modal 样式/按钮类（不是 window.confirm）。
       expect(byClass(mini, 'dsh-rt-modal')).toBeDefined()
       expect(buttons(mini, 'dsh-rt-confirm')).toHaveLength(1)

@@ -153,7 +153,9 @@ describe('marker-carrier · 形状判据', () => {
     expect(CARRIER_EVENT_TYPE).toBe('user/message')
     expect(CARRIER_SOURCE_KIND).toBe('model')
     expect(CARRIER_DATA_KEYS).toEqual(['role', 'id', 'content', 'source'])
-    expect(TRACE_TEXT).toBe('（此处内容已被撤回：原消息已归档，可在恢复视图中查看）')
+    expect(TRACE_TEXT).toBe('（此处内容已被撤回，可在恢复视图中查看）')
+    // 2026-10-08(既定口径·文案):去掉“归档”措辞(内容没归档、“恢复显示”也能找回)。
+    expect(TRACE_TEXT).not.toContain('归档')
   })
 })
 

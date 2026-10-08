@@ -261,3 +261,42 @@ describe('unhide — 真实 dsh-log-contract 写前校验(带 op/cancels 业务�
     expect(sessionEvents(session).length).toBe(before)
   })
 })
+
+// ---------------------------------------------------------------------------
+// (B) 取消撤回之后的**可操作性**判定(2026-10-08)
+//
+// 用户实测:「恢复展示成功——恢复后的消息没有编辑和撤回」。修法有两条路:
+//   (i) 让客户端 `useShadowed` 忽略被取消的 marker,把编辑/撤回入口放回来 ——
+//       **必须**同时让宿主接受这些 op,否则按钮回来了却点一次错一次(比不回来更糟);
+//   (ii) 保持入口不出现(现状),如实说明为什么。
+//
+// 本用例是 (i) 的**前置证据**:取消标记只写一条单段 append(它不产生 replace、
+// 也不改模型面,见本文件顶部的形状断言),而 editAndResend/recall/regenerate 的
+// span 计算都要求目标 seq 仍在当前面(surface)上 ⇒ 三个 op 现在全返回
+// `target-shadowed`。所以当前选 (ii)。
+// ⚠️ 若将来落成"把被遮蔽内容重新物化回面"的新 op(相当于恢复视图那套),
+// 这个用例必须与 lib/client.js 的 useShadowed 一起改(删掉本块 + 客户端放行),
+// 否则就是"能点但必失败"。
+// ---------------------------------------------------------------------------
+describe('(B) 取消标记不改变可操作性:三个 op 仍被宿主拒(target-shadowed)', () => {
+  it('editAndResend / recall / regenerate 在已取消的 marker 目标上全部被拒', async () => {
+    const session = standardSession()
+    const api = makeApi(session, makeAgent())
+    const recall = await api.recall({ sessionId: 's1', messageId: 'u1' })
+    expect(recall.ok).toBe(true)
+    const marker = lastCarrierMarker(session)
+    const un = await api.unhide({ sessionId: 's1', markerSeq: marker.seq })
+    expect(un.ok).toBe(true)
+
+    const attempts = [
+      ['editAndResend', { messageId: 'u1', text: 'rewritten', fromScratch: true }],
+      ['recall', { messageId: 'u1' }],
+      ['regenerate', { messageId: 'a1' }],
+    ]
+    for (const [op, payload] of attempts) {
+      const result = await api[op]({ sessionId: 's1', ...payload })
+      expect(result.ok, `${op} 不该在已取消的遮蔽目标上成功(面没恢复)`).toBe(false)
+      expect(result.error.code, `${op} 的拒因`).toBe('target-shadowed')
+    }
+  })
+})
