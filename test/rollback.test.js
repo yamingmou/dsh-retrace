@@ -53,7 +53,7 @@ function markerEvent(id, span, sourceEventSeqs) {
 
 /**
  * A MALFORMED replacement as found in the user's real large session
- * (2026-09-30, seq 33662/33682/…): a third-party `interop-marker-v1-*`
+ * (2026-09-30, seq 33662/33682/…): a third-party `互操作标记-v1-*`
  * marker whose `sourceEventSeqs` embeds a NESTED array pair (`[28324,28334]`).
  * The kernel's provenance validator rejects it
  * (`… sourceEventSeqs must densely contain non-negative safe integers`), which
