@@ -392,7 +392,8 @@ describe('host-core hooks.validateMarker', () => {
     expect(calledSession).toBe(session)
     expect(preExtra?.phase).toBe('pre')
     expect(preEnvelope.type).toBe('user/message')
-    expect(preEnvelope.surfaceOp).toEqual({ op: 'replace', start: 0, end: 1 })
+    // 现役内核 v4(SESSION_FORMAT_VERSION=4):钩子收到的信封里区间键名 = startSeq/endSeq
+    expect(preEnvelope.surfaceOp).toEqual({ op: 'replace', startSeq: 0, endSeq: 1 })
     expect(preEnvelope.sourceEventSeqs).toEqual([0, 1])
     const [, pairEnvelope, pairExtra] = validateMarker.mock.calls[1]
     expect(pairExtra?.phase).toBe('pair')

@@ -121,7 +121,7 @@ describe('marker append seq — real-machine E2 regression (期望 26033, candid
       seq: 0, // the historical producer bug
       type: 'user/message',
       data: { role: 'user', id: 'retrace-recall-x', content: [{ type: 'text', text: 'x' }], source: { kind: 'model', ...MODEL } },
-      surfaceOp: { op: 'replace', start: 1, end: 2 },
+      surfaceOp: { op: 'replace', startSeq: 1, endSeq: 2 },
       sourceEventSeqs: [1, 2],
     }
     await expect(guard.validateMarkerAppend(session, fabricated, { phase: 'post' }))
@@ -190,7 +190,10 @@ describe('two-segment pairing (no orphan audit on rejection)', () => {
  */
 describe('host shadow-price fold (the drift mechanism behind surfaceTokens)', () => {
   const prune = (seq, start, end, tokens) => ({ seq, type: 'compaction/prune', data: { shadowedRange: { start, end }, shadowedSeqs: [start, end], shadowedTokenCount: tokens } })
-  const replace = (seq, start, end) => ({ seq, type: 'user/message', surfaceOp: { op: 'replace', start, end }, data: { role: 'user', id: `retrace-x-${seq}`, content: [{ type: 'text', text: 'r' }], source: { kind: 'model', ...MODEL } } })
+  // replace 区间键名 = 现役内核 v4 的 startSeq/endSeq。官方 surface-projection 消费
+  // 的正是这两个键(dsh-token-meter/lib/index.js:329 `claim.start !== op.startSeq`),
+  // 写 v0 的 start/end 会让它读到 undefined ⇒ 报 "range undefined-undefined"。
+  const replace = (seq, start, end) => ({ seq, type: 'user/message', surfaceOp: { op: 'replace', startSeq: start, endSeq: end }, data: { role: 'user', id: `retrace-x-${seq}`, content: [{ type: 'text', text: 'r' }], source: { kind: 'model', ...MODEL } } })
   const fold = (log) => {
     let claim
     let total = 0

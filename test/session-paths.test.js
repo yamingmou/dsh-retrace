@@ -6,7 +6,7 @@
  *   ① $DSH_HOME 优先(设了就只认它);
  *   ② 未设 $DSH_HOME 且两基座都在 → 选 ~/dsh-v3(口径统一后的新行为;旧行为选 ~/.dsh);
  *   ③ 未设 $DSH_HOME 且只有 ~/.dsh → 兜底旧 home;
- *   ④ 同一会话目录两种文件名并存 → 取 mtime 新者,平局按数组序(新基座优先);
+ *   ④ 同一会话目录多代文件名并存 → 取 mtime 新者,平局按数组序(世代高者优先:v4 → v3 → v0);
  *   ⑤ pluginDataHome(插件数据家)与会话基座**同源**(设了 $DSH_HOME 逐字一致;
  *      未设则 = 活动基座父目录)——钉住"存储不再分裂到旧 home"。
  */
@@ -28,6 +28,7 @@ import {
   resolveBadgeTablePath,
 } from '../lib/platform/session-paths.js'
 
+const V4 = 'session.v4.jsonl.zstd'
 const V3 = 'session.v3.jsonl.zstd'
 const V0 = 'session.jsonl.zstd'
 const T0 = 1_700_000_000_000
@@ -117,8 +118,17 @@ describe('pickSessionFile', () => {
     const b = join(dir, V0)
     writeFileSync(b, '{}\n'); utimesSync(b, new Date(T0), new Date(T0))
     writeFileSync(a, '{}\n'); utimesSync(a, new Date(T0), new Date(T0))
+    // 旧断言 `SESSION_FILE_NAMES[0] === V3` 已不成立:实现 2026-09-29 补了 **v4 世代**
+    // （lib/platform/session-paths.js:38-45，依据实测:某会话 v3 停在 09-27 而 v4 在写）
+    // ⇒ 平局时数组序里**世代最高者**优先,首位是 v4 而不是 v3。
+    const c = join(dir, V4)
+    writeFileSync(c, '{}\n'); utimesSync(c, new Date(T0), new Date(T0))
+    expect(pickSessionFile(dir)).toBe(c)
+    expect(SESSION_FILE_NAMES[0]).toBe(V4)
+    // v4 不在时,同一数组序继续取 v3（原断言要锁的语义仍在,只是往后挪了一代）
+    rmSync(c)
     expect(pickSessionFile(dir)).toBe(a)
-    expect(SESSION_FILE_NAMES[0]).toBe(V3)
+    expect(SESSION_FILE_NAMES[1]).toBe(V3)
   })
 
   it('都没命中返回 null', () => {

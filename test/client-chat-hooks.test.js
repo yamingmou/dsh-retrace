@@ -885,7 +885,11 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
       await hooks.jumpToAnchor(store, 5, () => refNodes)
       expect(dom.state.switched, 'the tab must switch once the key is known').toBe(true)
       expect(dom.state.scrolls, 'the resolved row must be scrolled into view').toBe(1)
-      expect(dom.state.anchorSelectors).toContain('[data-chat-anchor-key="u5"]')
+      // 旧断言按"一条 querySelector 参数 = 单个选择器"写；实现 2026-09-29 起把选择器扩成
+      // **三形态**（整 key / flow-key / 复合键前缀，lib/client.js:2996）:分组内行的
+      // data-chat-anchor-key 是复合键 ["u5",…]，单一整 key 选择器匹配不上。断言改为
+      // "三形态里含锚点整 key 那一支"，语义不变（仍证明是按键找行）。
+      expect(dom.state.anchorSelectors.some((s) => s.split(',').includes('[data-chat-anchor-key="u5"]'))).toBe(true)
     } finally {
       hooks.__setMessageEditorWire(null)
       dom.restore()
@@ -941,7 +945,11 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
       await hooks.jumpToAnchor({ hasMore: true, loadOlder: async () => {} }, 5, () => nodes)
       expect(dom.state.switched, 'the tab switches as soon as the key is known').toBe(true)
       expect(dom.state.scrolls).toBe(0)
-      expect(dom.state.anchorSelectors).toContain('[data-chat-anchor-key="u5"]')
+      // 旧断言按"一条 querySelector 参数 = 单个选择器"写；实现 2026-09-29 起把选择器扩成
+      // **三形态**（整 key / flow-key / 复合键前缀，lib/client.js:2996）:分组内行的
+      // data-chat-anchor-key 是复合键 ["u5",…]，单一整 key 选择器匹配不上。断言改为
+      // "三形态里含锚点整 key 那一支"，语义不变（仍证明是按键找行）。
+      expect(dom.state.anchorSelectors.some((s) => s.split(',').includes('[data-chat-anchor-key="u5"]'))).toBe(true)
       expect(reports.at(-1)?.payload?.source).toBe('jump-unavailable:row-not-rendered')
       expect(warn).toHaveBeenCalled()
     } finally {

@@ -12,7 +12,11 @@ import { vi } from 'vitest'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createEditorApi } from '../lib/host-core.js'
 import { createDshMarkerWriter, carrierContentOf } from '../lib/adapter/dsh-writer.js'
-import { isCarrierMarkerEvent } from '../lib/marker-carrier.js'
+import { isCarrierMarkerEvent, spanRangeOf } from '../lib/marker-carrier.js'
+// 现役运行时的 surfaceOp 形状(与生产写入器同一真相,不硬编码):
+// 内核 0.1.7-rc.2 = SESSION_FORMAT_VERSION=4 ⇒ `{op:'replace',startSeq,endSeq}`
+// (内核 lib/index.js:292 isReplaceOp 要求键名精确为 startSeq/endSeq)。
+import { runtimeSurfaceOpShape } from '../lib/adapter/contract.js'
 import { deriveMessage, officialSurfaceMeter } from './official-meter.js'
 
 /** User message event factory (real user input → round boundary). */
@@ -144,9 +148,12 @@ export function makeSession({ host = 'new' } = {}) {
       // 进入 surface；step/start、step/end、turn/start、turn/end 是位置边界，不产生节点。
       if (LOG_ONLY_TYPES.has(type)) return record
       if (type === 'step/start' || type === 'step/end' || type === 'turn/start' || type === 'turn/end') return record
-      if (options.surfaceOp && options.surfaceOp.op === 'replace') {
-        const { start, end } = options.surfaceOp
-        surface.nodes = surface.nodes.filter((seq) => seq < start || seq > end)
+      // 区间读取走**单一真相** spanRangeOf(lib/marker-carrier.js:211,双形状):
+      // 现役内核 v4 写 startSeq/endSeq,旧日志仍是 start/end —— 只认一套键名会让
+      // 假体的面与日志分叉(遮蔽失效 ⇒ 下游断言读到错误的面)。
+      const range = options.surfaceOp ? spanRangeOf(options.surfaceOp) : null
+      if (range) {
+        surface.nodes = surface.nodes.filter((seq) => seq < range.start || seq > range.end)
       }
       // The replacement marker itself becomes the new surface tail node
       // (it derives to no model message, but it is part of the surface).
@@ -208,12 +215,19 @@ export function fakeCarrierWriter({ onWrite } = {}) {
       shadowedSeqs: shadowed.slice(),
       shadowedTokenCount: shadowed.length,
     })
+    // 形状取自现役运行时(与 createDshMarkerWriter 同源):内核 v4 只认
+    // `{op:'replace',startSeq,endSeq}`(lib/index.js:292),写 v0 键名会在真内核
+    // 重放时以 `carries an invalid replace surfaceOp` 拒整份日志。
+    const opShape = runtimeSurfaceOpShape()
+    const surfaceOp = opShape.startKey === 'startSeq'
+      ? { op: 'replace', startSeq: span.start, endSeq: span.end }
+      : { op: 'replace', start: span.start, end: span.end }
     const marker = session.append('user/message', {
       role: 'user',
       id: `retrace-${intent.op ?? 'recall'}-${intent.targetSeq ?? span.start}`,
       content: carrierContentOf(intent),
       source: { kind: 'model', provider: 'p', model: 'm' },
-    }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: [audit.seq, ...shadowed] })
+    }, { surfaceOp, sourceEventSeqs: [audit.seq, ...shadowed] })
     if (typeof onWrite === 'function') onWrite(marker)
     return marker
   }

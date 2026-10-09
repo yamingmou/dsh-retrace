@@ -20,6 +20,21 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { apply, __setMessageEditorWire } from '../lib/client.js'
 
+// 关闭守卫自 0.4.128 起**默认关闭**（CHANGELOG 0.4.128 修复项：「关闭守卫的说明此前写作
+// “开（默认）”，实际默认关闭」；`CONFIG_DEFAULTS.closeGuard = false`，lib/client.js:810）。
+// 本文件锁的是守卫**开启后**的装配行为（原生门武装 / 运行中横幅），所以这里必须显式开闸。
+// `readConfig()` 只在 `../lib/client.js` 被 import 时执行一次 ⇒ 只能在 import 之前把配置
+// 注入 localStorage，普通顶层语句晚于 import，必须用 vi.hoisted（同 test/foldsurface-projections.test.js 的先例）。
+vi.hoisted(() => {
+  const store = new Map([['dsh-retrace:config', JSON.stringify({ version: 3, closeGuard: true })]])
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => { store.set(key, String(value)) },
+    removeItem: (key) => { store.delete(key) },
+    clear: () => store.clear(),
+  }
+})
+
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 // ---------------------------------------------------------------------------

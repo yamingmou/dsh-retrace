@@ -72,7 +72,9 @@ function standardEvents() {
     { type: AUDIT_EVENT_TYPE, data: { shadowedRange: { start: 2, end: 3 }, shadowedSeqs: [2, 3], shadowedTokenCount: 10 } },
     {
       type: CARRIER_EVENT_TYPE,
-      surfaceOp: { op: 'replace', start: 2, end: 3 },
+      // 现役内核 v4(SESSION_FORMAT_VERSION=4):replace 区间键名 = startSeq/endSeq
+      // (内核 lib/index.js:292 isReplaceOp);v0 的 start/end 会被判 invalid 并拒掉整份日志。
+      surfaceOp: { op: 'replace', startSeq: 2, endSeq: 3 },
       sourceEventSeqs: [4, 2, 3],
       data: { id: 'retrace-recall-mrk001', role: 'user', content: [{ type: 'text', text: 'recalled' }], source: { kind: 'model', provider: 'p', model: 'm' } },
     },
@@ -289,7 +291,7 @@ describe('真正恢复 · 安全闸(缺一不可)', () => {
     writeLog([
       ...standardEvents(),
       { type: AUDIT_EVENT_TYPE, data: { shadowedRange: { start: 2, end: 3 }, shadowedSeqs: [2, 3], shadowedTokenCount: 10 } },
-      { type: CARRIER_EVENT_TYPE, surfaceOp: { op: 'replace', start: 2, end: 3 }, sourceEventSeqs: [6, 2, 3], data: { id: 'retrace-edit-mrk002', role: 'user', content: [{ type: 'text', text: 'again' }], source: { kind: 'model', provider: 'p', model: 'm' } } },
+      { type: CARRIER_EVENT_TYPE, surfaceOp: { op: 'replace', startSeq: 2, endSeq: 3 }, sourceEventSeqs: [6, 2, 3], data: { id: 'retrace-edit-mrk002', role: 'user', content: [{ type: 'text', text: 'again' }], source: { kind: 'model', provider: 'p', model: 'm' } } },
     ])
     const original = readFileSync(file)
     const error = await engine().restore(restoreArgs()).catch((e) => e)

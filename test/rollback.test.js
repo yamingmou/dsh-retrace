@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { foldSurface } from '@deepseek-ai/dsh-session'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createRollbackExecutor } from '../lib/rollback.js'
-import { carrierTargetSeq } from '../lib/marker-carrier.js'
+import { carrierTargetSeq, spanRangeOf } from '../lib/marker-carrier.js'
 import { makeAgent, makeHooks } from './helpers.js'
 
 /** User message event (real user input → round boundary). */
@@ -36,17 +36,25 @@ function assistantMessage(id, text) {
   }
 }
 
-/** A recall-style marker replacement (empty assistant message). */
+/**
+ * A recall-style marker replacement —— **现役内核 v4 的载体形状**:
+ * `user/message` + `{op:'replace',startSeq,endSeq}` + provenance。
+ * 旧夹具是 `assistant/message` + `{start,end}` + `data.editor`,在 0.1.7-rc.2
+ * (SESSION_FORMAT_VERSION=4)下结构上不可能存在:
+ *  · `{start,end}` 被内核 surfaceOpOf/isReplaceOp 判 invalid(lib/index.js:292/307);
+ *  · `assistant/message` + `sourceEventSeqs` 被内核直接拒(lib/index.js:312)。
+ * 所以"严格 fold 成功"的夹具必须是现役形状,否则测的是退化路径。
+ */
 function markerEvent(id, span, sourceEventSeqs) {
   return {
-    type: 'assistant/message',
-    surfaceOp: { op: 'replace', start: span[0], end: span[span.length - 1] },
+    type: 'user/message',
+    surfaceOp: { op: 'replace', startSeq: span[0], endSeq: span[span.length - 1] },
     sourceEventSeqs,
     data: {
-      turn: null,
-      step: null,
-      message: { id, role: 'assistant', content: [], source: { kind: 'model', provider: 'test-provider', model: 'test-model' } },
-      editor: { targetSeq: span[0], text: 'edited' },
+      id,
+      role: 'user',
+      content: [{ type: 'text', text: '（此处内容已被撤回：原消息已归档，可在恢复视图中查看）' }],
+      source: { kind: 'model', provider: 'test-provider', model: 'test-model' },
     },
   }
 }
@@ -62,7 +70,10 @@ function markerEvent(id, span, sourceEventSeqs) {
 function malformedMarkerEvent(id, span, sourceEventSeqs) {
   return {
     type: 'user/message',
-    surfaceOp: { op: 'replace', start: span[0], end: span[span.length - 1] },
+    // 现役 v4 键名 —— 否则内核先以 `carries an invalid replace surfaceOp` 拒,
+    // 测不到本用例要钉的 provenance 校验(
+    // `sourceEventSeqs must densely contain non-negative safe integers`)。
+    surfaceOp: { op: 'replace', startSeq: span[0], endSeq: span[span.length - 1] },
     sourceEventSeqs,
     data: { id, role: 'user', content: [{ type: 'text', text: 'folded' }], source: { kind: 'user' } },
   }
@@ -98,9 +109,10 @@ function makeSession(cwd = '/work') {
       const record = { seq: events.length, time: Date.now(), ...event }
       events.push(record)
       if (record.type !== 'request/header') {
-        if (record.surfaceOp && record.surfaceOp.op === 'replace') {
-          const { start, end } = record.surfaceOp
-          surface.nodes = surface.nodes.filter((seq) => seq < start || seq > end)
+        // 区间读取走单一真相 spanRangeOf(双形状):现役 v4 = startSeq/endSeq
+        const range = record.surfaceOp ? spanRangeOf(record.surfaceOp) : null
+        if (range) {
+          surface.nodes = surface.nodes.filter((seq) => seq < range.start || seq > range.end)
         }
         surface.nodes.push(record.seq)
       }
@@ -111,9 +123,9 @@ function makeSession(cwd = '/work') {
       events.push(record)
       // 与真实 dsh-session 一致：step/turn 边界不进 surface
       if (type === 'step/start' || type === 'step/end' || type === 'turn/start' || type === 'turn/end') return record
-      if (options.surfaceOp && options.surfaceOp.op === 'replace') {
-        const { start, end } = options.surfaceOp
-        surface.nodes = surface.nodes.filter((seq) => seq < start || seq > end)
+      const range = options.surfaceOp ? spanRangeOf(options.surfaceOp) : null
+      if (range) {
+        surface.nodes = surface.nodes.filter((seq) => seq < range.start || seq > range.end)
       }
       surface.nodes.push(record.seq)
       return record
@@ -249,7 +261,7 @@ describe('rollback execute', () => {
     expect(audit.data.shadowedSeqs).toEqual([4])
     const marker = eventAt(session, 6)
     expect(marker.type).toBe('user/message')
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 4 })
+    expect(marker.surfaceOp).toEqual({ op: 'replace', startSeq: 4, endSeq: 4 })
     expect(marker.sourceEventSeqs).toEqual([5, 4])
     // 业务溯源 targetSeq 由区间起点派生（editor 已不再落盘；restore 的边界 seq 3
     // 不等于区间起点 4 ⇒ 该场景读到的派生值是区间起点，见报告「能力损失」一节）
@@ -366,7 +378,7 @@ describe('rollback replay degradation (malformed sourceEventSeqs)', () => {
     expect(result.context).toEqual({ messages: 1, degraded: true })
     const marker = eventAt(session, 5)
     expect(marker.type).toBe('user/message')
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 3 })
+    expect(marker.surfaceOp).toEqual({ op: 'replace', startSeq: 3, endSeq: 3 })
     expect(sessions.flush).toHaveBeenCalled()
     expect(lines.some((line) => line.includes('已退化到镜像折叠'))).toBe(true)
   })

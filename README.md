@@ -145,7 +145,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.128"
+       "dsh-retrace": "^0.4.129"
      },
      "dsh": {
        "profile": {
@@ -442,7 +442,7 @@ Read it before filing an issue.
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.128
+dsh plugin --profile desktop add dsh-retrace@0.4.129
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -466,7 +466,7 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.128`) and let `dsh-log-contract` resolve to
+Pin an exact plugin version (`dsh-retrace@0.4.129`) and let `dsh-log-contract` resolve to
 `>=0.3.12`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 
