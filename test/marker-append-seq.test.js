@@ -1,7 +1,7 @@
 /**
  * Regression: the marker producer must NOT fabricate the append seq.
  *
- * Real-machine incident (DSH Desktop 2.0.9, 2026-09-14): clicking edit or recall
+ * Regression (DSH Desktop 2.0.9): clicking edit or recall
  * failed with
  *   Marker write rejected by contract guard: [E2/error] seq 0 不连续：倒退（backward），
  *   期望 26033 —— 只能追加到日志尾部（append-only，N6）
@@ -29,7 +29,7 @@ import { createDshMarkerWriter } from '../lib/adapter/dsh-writer.js'
 import { createMarkerGuard } from '../lib/prewrite-guard.js'
 import { officialSurfaceProjection, officialNodePrice, officialSurfaceMeter, deriveMessage } from './official-meter.js'
 
-/** Mirrors the real machine's log tail (26033 = last seq 26032). */
+/** Mirrors the host's log tail (26033 = last seq 26032). */
 const REAL_TAIL = 26033
 const MODEL = { provider: 'test-provider', model: 'test-model' }
 const SPAN = { start: 1, end: 2, shadowedSeqs: [1, 2] }
@@ -121,7 +121,7 @@ describe('marker append seq — real-machine E2 regression (期望 26033, candid
       seq: 0, // the historical producer bug
       type: 'user/message',
       data: { role: 'user', id: 'retrace-recall-x', content: [{ type: 'text', text: 'x' }], source: { kind: 'model', ...MODEL } },
-      surfaceOp: { op: 'replace', start: 1, end: 2 },
+      surfaceOp: { op: 'replace', startSeq: 1, endSeq: 2 },
       sourceEventSeqs: [1, 2],
     }
     await expect(guard.validateMarkerAppend(session, fabricated, { phase: 'post' }))
@@ -134,7 +134,7 @@ describe('marker append seq — real-machine E2 regression (期望 26033, candid
 
 /**
  * 本轮整改 §四.3: the guard used to reject the carrier **after** the audit was
- * already appended, leaving an orphan `compaction/prune` (the real machine left
+ * already appended, leaving an orphan `compaction/prune` (the host left
  * seq 26032/26033). Now the whole two-segment sequence is validated BEFORE any
  * append, so a rejection writes nothing.
  */
@@ -190,7 +190,10 @@ describe('two-segment pairing (no orphan audit on rejection)', () => {
  */
 describe('host shadow-price fold (the drift mechanism behind surfaceTokens)', () => {
   const prune = (seq, start, end, tokens) => ({ seq, type: 'compaction/prune', data: { shadowedRange: { start, end }, shadowedSeqs: [start, end], shadowedTokenCount: tokens } })
-  const replace = (seq, start, end) => ({ seq, type: 'user/message', surfaceOp: { op: 'replace', start, end }, data: { role: 'user', id: `retrace-x-${seq}`, content: [{ type: 'text', text: 'r' }], source: { kind: 'model', ...MODEL } } })
+  // replace 区间键名 = 现役内核 v4 的 startSeq/endSeq。官方 surface-projection 消费
+  // 的正是这两个键(dsh-token-meter/lib/index.js:329 `claim.start !== op.startSeq`),
+  // 写 v0 的 start/end 会让它读到 undefined ⇒ 报 "range undefined-undefined"。
+  const replace = (seq, start, end) => ({ seq, type: 'user/message', surfaceOp: { op: 'replace', startSeq: start, endSeq: end }, data: { role: 'user', id: `retrace-x-${seq}`, content: [{ type: 'text', text: 'r' }], source: { kind: 'model', ...MODEL } } })
   const fold = (log) => {
     let claim
     let total = 0

@@ -23,7 +23,7 @@ import {
   lastCarrierMarker,
 } from './helpers.js'
 import { isRoundBoundaryEvent } from '../lib/span-semantics.js'
-import { AUDIT_EVENT_TYPE, CARRIER_DATA_KEYS, carrierShadowedSeqs, carrierTargetSeq } from '../lib/marker-carrier.js'
+import { AUDIT_EVENT_TYPE, CARRIER_DATA_KEYS, carrierShadowedSeqs, carrierTargetSeq, spanRangeOf } from '../lib/marker-carrier.js'
 import { deriveMessage, officialNodePrice, officialSurfaceMeter } from './official-meter.js'
 
 /** header + u1 + a1 + tool + u2 + a2 — the standard two-round session. */
@@ -96,7 +96,10 @@ describe('recall', () => {
     expect(Object.keys(marker.data).sort()).toEqual([...CARRIER_DATA_KEYS].sort())
     expect(marker.data.turn).toBeUndefined()
     expect(marker.data.step).toBeUndefined()
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 5 })
+    // 现役内核 0.1.7-rc.2 / SESSION_FORMAT_VERSION=4:replace 区间键名 = startSeq/endSeq
+    // (内核 lib/index.js:292 `isReplaceOp` 要求键名精确为 startSeq/endSeq;v0 的
+    //  start/end 会被内核以 `carries an invalid replace surfaceOp` 拒掉整份日志)。
+    expect(marker.surfaceOp).toEqual({ op: 'replace', startSeq: 4, endSeq: 5 })
     // 首元素 = 审计段(第 1 段)seq;其余 = 全部被遮蔽节点
     const audit = lastAudit(session)
     expect(marker.sourceEventSeqs).toEqual([audit.seq, 4, 5])
@@ -110,8 +113,8 @@ describe('recall', () => {
     expect(carrierShadowedSeqs(marker)).toEqual([4, 5])
     expect(marker.data.source).toEqual({ kind: 'model', provider: 'test-provider', model: 'test-model' })
     expect(marker.data.id).toMatch(/^retrace-recall-/)
-    // 留痕形态(定稿 ):content 非空且为文本块——空 content 会投影成一条"空消息"
-    expect(marker.data.content).toEqual([{ type: 'text', text: '（此处内容已被撤回：原消息已归档，可在恢复视图中查看）' }])
+    // 留痕形态(定稿 A2):content 非空且为文本块——空 content 会投影成一条"空消息"
+    expect(marker.data.content).toEqual([{ type: 'text', text: '（此处内容已被撤回，可在恢复视图中查看）' }])
     // 轮边界红线:载体的 source.kind='model' ⇒ 不被当成真实用户输入切轮
     expect(isRoundBoundaryEvent(marker)).toBe(false)
     // 不再写 turn/step 信封(三情形翻译作废):载体的前一个事件就是审计段
@@ -165,7 +168,7 @@ describe('recall', () => {
     expect(surfaceSeqs(session)).toEqual([1, 2, 3, 4, 5]) // untouched
   })
 
-  it('running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 问题修复)', async () => {
+  it('running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (问题修复)', async () => {
     const session = standardSession()
     const cancel = vi.fn()
     const whenIdle = vi.fn(async () => {})
@@ -178,6 +181,181 @@ describe('recall', () => {
     expect(result.ok).toBe(true) // 停止后编辑成功
     // 载体已写入(编辑生效;不再有 turn/step 信封,最后事件即载体)
     expect(lastMarker(session).type).toBe('user/message')
+  })
+
+  // ---------------------------------------------------------------------------
+  // ensureIdle 加固：①排队窗口 = pending 也算未停；②whenIdle 等待有上限。
+  // 官方形状逐字来源（两版内核）：
+  //   现役 0.1.7-rc.2 @deepseek-ai/dsh-agent-loop/lib/index.js :752/:80/84/88/:790/:815/:870
+  //   旧版 0.1.1-rc.2 @deepseek-ai/dsh-agent/lib/index.js :34/38/40-41；agent-loop :357/:380-382/:405-409/:460-464
+  //   （hasPending = nextTurn/nextStep 两个排队列表非空）
+  // ---------------------------------------------------------------------------
+  describe('ensureIdle hardening (2026-09-30 · 排队窗口 + 等待上限)', () => {
+    /** 官方 Inbox 形状：布尔 hasPending + 两个排队列表。 */
+    const pendingInbox = () => ({ hasPending: true, nextTurn: [{ role: 'user', content: 'queued' }], nextStep: [] })
+
+    it('status=idle 但 inbox 有排队 → 照旧先 cancel({kind:user}) + whenIdle,再写 marker', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const api = makeApi(session, makeAgent({ status: 'idle', inbox: pendingInbox(), cancel, whenIdle }))
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(cancel).toHaveBeenCalledWith({ kind: 'user' })
+      expect(whenIdle).toHaveBeenCalledTimes(1)
+      // 顺序：先 cancel 再等收尾（官方 cancel 负责让 driver 收尾）
+      expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(whenIdle.mock.invocationCallOrder[0])
+      expect(result.ok).toBe(true)
+      expect(lastMarker(session).type).toBe('user/message') // 排队清掉后才写
+    })
+
+    it('idle 且无排队 → 完全不调 cancel/whenIdle（正常路径回归保护）', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const agent = makeAgent({
+        status: 'idle',
+        inbox: { hasPending: false, nextTurn: [], nextStep: [] },
+        cancel,
+        whenIdle,
+      })
+      const api = makeApi(session, agent)
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(cancel).not.toHaveBeenCalled()
+      expect(whenIdle).not.toHaveBeenCalled()
+      expect(result.ok).toBe(true)
+      expect(lastMarker(session).type).toBe('user/message')
+    })
+
+    it('inbox API 缺失/形状不同 → 与改动前一致（status=idle 不拦、不抛）', async () => {
+      const shapes = [
+        ['无 inbox 字段', undefined],
+        ['inbox=null', null],
+        ['inbox={}（空对象）', {}],
+        ['hasPending 非布尔', { hasPending: 'yes' }],
+        ['排队列表都不是数组', { queued: [1, 2], pending: [3] }],
+      ]
+      for (const [label, inbox] of shapes) {
+        const session = standardSession()
+        const cancel = vi.fn()
+        const whenIdle = vi.fn(async () => {})
+        const api = makeApi(session, makeAgent({ status: 'idle', inbox, cancel, whenIdle }))
+
+        const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+        expect(result.ok, label).toBe(true)
+        expect(cancel, label).not.toHaveBeenCalled()
+        expect(whenIdle, label).not.toHaveBeenCalled()
+        expect(lastMarker(session), label).toBeTruthy()
+      }
+    })
+
+    it('status 面不可判定（桩无 status）→ 不因 inbox 有排队改判（与改动前一致）', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const agent = { inbox: pendingInbox(), cancel, whenIdle } // 无 status
+      const api = makeApi(session, agent)
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(result.ok).toBe(true)
+      expect(cancel).not.toHaveBeenCalled()
+      expect(whenIdle).not.toHaveBeenCalled()
+    })
+
+    it('running + 形状不同的 inbox → 照旧走 cancel + whenIdle（改动前后同行为）', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const api = makeApi(session, makeAgent({ status: 'running', inbox: {}, cancel, whenIdle }))
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(whenIdle).toHaveBeenCalledTimes(1)
+      expect(result.ok).toBe(true)
+    })
+
+    it('idle + 有排队但无 cancel/whenIdle（旧桩）→ agent-busy（与 running 无停止入口时同一条回退）', async () => {
+      const session = standardSession()
+      const api = makeApi(session, makeAgent({ status: 'idle', inbox: pendingInbox() })) // 无 cancel
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(result.ok).toBe(false)
+      expect(result.error.code).toBe('agent-busy')
+      expect(surfaceSeqs(session)).toEqual([1, 2, 3, 4, 5]) // 未写 marker
+    })
+
+    it('inbox 读不进去（getter 抛）→ 不抛、按无排队处理，并留痕', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(async () => {})
+      const logs = []
+      const agent = makeAgent({ status: 'idle', cancel, whenIdle })
+      Object.defineProperty(agent, 'inbox', {
+        configurable: true,
+        get() { throw new Error('boom-inbox') },
+      })
+      const { sessions, agents } = makeEnv(session, { agent })
+      const { createEditorApi } = await import('../lib/host-core.js')
+      const api = createEditorApi({}, sessions, agents, (line) => logs.push(String(line)), makeHooks(agents))
+
+      const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
+
+      expect(result.ok).toBe(true)
+      expect(cancel).not.toHaveBeenCalled()
+      expect(logs.join('\n')).toMatch(/inbox unreadable/)
+    })
+
+    it('whenIdle 一直不 settle（driver 卡死）→ 15s 后抛 agent-stop-failed,不永久挂起、不写 marker', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      const whenIdle = vi.fn(() => new Promise(() => {}))
+      const api = makeApi(session, makeAgent({ status: 'running', cancel, whenIdle }))
+
+      vi.useFakeTimers()
+      try {
+        const pendingResult = api.recall({ sessionId: 's1', messageId: 'u1' })
+        await vi.advanceTimersByTimeAsync(60000) // 远超 15000ms 上限
+        const result = await pendingResult
+
+        expect(result.ok).toBe(false)
+        expect(result.error.code).toBe('agent-stop-failed')
+        expect(result.error.message).toMatch(/did not settle within 15000ms/)
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(surfaceSeqs(session)).toEqual([1, 2, 3, 4, 5]) // 冻结：marker 未写
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('whenIdle 在超时前 settle → 不抛（上限不误伤正常路径）', async () => {
+      const session = standardSession()
+      const cancel = vi.fn()
+      let release
+      const whenIdle = vi.fn(() => new Promise((resolve) => { release = resolve }))
+      const api = makeApi(session, makeAgent({ status: 'running', cancel, whenIdle }))
+
+      vi.useFakeTimers()
+      try {
+        const pendingResult = api.recall({ sessionId: 's1', messageId: 'u1' })
+        await vi.advanceTimersByTimeAsync(1000) // 未到上限
+        release()
+        await vi.advanceTimersByTimeAsync(1)
+        const result = await pendingResult
+
+        expect(result.ok).toBe(true)
+        expect(lastMarker(session).type).toBe('user/message')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   it('returns session-not-found for an unknown session', async () => {
@@ -511,7 +689,10 @@ describe('两段结构:不再写 turn/step,载体 source.kind=\'model\'(改造�
     expect(audit.seq).toBeLessThan(marker.seq)
     expect(marker.sourceEventSeqs[0]).toBe(audit.seq)
     // 审计段声明的被遮蔽段 === 载体区间(读写两端同一份 range 推出)
-    expect(audit.data.shadowedRange).toEqual({ start: marker.surfaceOp.start, end: marker.surfaceOp.end })
+    // 审计段声明的被遮蔽段 === 载体区间(读写两端同一份 range 推出)。
+    // 区间读取走 lib/marker-carrier.js:211 spanRangeOf(双形状单一真相):
+    // 审计段恒为 {start,end}(官方词表),载体的键名随运行时(v4 = startSeq/endSeq)。
+    expect(audit.data.shadowedRange).toEqual(spanRangeOf(marker.surfaceOp))
     expect(audit.data.shadowedSeqs).toEqual(carrierShadowedSeqs(marker))
   })
 
@@ -769,7 +950,7 @@ describe('「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」�
     // 重发文本必须是该轮(span 起点 seq 3 = u2)的原文
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('second')
     const marker = lastMarker(session)
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+    expect(marker.surfaceOp).toEqual({ op: 'replace', startSeq: 3, endSeq: 4 })
     expect(carrierTargetSeq(marker)).toBe(3) // 派生值 = 区间起点(该轮 user)
     expect(marker.data.editor).toBeUndefined()
   })
@@ -814,7 +995,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
     // 关键断言:重发该轮 user 原文,绝不是更早轮(seq 1)的文本
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
     const marker = lastMarker(session)
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 }) // 遮蔽范围 = 该轮
+    expect(marker.surfaceOp).toEqual({ op: 'replace', startSeq: 3, endSeq: 4 }) // 遮蔽范围 = 该轮
     // targetSeq 由区间起点派生(editor 不再落盘):区间起点 = 该轮 user seq 3
     expect(carrierTargetSeq(marker)).toBe(3)
   })
@@ -884,6 +1065,6 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
     const marker = lastMarker(session)
     expect(marker.data.id).toMatch(/^retrace-regenerate-/)
     expect(carrierTargetSeq(marker)).toBe(3) // 不是被遮蔽幽灵轮的 seq 1
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+    expect(marker.surfaceOp).toEqual({ op: 'replace', startSeq: 3, endSeq: 4 })
   })
 })

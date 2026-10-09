@@ -1,13 +1,9 @@
 #!/usr/bin/env node
 /**
- * 发布前元数据校验（2026-09-04，2026-09-10 改为正向白名单）：package.json 的
- * repository / homepage / bugs 必须指向**预期 owner** 的公开仓库
- * （github.com/yamingmou/<name>）。
+ * 发布前校验 repository/homepage/bugs 指向本仓预期 owner；不匹配即失败。
  *
- * 问题背景：0.3.0 的 repository 曾指向一个后来注销的旧 GitHub 账号
- * （→ 404 永久失效；npm 已发布版本的元数据不可改）。
- * 本脚本防再犯：三个字段任一不匹配预期 owner → 发布前即失败（正向校验，
- * 不依赖任何具体的历史账号名）。
+ * 正向校验：三个字段任一不匹配预期 owner（github.com/yamingmou/<name>）⇒ 发布前即失败。
+ * 判据不依赖任何具体的历史账号名；npm 已发布版本的元数据不可改，故必须发布前拦住。
  *
  * 接入：prepublishOnly（发布必查）+ 可手动跑 `node scripts/check-pkg-meta.mjs`。
  */

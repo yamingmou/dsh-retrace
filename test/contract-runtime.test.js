@@ -68,7 +68,7 @@ describe('Span.shape(跨层 span 结构契约)', () => {
     expect(() => assertMarkerShape({
       seq: 12,
       type: 'user/message',
-      surfaceOp: { op: 'replace', start: 420, end: 415 },
+      surfaceOp: { op: 'replace', startSeq: 420, endSeq: 415 },
       sourceEventSeqs: [421, 420, 418, 415],
       data: {
         role: 'user',
@@ -131,7 +131,9 @@ describe('ReplaceWriter.marker(两段结构第 2 段契约)', () => {
   const good = {
     seq: 6,
     type: 'user/message',
-    surfaceOp: { op: 'replace', start: 0, end: 1 },
+    // 现役运行时形状(SESSION_FORMAT_VERSION=4):内核 lib/index.js:292 isReplaceOp
+    // 要求键名精确为 startSeq/endSeq。
+    surfaceOp: { op: 'replace', startSeq: 0, endSeq: 1 },
     sourceEventSeqs: [5, 0, 1],
     data: {
       role: 'user',
@@ -150,12 +152,12 @@ describe('ReplaceWriter.marker(两段结构第 2 段契约)', () => {
   it('缺 surfaceOp / 非 user-message / data 成员越界 / content 空 / source 非 model → 报错', () => {
     expect(() => assertMarkerShape({ ...good, surfaceOp: undefined })).toThrow(/marker\.surfaceOp = \{op:'replace',start,end\}/)
     expect(() => assertMarkerShape({ ...good, type: 'assistant/message' })).toThrow(/marker\.type === 'user\/message'/)
-    expect(() => assertMarkerShape({ ...good, sourceEventSeqs: [5, 0, 1, 2] })).toThrow(/sourceEventSeqs 首尾 === surfaceOp\.start\/end/)
+    expect(() => assertMarkerShape({ ...good, sourceEventSeqs: [5, 0, 1, 2] })).toThrow(/sourceEventSeqs 首尾 === surfaceOp\.startSeq\/endSeq/)
     expect(() => assertMarkerShape({ ...good, seq: -1 })).toThrow(/marker\.seq 为非负安全整数/)
     // 官方 user/message 词表精确四成员:多一个成员即被官方拒(editor 无处容身)
     expect(() => assertMarkerShape({ ...good, data: { ...good.data, editor: { targetSeq: 0 } } }))
       .toThrow(/marker\.data 键集恰为 \{role,id,content,source\}/)
-    // 空 content 会投影成一条空 user 消息(实测)⇒ 写侧拦下
+    // 空 content 会投影成一条空 user 消息⇒ 写侧拦下
     expect(() => assertMarkerShape({ ...good, data: { ...good.data, content: [] } }))
       .toThrow(/marker\.data\.content 为非空数组/)
     // source.kind 非 'model' → 轮边界污染(官方不拦,写侧拦)
@@ -272,7 +274,7 @@ describe('assertMarkerShape 认双形状(v3 树 marker 不再误报)', () => {
       .toThrow(/形状须与当前运行时一致|contract-violation/)
   })
 
-  it('v0 形状仍按 v0 键名报错(不回归)', () => {
+  it('v0 形状:注入 v0 运行时仍按 v0 键名报错;现役 v4 运行时下被拒(不静默)', () => {
     const v0Good = {
       seq: 6, type: 'user/message',
       surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [5, 0, 1],
@@ -282,9 +284,15 @@ describe('assertMarkerShape 认双形状(v3 树 marker 不再误报)', () => {
         source: { kind: 'model', provider: 'p', model: 'm' },
       },
     }
-    expect(assertMarkerShape(v0Good)).toBe(v0Good)
-    expect(() => assertMarkerShape({ ...v0Good, sourceEventSeqs: [5, 0, 1, 2] }))
+    // ① 目标树 = v0(注入)⇒ v0 键名仍被认,报错文案用 v0 键名(不回归)
+    const v0rt = { shape: 'start/end', version: 0, startKey: 'start', endKey: 'end' }
+    expect(assertMarkerShape(v0Good, 'ReplaceWriter.marker', { runtimeShape: v0rt })).toBe(v0Good)
+    expect(() => assertMarkerShape({ ...v0Good, sourceEventSeqs: [5, 0, 1, 2] }, 'ReplaceWriter.marker', { runtimeShape: v0rt }))
       .toThrow(/sourceEventSeqs 首尾 === surfaceOp\.start\/end/)
+    // ② 现役内核 0.1.7-rc.2 = SESSION_FORMAT_VERSION=4 ⇒ v0 形状是**错形状**
+    //    (内核 lib/index.js:292 只认 startSeq/endSeq)⇒ 必须在写入边界被拒。
+    expect(() => assertMarkerShape(v0Good))
+      .toThrow(/形状须与当前运行时一致\(startSeq\/endSeq;SESSION_FORMAT_VERSION=4\)/)
   })
 })
 
@@ -318,7 +326,7 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
       userMessage('u2', 'q2'), assistantMessage('a2', 'r2'), userMessage('u3', 'q3'),
     )
     const positional = await writer.writeMarker(posSession, { start: 4, end: 1, shadowedSeqs: [4, 3, 2, 1] }, { op: 'recall', targetSeq: 1, originalText: '' })
-    expect(positional.surfaceOp).toEqual({ op: 'replace', start: 4, end: 1 })
+    expect(positional.surfaceOp).toEqual({ op: 'replace', startSeq: 4, endSeq: 1 })
   })
 
   it('适配器返回坏 marker → host-core 边界抛 contract-violation(经 op 信封成 code)', async () => {

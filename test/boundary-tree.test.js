@@ -1,5 +1,5 @@
 /**
- * dsh-retrace — outline forest tests (lib/boundary-tree.js, frozen 2026-09-14).
+ * dsh-retrace — outline forest tests (lib/boundary-tree.js, frozen).
  *
  * Pins the corrected rule and the two traps that motivated it:
  *   - the parent relation is EXACT SET MEMBERSHIP (`child.seq ∈ S(parent)`),

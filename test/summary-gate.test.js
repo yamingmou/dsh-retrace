@@ -1,5 +1,5 @@
 /**
- * dsh-retrace — `needsSummary` gate tests (frozen 2026-09-14, user-set rules).
+ * dsh-retrace — `needsSummary` gate tests (frozen user-set rules).
  *
  * R1 量  ≥100 字   R2 有 assistant 文本或 tool/result
  * R3 未中断/报错且无文本产出   R4 非占位/空白/短指令

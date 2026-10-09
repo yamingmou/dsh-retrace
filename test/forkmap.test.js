@@ -226,7 +226,7 @@ describe('渲染卡死回归（2026-08-30：窗口化列表 O(N²) indexOf）', 
     // 2047 节点 × ~15 可见行 = 每次渲染 ~30K 次比较 → 转圈、Renderer CPU 27.7%
     expect(src).not.toMatch(/top:\s*(nodes|list)\.indexOf\(/)
     // 修复后：滚动偏移求可见起点（二分）＋ top 从前缀和数组按下标取。
-    // 2026-09-15：行高不再恒定（展开明细的行更高）⇒ 用 offsets 前缀和，
+    // 行高不再恒定（展开明细的行更高）⇒ 用 offsets 前缀和，
     // 仍然只渲染可见行、不做逐行线性查找。
     expect(src).toMatch(/top: offsets\[visibleStart \+ i\]/)
     expect(src).toMatch(/const visibleStart = clampIndex\(visibleFrom\(rows, offsets, scrollTop\), rows\.length\)/)

@@ -33,7 +33,7 @@ import { pathToFileURL } from 'node:url'
 import { loadSessionLog } from 'dsh-log-contract'
 import { deriveEventMessage, isSurfaceEvent } from '@deepseek-ai/dsh-session'
 // 会话文件定位收敛到 lib/platform/session-paths.js 单一实现($DSH_HOME/sessions →
-// ~/.dsh/sessions → ~/.dsh/sessions;两种文件名都认、同目录取 mtime 新者)。
+// ~/.dsh/sessions → ~/dsh-v3/sessions;两种文件名都认、同目录取 mtime 新者)。
 import { activeSessionsRoot, listSessionFiles } from '../lib/platform/session-paths.js'
 
 const require = createRequire(import.meta.url)

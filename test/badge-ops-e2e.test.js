@@ -1,7 +1,7 @@
 /**
  * 谱系标识四条 op 的**真端到端**测试（假 ctx + 假 sessions store + 真 HTTP handler）。
  *
- * 问题（2026-09-20 重启实测）：`badgeOps` 在 apply 作用域构造，却引用 `pinTitle`/`pinAllResident`
+ * 问题：`badgeOps` 在 apply 作用域构造，却引用 `pinTitle`/`pinAllResident`
  * —— 它们在**更深的 `disposeHarness` IIFE 闭包**里 ⇒ 调用即
  * `ReferenceError: pinTitle is not defined`；而迟绑定赋值那行**落在条件分支里**（没被走到）
  * ⇒ `initBadgeTitles` 永远 `not ready`。带 `[谱系标识]` 的标题 = 0。

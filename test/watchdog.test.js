@@ -1,7 +1,7 @@
 /**
  * dsh-retrace · test/watchdog.test.js
  *
- * R1 实时看门狗测试（方案 插件实现方案-R1看门狗-R2marker契约.md §1）：
+ * R1 实时看门狗测试（方案插件实现方案-R1看门狗-R2marker契约.md §1）：
  * 1. 模拟双写入（文件尾部 seq 领先内存）→ 快照 + warning（验收 1）；
  * 2. 正常使用（fileSeq <= events.length）不产生任何误报（验收 2）；
  * 3. dispose 后无残留定时器/监听（验收 3）。

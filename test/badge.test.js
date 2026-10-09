@@ -1,5 +1,5 @@
 /**
- * Session identity badge unit tests (2026-08-31).
+ * Session identity badge unit tests.
  *
  * 谱系标识 = 从 session id（唯一值）确定性导出：uuid → FNV-1a 64 → base36 → 10 位。
  * 铁律：同一 id 永远同码；不同 id 不同码；无状态纯函数；`session-` 前缀不影响。
@@ -8,12 +8,12 @@ import { describe, it, expect } from 'vitest'
 import { sessionBadge, uuidOf, fnv1a64, toBase36 } from '../lib/badge.js'
 
 // 合成 uuid（重复字母 + 规律数字段，显然非真实会话）。
-const U1 = '00000000-0000-4000-8000-9d9b8a12235e'
+const U1 = 'aaaaaaaa-1111-4111-8111-111111111111'
 const U1_NODASH = 'aaaaaaaa111141118111111111111111'
-const U2 = '00000000-0000-4000-8000-9c9c92612cf7'
-const U3 = '00000000-0000-4000-8000-f25c8a6c7ca5'
-const U4 = '00000000-0000-4000-8000-e6bdd83c17d2'
-const U5 = '00000000-0000-4000-8000-91f9225493de'
+const U2 = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'
+const U3 = 'cccccccc-3333-4333-8333-cccccccccccc'
+const U4 = 'dddddddd-4444-4444-8444-dddddddddddd'
+const U5 = 'eeeeeeee-5555-4555-8555-eeeeeeeeeeee'
 
 describe('sessionBadge（唯一值 → 谱系标识）', () => {
   it('同一 id 确定性：两次调用结果相同', () => {

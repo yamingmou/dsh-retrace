@@ -1,7 +1,7 @@
 /**
  * dsh-retrace · test/verify-install.test.js
  *
- * verify-install.mjs 版本比较逻辑测试（2026-08-31 发现：
+ * verify-install.mjs 版本比较逻辑测试（发现：
  * ^0.x.y 分支忽略 patch 导致 0.3.2 vs ^0.3.6 报 PASS——问题场景漏网）。
  *
  * 通过提取脚本中的 satisfiesRange 函数体做纯函数测试（脚本本身无导出）。
@@ -30,7 +30,7 @@ describe('verify-install satisfiesRange（版本范围匹配）', () => {
   })
 
   it('^0.x.y 问题场景必须 FAIL（低 patch / 跨 minor 都不满足）', () => {
-    // 2026-08-30 问题：web profile 停在 0.3.2，声明 ^0.3.6
+    // 问题：web profile 停在 0.3.2，声明 ^0.3.6
     expect(satisfiesRange('0.3.2', '^0.3.6')).toBe(false)
     // 0.4.6 vs ^0.4.10 / 0.4.10 vs ^0.4.11（半装态）
     expect(satisfiesRange('0.4.6', '^0.4.10')).toBe(false)
@@ -67,7 +67,7 @@ const dMatch = script.match(/function discoverProfiles[\s\S]*?\n}/)
 if (!dMatch) throw new Error('discoverProfiles 未在脚本中找到')
 
 describe('verify-install discoverProfiles（profile 清单从磁盘发现）', () => {
-  // 2026-09-14：清单原为硬编码 ['desktop','web','audit20260822']——旧 home 时代的入口名单。
+  // 清单原为硬编码 ['desktop','web','audit20260822']——旧 home 时代的入口名单。
   // 换到新基座（v3，只有 acp/desktop/web）后 audit20260822 必然缺失 ⇒ 每次校验一条假红 + exit 1。
   const discoverProfiles = new Function('fs', 'path', `return (${dMatch[0]})`)(
     { readdirSync, existsSync },
@@ -95,7 +95,7 @@ describe('verify-install discoverProfiles（profile 清单从磁盘发现）', (
 })
 
 describe('verify-install file: 相对挂载路径按 profile 目录解析（集成）', () => {
-  // 2026-09-14：桌面 profile 的依赖写作 `file:../../../pkgs/<pkg>`。此前直接交给 cwd 解析
+  // 桌面 profile 的依赖写作 `file:../../../pkgs/<pkg>`。此前直接交给 cwd 解析
   // ⇒ 只有恰好从同深度目录运行才碰对，换个 cwd 一律误报「仓库不可读」。
   it('从**任意** cwd 运行都能解析相对的 file: 挂载并比对仓库版本', () => {
     const base = mkdtempSync(join(tmpdir(), 'vi-relmount-'))

@@ -136,7 +136,7 @@ describe('marker-carrier · 形状判据', () => {
   it('carrierTargetSeq 只认区间起点;业务目标偏离它属**异常形态**(写入端记诊断)', () => {
     // 原用例把「业务目标与区间起点可分离」写成设计前提(手工合成样例)。反方复核:
     // 203/203 真实 marker 观测上 `editor.targetSeq === surfaceOp.start` 无一反例,
-    // 故不再把该形态当常态登记 —— 写入端改为「targetSeq ≠ 区间起点 即记诊断」
+    // 故不再把该形态当常态登记 —— 写入端改为「targetSeq ≠ 区间起点即记诊断」
     // (区间内非起点同样诊断,不再是静默错位),行为面由
     // test/host-core.test.js「写前断言:targetSeq ≠ 被遮蔽区间起点 → 记一行诊断」覆盖。
     expect(carrierTargetSeq(carrier())).toBe(2)
@@ -153,12 +153,14 @@ describe('marker-carrier · 形状判据', () => {
     expect(CARRIER_EVENT_TYPE).toBe('user/message')
     expect(CARRIER_SOURCE_KIND).toBe('model')
     expect(CARRIER_DATA_KEYS).toEqual(['role', 'id', 'content', 'source'])
-    expect(TRACE_TEXT).toBe('（此处内容已被撤回：原消息已归档，可在恢复视图中查看）')
+    expect(TRACE_TEXT).toBe('（此处内容已被撤回，可在恢复视图中查看）')
+    // (既定口径·文案):去掉“归档”措辞(内容没归档、“恢复显示”也能找回)。
+    expect(TRACE_TEXT).not.toContain('归档')
   })
 })
 
 /**
- * 读侧配对:三选一 + 「紧邻性」硬约束(口径 2026-09-14 §一)。
+ * 读侧配对:三选一 + 「紧邻性」硬约束(口径 §一)。
  *
  * 容错**不得**把"审计段在、载体段在很远处或根本不存在"的真孤儿误判成成对 ——
  * 容错把要检出的缺陷掩盖掉是唯一不可接受的结果。写侧 `assertPairing` 保持严格。

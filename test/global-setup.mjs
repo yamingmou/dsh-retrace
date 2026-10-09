@@ -67,7 +67,7 @@ export async function teardown() {
       + `  ⇒ 某个测试/工具写了活家数据目录。请改到临时目录（显式 { dshHome: null } 或 tmpRoot()）。\n`,
     )
     // vitest 的 globalSetup.teardown 抛错只会打一句 "error during close"，
-    // **不会**让退出码非 0（实测）⇒ 金丝雀就成了摆设。这里显式把退出码置非 0，
+    // **不会**让退出码非 0⇒ 金丝雀就成了摆设。这里显式把退出码置非 0，
     // 并用 process.exit(1) 兜底（安全跳闸优先于完整报告）。
     process.exitCode = 1
     process.exit(1)

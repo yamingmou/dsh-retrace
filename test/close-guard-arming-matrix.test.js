@@ -4,7 +4,7 @@
  * **武装决策真值表**——断言的是**行为**（"这一页到底会不会 `preventDefault`"），
  * 不是"文本里有没有写这句话"。
  *
- * 为什么单独一份（2026-09-19，用户点出的方法论问题）：
+ * 为什么单独一份（用户点出的方法论问题）：
  *   「下游守得很严，上游已经在骗；断言覆盖的不能是**声称的**语义」。
  *   0.4.29 的教训正是这个形状：文本/判据都"写对了"，但**行为**在报告人那台壳上仍卡死
  *   （宿主把它判成浏览器页 ⇒ 客户端照旧武装）。文本锁（"README 里写了 X"）只能证明
@@ -27,7 +27,7 @@ const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 const DESKTOP_URL = '/api/plugins/retrace/runningState?token=abc&dsh-desktop-mode=advanced'
 const PLAIN_URL = '/api/plugins/retrace/runningState'
 
-/** 无桌面痕迹的宿主（报告人那台：纯 node.exe 跑 harness）+ 有桌面痕迹的宿主（2.x 壳）。 */
+/** 无桌面痕迹的宿主+ 有桌面痕迹的宿主（2.x 壳）。 */
 const PLAIN_HOST = { get: () => undefined }
 const DESKTOP_HOST = { get: (n) => (n === 'desktopRuntime' ? {} : undefined) }
 

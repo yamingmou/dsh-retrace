@@ -23,7 +23,7 @@ import { resetHostCompatDiagnostics } from '../lib/host-compat.js'
  * (`…/runtime-commands/generations/<id>/private/node-bin/node`),它的
  * `process.versions.electron` **有值**(实测 43.3.0)。而 `desktopHostEvidence()`
  * 正是拿这条当"宿主是桌面壳"的证据 ⇒ "网页端"用例会**假红**(判成 unknown)。
- * 真宿主不受影响:外部报告那台 harness 是纯 `node.exe`(报告人实测该字段为假)。
+ * 真宿主不受影响:外部报告那台 harness 是纯 `node.exe`。
  * 本函数只在用例内临时改 `process.versions.electron`,跑完恢复原值。
  * @param {string|undefined} value `undefined` = 删掉该键(模拟纯 Node 宿主)
  */
@@ -273,7 +273,7 @@ describe('close-guard 会话枚举:新宿主 list() / 旧宿主 keys()(P1 静默
 })
 
 // ---------------------------------------------------------------------------
-// 宿主承载面(2026-09-18 外部 issue #1:桌面端托盘退出死锁)
+// 宿主承载面(外部 issue #1:桌面端托盘退出死锁)
 //
 // 现场:托盘「退出」无反应、App 退不掉;关掉本插件的「退出确认」即恢复;网页端正常。
 // 事实:托盘退出走宿主 quit 路径、会触发页面 beforeunload;而 DSH Desktop 的
@@ -340,7 +340,7 @@ describe('close-guard 宿主承载面(pageSurfaceOf / quitVetoFor / guardSurface
 })
 
 // ---------------------------------------------------------------------------
-// 第二轮(2026-09-18,issue #1 复测仍卡死):四条请求级判据(含 Referer)+ 客户端一票否决
+// 第二轮(issue #1 复测仍卡死):四条请求级判据(含 Referer)+ 客户端一票否决
 //
 // 现场:报告人那台壳(纯 Node 跑 harness + Electron 渲染页)**三条旧判据一条都不成立**
 // (能力头 / 桌面服务 / process.versions.electron 全为假)⇒ 旧实现 `pageSurfaceOf`
@@ -348,7 +348,7 @@ describe('close-guard 宿主承载面(pageSurfaceOf / quitVetoFor / guardSurface
 // "quitVeto":true}` ⇒ 客户端照旧武装原生门 ⇒ 仍然退不掉。
 // 下面每一格都是**该红时红**的变异锁:把对应判据删掉,这一格必红。
 // ---------------------------------------------------------------------------
-/** Electron 渲染页的默认 UA 形状(报告人那台的形态)。 */
+/** Electron 渲染页的默认 UA 形状。 */
 const ELECTRON_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dsh-desktop/0.9.0 Chrome/126.0.6478.234 Electron/31.3.1 Safari/537.36'
 /** 普通浏览器 UA(正向对照:网页端保护不许被这轮改动关掉)。 */
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'

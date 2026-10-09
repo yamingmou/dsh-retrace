@@ -6,142 +6,336 @@ condensed to what a user of the plugin can observe.
 
 ---
 
-## [0.4.32] — 2026-09-20 · README refreshed (close interception wording + known limits + short-code display name) + copy-lock sync + CHANGELOG
+## [0.4.130] — 2026-10-09 · 对外称谓统一
 
-- README refreshed (close interception wording + known limits + short-code display name) + copy-lock sync + CHANGELOG
+### 变更
 
-## [0.4.31] — 2026-09-19 · short code / display name via the title channel + desktop close interception (self-drawn confirm + watchdog)
+- 对外文案与文档统一称谓：会话的稳定标识一律称「**谱系标识**」（英文 `lineage ID`）。
+- 提交摘要与公开仓库文本同步该称谓。
+- **无行为变化**：标识派生规则、接口、数据结构与功能开关均未改动。
 
-- short code / display name via the title channel + desktop close interception (self-drawn confirm + watchdog)
+---
 
-## [0.4.30] — 2026-09-19 · source landed in-repo (desktop quit still blocked, issue #1 second round + surface probes)
+## [0.4.129] — 2026-10-08 · 侧栏诊断恢复 · 世代选择 · 锚点跳转
 
-- source landed in-repo (desktop quit still blocked, issue #1 second round + surface probes)
+### 修复
 
-## [0.4.29] — 2026-09-19 · desktop quit deadlock fix + timer unref + public text aligned with facts
+- **侧栏取用会话标识失败时的诊断**：恢复稳定的症状码与逐层调用链记录（日志可定位断在哪一层），并保证失败不会静默。
+- **会话文件世代选择**：修改时间相同时按世代优先（新版归档优先于旧版），避免选到旧世代文件。
+- **跳转到锚点**：目标行的选择器支持整键、流键与复合键三种形态；目标行始终未挂载时给出明确结果而不是无提示。
 
-- desktop quit deadlock fix + timer unref + public text aligned with facts
+### 其它
 
-## [0.4.28] — 2026-09-14 · restore edit / recall and view jumps; host-contract drift becomes a pre-release gate
+- 关闭守卫的默认状态说明与代码一致（默认关闭，开启后才在关闭页面前确认）。
+- 测试与实现、文档对齐。
 
-- restore edit / recall and view jumps; host-contract drift becomes a pre-release gate
+---
 
-## [0.4.26] — 2026-09-14 · pre-release audit fixes: cross-machine defect / gate blind spot / false snapshot warning
+## [0.4.128] — 2026-10-08 · 公开面整理（文档重写 · 注释层清理 · 内部诊断入口移出）
 
-- pre-release audit fixes: cross-machine defect / gate blind spot / false snapshot warning
+本次发布把**对外面**整理干净：README 与 CHANGELOG 重写为面向使用者的内容；源码注释层去除内部流程痕迹；并把与插件基础功能无关的**内部诊断入口**移出公开面（该能力仅保留在开发者本地构建，不再随公开发布提供）。
 
-## [0.4.24] — 2026-09-10 · rejected-edit fix (submit race) + UX polish + review fixes
+### 修复
 
-- rejected-edit fix (submit race) + UX polish + review fixes
+- **设置文案与代码事实对齐**：关闭守卫的说明此前写作"开（默认）"，实际默认关闭；中英同步更正。
+- **撤回后轮级提示条残留**：被中止的轮次在撤回后仍会留下官方的"已停止"提示条，现随该轮整体遮蔽一并隐藏，恢复显示时一并回来。
 
-## [0.4.23] — 2026-09-09 · user-level preset for compaction behavior + scheduler fix
+### 变更
 
-- user-level preset for compaction behavior + scheduler fix
+- 公开面不再提供内部诊断入口（相关命令与 HTTP 端点）。
+- 公开仓库与 npm 包的文本、注释、文档统一为对外措辞。
 
-## [0.4.22] — 2026-09-09 · automatic folding + close guard V2 + cacheReadTokens metric
+---
 
-- automatic folding + close guard V2 + cacheReadTokens metric
+## [0.4.127] — 2026-09-30 · 撤回前先暂停在途轮次 + 撤回二次确认 + 撤销撤回 + 回档健壮性
 
-## [0.4.21] — 2026-09-09 · windowed rendering + fold feature + close guard + review fixes
+本版是开发线 `0.4.124 → 0.4.127` 的汇总发布。
 
-- windowed rendering + fold feature + close guard + review fixes
+### 撤回与重发
 
-## [0.4.20] — 2026-09-09 · recall shadowing semantics fix (tail) + deadlock fix + boot pin fix
+- **撤回前先暂停在途轮次。** 运行中点确认后，先经官方停止入口暂停当前轮次并等待其停下
+  （有等待上限），再执行撤回。暂停失败或超时**不阻塞撤回**（宿主侧撤回自己还会再确保空闲），
+  但一定留痕：界面显示「正在暂停当前运行…」，失败/超时显示
+  「未能暂停当前运行，已继续撤回」/「等待暂停超时，已继续撤回」，同时写宿主日志。此前
+  运行中撤回会把排队中的轮次留在后面继续跑，撤回语义被破坏。
+- **撤回二次确认。** 撤回是破坏性动作（本条及其后离开会话），点按钮只开确认框，确认后才
+  发请求；确认文案说明「本条及其后的对话将从此处重新继续」，并指出原内容之后可用标记行上的
+  「恢复显示」找回。
+- **重发 = 「从这条重开」。** 主按钮语义统一为「重发（从这条重开）」：本条及其后被替换/隐藏，
+  后续进入新的时间线分支；此前「编辑」这个词不再出现在按钮、标题与提示里。
+- **兜底动作只在被拒时出现。** 重开范围过大/被写路径拒绝时，错误提示里给出
+  「仅改文本（保留后续）」——只替换本条及其回复，后面原样保留。它不再是并列按钮，
+  也不会在兜底动作自己失败后再弹一次。
+- **重发生成提示同口径更新**：marker 提示改为「已重发此消息（本条及其后重开），对话从新消息
+  继续」；回档 marker 不再落到兜底文案，而是「已回退到该档位」。
 
-- recall shadowing semantics fix (tail) + deadlock fix + boot pin fix
+### 撤销撤回：恢复显示 / 真正恢复
 
-## [0.4.19] — 2026-09-02 · session short code shown for real: official rename pin + live derivation + boot batching
+- **恢复显示**（界面层）：标记行上的按钮，把该标记隐藏的行重新显示回对话视图；日志只增不减、
+  模型上下文不变、撤回痕迹保留。此前要找回被撤回的内容只能去关一个已经撤除的开关
+  （死路文案），现在出路就在标记行上。
+- **真正恢复**（日志层）：**原地**中和这两段标记（不改 seq 编号），让被撤回区间回到**模型面**，
+  该区间的重发/撤回入口复活。要求会话空闲、且不是当前正在查看的会话；成功后需切走并重开该
+  会话（或刷新）才看到恢复后的内容。所有拒绝理由都给出下一步：会话运行中、文件被其他进程
+  持有、已被更晚的标记重新遮蔽、宿主未装配该能力、无法确认文件占用（拒绝执行）。
+- **「已撤回 N 条消息」的计数与隐藏键同源**，遮蔽序列按优先级解析并如实说明判因；「该隐藏却
+  没隐藏」会被上报，不再静默。
+
+### 回档健壮性
+
+- **严格重放失败不再让回档不可用**：宿主的严格折叠是权威，但一条畸形事件（例如第三方写入的
+  `sourceEventSeqs` 区间编码行）会毒化整次重放，此前表现为「读档点无法回档」。现在改为退到
+  镜像重放，日志同时记录降级说明与原始错误，并在 wire 上把结果标为 `degraded`；连镜像都跑不
+  了时返回结构化的 `replay-failed`，不再是笼统的 `internal`。镜像无法解释的节点保持可见
+  （安全侧），数量写日志。
+- **回档预览在会话运行中直接拒绝**：不会再出现「预览说可以回档、点确认才被 agent-busy 拒」。
+- **预览/回档失败在界面上可见**：显示「回档预览失败：{原因}」「回档失败：{原因}」，保留原始
+  错误便于诊断，不再静默。
+- **回档幅度守卫**：单次改写范围过大时拒绝落盘并引导缩小范围或新建会话；短会话（≤约 3 轮）
+  与恢复类写入豁免，避免正常操作被误拦。
+
+### 写前契约
+
+- **基线差分**：日志里**本来就有**的违规不再拦住本次写入（降级为警告并留痕），只有**本次写入
+  才出现**的违规才拒绝。此前宿主收紧规则后，官方历史行自身不合规会把撤回/重发全部拦死。
+- **剔除内核版本漂移型误报**（E6/E9）：这两条判据是按旧内核写的，现役内核要求相反，不剔除会
+  把真实行报成违规、并因基线键含 seq 而把既有违规误算成我们的写入。
+
+### 显示与修复
+
+- **撤回后轮级提示条残留修复**：撤回一个被中止的轮次后，聊天里会残留官方的「已停止」提示条
+  与底边。现在该轮内容行**全部**被遮蔽时，连同这行表头一起隐藏；未被遮蔽的轮、只遮了一部分
+  的轮一律不动（不误伤）。
+- **每个注册面都有自己的错误边界**：读档点视图、标记行、消息操作行、用户消息操作行、原问法
+  对照行、设置项各自捕获渲染错误并给出「重试」；一个面板出错不再白屏。
+- **读档点视图可解释化**：常显概念解释句、类型图例、每行白话「为什么」；行内文案从
+  「用户消息」「被遮蔽 N 个节点」改为「你发送的消息」「旧路径的 N 条消息被替换」等。
+- **性能**：客户端隐藏判定由每行重扫改为每快照一份计划（实测 2000 行/20 标记 346ms → 8.3ms，
+  3000/30 1568ms → 18.3ms），行为判定与旧实现逐字等价。
+
+### 文案
+
+- **中文文案补全**：宿主错误码按 code 本地化（`target-shadowed`、`message-pending`、
+  `message-not-found`、`span-replay-failed`、`rollback`、`rollback-preview`、`unshadow-*` 等），
+  不再原样透传英文；每条拒绝理由都给「下一步怎么做」。
+- **撤回文案口径统一**：一律说「撤回」，不再使用会让人误以为原内容已被永久移走的措辞。
+
+---
+
+## [0.4.32] — 2026-09-20 · 文档修复
+
+- 修正两份 README（中/英）：关闭拦截改为准确口径（**不武装宿主原生确认框**，改用**页面自绘
+  确认门**：先画框 + 同步可见校验才拦，画不出/不可见/页面不可见 ⇒ 当场放行，Esc = 取消，
+  Worker 看门狗只作最后一道，关设置项即退回官方形态），新增「已知限制」（某些壳的退出口径不经
+  页面 ⇒ 插件侧做不出退出确认，需壳提供 seam）与「会话谱系标识与显示名」。
+- 文案锁同步加强：把已变错的两句换成更正措辞，并新增 6 条事实锁（自绘门 / 壳 seam / 谱系标识形态，
+  中英各一）。
+- `0.4.31` 已撤回（npm 上标记 deprecated、公开仓 tag 已删）——其 README 未随版本更新。
+
+## [0.4.31] — 2026-09-19 · 展示层（谱系标识/名字）+ 桌面关闭拦截重做 —— **已撤回**
+
+- 会话标题按「`[谱系标识] 原标题`」写入（官方 rename 通道），侧栏随标题显示；拿不到谱系标识表就退回
+  原始 id 占位，绝不回落哈希名。
+- 桌面关闭拦截**不再用阻塞式原生门**（桌面壳无 `will-prevent-unload` 处理器 ⇒ 静默否决 = 退出
+  卡死），改为「拦下 + 页面自绘确认框 + 确认后放行」，并先挂看门狗：确认框未渲染/尺寸 0/挂载
+  抛错 ⇒ 无条件放行。
+- 已知限制（照实）：本机 2.x 壳的 ⌘Q/托盘退出不经过 `beforeunload` ⇒ 该入口插件侧做不出确认框，
+  需壳 seam。
+- 设置项「退出确认（关闭守卫）」关掉即停（免重启）。
+- **本版已撤回**：其 README 未随版本更新，替代版本为 `0.4.32`。
+
+## [0.4.30] — 2026-09-19 · 桌面端退出仍卡死（第二轮）
+
+- **判据补成正向证据**：「完全没有证据」不再被归成浏览器页。此前只在三条判据（能力头 / 桌面
+  服务 / 进程是 Electron）里认，纯 Node harness + Electron 渲染页的宿主三条全不成立 ⇒ 照旧
+  武装原生门 ⇒ 退出仍卡死。现补两条：请求 `User-Agent` 含 `Electron`、请求 URL 含
+  `dsh-desktop-`，任一成立即判桌面页面。
+- **客户端一票否决**：本页 UA 含 Electron 或页面 URL 含 `dsh-desktop-` ⇒ 一律不武装，不管宿主
+  怎么说。
+- **承载面探针**：每次判定的入参与结果按组合去重写进宿主日志，跑一次就能确认是哪条判据生效。
+- 设置项文案与两份 README 写明两道判据与自救开关（桌面端退不掉时先关这一项）。
+
+## [0.4.29] — 2026-09-18 · 修复桌面端退出死锁（外部 issue #1）
+
+- **桌面端不再武装原生 `beforeunload` 门**：桌面壳不处理 `will-prevent-unload`，页面否决在
+  桌面端是静默的，会让退出卡住、只能强退。保护改由运行中横幅 + dispose 提示承担。
+- **承载面判定由宿主给出**：`runningState` 载荷新增 `surface` / `quitVeto`；客户端只在
+  `quitVeto === true`（宿主确认该页面会弹原生确认框）时武装。
+- **两个定时器不再拖住进程退出**（`unref` 并纳入清理路径）。
+- 对外文本与事实对齐：退出入口随版本/平台而变，不再写「桌面端都会/都不会触发」这类把未覆盖
+  路径当结论的表述。
+
+## [0.4.28] — 2026-09-14 · 宿主契约漂移修复 + 展示层修复
+
+- **适配宿主移除 `Session.events`**：撤回与编辑此前表现为「点了没反应」（
+  `TypeError: Cannot read properties of undefined (reading 'length')`）；现经兼容访问器读日志，
+  两代宿主都能跑。
+- **编辑/撤回入口重新出现**：客户端半区改为从 `useChat` 快照取聊天节点（此前读了一条本宿主
+  不存在的路径，组件渲染抛错被错误边界吞掉）。
+- **「跳转」重新可用**：改走官方 `store.loadThrough(seq)` 分页，失败时给出可诊断理由。
+- **设谱系标识不再冲掉标题**：谱系标识入标题只走服务端 `setBadgeTitle`，手动重命名不受影响。
+- 宿主侧操作失败重新有日志（code + message + stack）。
+- 版本/分叉视图可解释化：补常显概念解释句、类型图例、每行白话「为什么」。
+- 客户端隐藏判定去掉 O(K·N²)：2000 行/20 标记 346ms → 8.3ms，3000/30 1568ms → 18.3ms。
+
+## [0.4.26] — 2026-09-14 · 新基座适配
+
+- **适配宿主移除 `decodeStorageRecord`**：依赖 `dsh-log-contract` 会经它解码，宿主不再导出时
+  整棵插件树加载失败、App 起不来 ⇒ 需要 `dsh-log-contract >= 0.3.12`。
+- **适配消失的客户端服务 `conversationEvents`**：仍在 `inject` 里声明它的插件会永远停在
+  pending（宿主只报一句没有信息的 `renderer boot failed`）；现改为在 `apply` 里防御性解析。
+- **插件数据家与会话基座同源**：未设 `$DSH_HOME` 时不再出现「会话从一个基座读、快照写到另一个
+  基座」；用户可见文案不再写死 `~/.dsh`。
+- 清理已无引用点的陈旧 peer 声明。
+
+## [0.4.24] — 2026-09-10 · 编辑被拒 bug + 文案本地化
+
+- **提交竞态修复**：点击落在 turn 收尾窗口、文件尚未 flush 时误报 `target-shadowed`；现区分
+  「提交中」（`message-pending`，「消息生成中，完成后可编辑」）与「真被遮蔽」。
+- **`target-shadowed` 文案可操作**：说明该消息位于只读历史区，给出下一步（展开后编辑，或追加
+  新消息修订），并附 messageId / seq。
+- 重新生成的重发文本改由文件侧权威取得（不再可能选错更早轮）；HTTP 侧两次快照之间的判据
+  对齐为单次探测，消除 TOCTOU。
+
+## [0.4.22] — 2026-09-09 · 关闭守卫 V2
+
+- 页面关闭拦截：原生确认门 + 自绘中文明细模态（[仍关闭] 二次放行）；运行中横幅常显谱系标识明细；
+  `runningState` HTTP 面（5s 轮询缓存，`beforeunload` 同步读）。
+- 技术验证结论照实记录：Desktop 退出走 `destroy` 路径时不触发 `beforeunload` ⇒ Web 侧完整实现
+  + 桌面侧横幅提示，并如实说明需官方壳提供 seam。
+
+## [0.4.21] — 2026-09-09 · 关闭守卫 V1
+
+- 运行状态检测全集（agent 运行中 / inbox 排队 / 未闭合轮 / 后台 jobs）+ dispose 强提示
+  + `retrace.runningState`，退出前先看清还有什么在跑。
+
+## [0.4.20] — 2026-09-09 · 撤回遮蔽语义修复 + 死锁根治
+
+- **撤回语义改为遮蔽目标轮及之后全部**（此前只遮一轮 ⇒ 断层），起点回退到轮首，撤回复连带
+  输入一起移除，避免孤立 user 消息。
+- **有 marker 后再撤回不再倒置范围**：遮蔽区间改为从官方表面重放取真实节点，与写入端完全
+  一致；目标已被遮蔽时明确返回 `target-shadowed`，不再守卫拒绝后死锁。
+- 大范围撤回由快照点守卫拒绝并引导分支；撤回最近轮正常放行。
+- 修复启动时的标题 pin（`bootPin`）。
+
+## [0.4.18] — 2026-09-02 · hotfix：完整 turn 信封补 `reason.kind`
+
+- 情形③写入的 `turn/end` 漏了 `reason.kind`，被官方校验拒绝 ⇒ 会话加载失败、每次编辑都触发；
+  现补 `reason: { kind: 'completed' }`。
+
+## [0.4.17] — 2026-09-02 · 三情形 turn 赋值 + 遮蔽写入器下沉
+
+- **轮次间/回合内的 marker 写入统一为三种合法形状**：有打开的 step（携带该 step）、无 step 但
+  有打开的 turn（该 turn + 新 step）、真轮次间（完整 turn 信封并推进 agent-loop 计数器）。
+  **任何写入都不得产生 `turn:null`**（会触发客户端渲染死循环、白屏）。
+- **step 号从文件全量计算**（内存与文件双向取大），消除窗口化内存看不到既有 step 导致的
+  step key 冲突白屏。
+- 遮蔽写入器下沉到适配器；`host-core` 只表达业务意图。
+- 写前自检改为校验完整序列，消除轮次间编辑每次都刷「marker 自检失败」的误报。
 
-- session short code shown for real: official rename pin + live derivation + boot batching
+## [0.4.11] — 2026-08-30 · 渲染卡死修复
 
-## [0.4.18] — 2026-09-02 · hotfix: turn/end reason.kind
-
-- hotfix: turn/end reason.kind
-
-## [0.4.17] — 2026-09-02 · edit-path fixes + windowed rendering defense + shadow writer moved into the adapter
-
-- edit-path fixes + windowed rendering defense + shadow writer moved into the adapter
-
-## [0.4.16] — 2026-09-01 · 版本号推进（该版公开面改动见上一版说明）
-
-- 版本号推进（该版公开面改动见上一版说明）
-
-## [0.4.15] — 2026-09-01 · 版本号推进（该版公开面改动见上一版说明）
-
-- 版本号推进（该版公开面改动见上一版说明）
-
-## [0.4.14] — 2026-09-01 · 版本号推进（该版公开面改动见上一版说明）
-
-- 版本号推进（该版公开面改动见上一版说明）
-
-## [0.4.13] — 2026-09-01 · 版本号推进（该版公开面改动见上一版说明）
-
-- 版本号推进（该版公开面改动见上一版说明）
-
-## [0.4.12] — 2026-08-31 · snapshot-point guard + session short code + review fixes
-
-- snapshot-point guard + session short code + review fixes
-
-## [0.4.11] — 2026-08-30 · ForkView / VersionsView windowed list: O(N^2) indexOf to O(1) index math
-
-- ForkView / VersionsView windowed list: O(N^2) indexOf to O(1) index math
-
-## [0.4.10] — 2026-08-30 · turn-interval edits open a temporary step around the marker
-
-- turn-interval edits open a temporary step around the marker
-
-## [0.4.9] — 2026-08-30 · use the official AgentCancelCause { kind: user } — not a custom kind
-
-- use the official AgentCancelCause { kind: user } — not a custom kind
-
-## [0.4.8] — 2026-08-30 · auto-stop a running agent before edit / resend / regenerate
-
-- auto-stop a running agent before edit / resend / regenerate
-
-## [0.4.7] — 2026-08-30 · step-context markers + documentation neutralization
-
-- step-context markers + documentation neutralization
-
-## [0.4.6] — 2026-08-29 · watchdog + marker contract + lineage view
-
-- watchdog + marker contract + lineage view
-
-## [0.4.5] — 2026-08-28 · fork-map view skeleton + stability batch
-
-- fork-map view skeleton + stability batch
-
-## [0.4.3] — 2026-08-27 · union-wide hide guard — stacked edits cannot wipe history
-
-- union-wide hide guard — stacked edits cannot wipe history
-
-## [0.4.2] — 2026-08-26 · version timeline as an official conversation view tab
-
-- version timeline as an official conversation view tab
-
-## [0.4.1] — 2026-08-26 · one edit must never hide the whole conversation
-
-- one edit must never hide the whole conversation
-
-## [0.4.0] — 2026-08-26 · timeline + artifact rollback + pre-write guard
-
-- timeline + artifact rollback + pre-write guard
-
-## [0.3.0] — 2026-08-20 · rebrand to dsh-retrace — new package name, plugin id, routes, brand
-
-- rebrand to dsh-retrace — new package name, plugin id, routes, brand
-
-## [0.2.2] — 2026-08-20 · declare webServer in inject so the HTTP route registers
-
-- declare webServer in inject so the HTTP route registers
-
-## [0.2.1] — 2026-08-20 · ship built module-loader client bundle
-
-- ship built module-loader client bundle
-
-## [0.2.0] — 2026-08-20 · migrate to bundle manifest, add plugin tag, polish README
-
-- migrate to bundle manifest, add plugin tag, polish README
-
-## [0.1.0] — 2026-08-19 · recall / edit-and-resend / regenerate for DeepSeek Harness
-
-- recall / edit-and-resend / regenerate for DeepSeek Harness
+- 版本/分叉视图的窗口化渲染里每次渲染对每个可见行做线性查找（大列表每次渲染约 3 万次比较），
+  大会话打开即转圈、CPU 居高；改为带起始索引的切片直接算位置，两处同修。
+- 修复：撤回/编辑后「原输入」对照残留；被遮蔽/压缩消息直接隐藏操作入口（不再点了才报错）；
+  跳转只翻一页、tab 切换计数等一批稳定性问题。
+
+## [0.4.10] — 2026-08-30 · 轮次间编辑不再产生 `turn:null` marker
+
+- 轮次间编辑自动开临时 step 包裹 marker（`step/start → marker → step/end`），这是过官方
+  token-meter 的唯一合法形态；任何编辑都不再产生 `turn:null`（此前会刷屏压垮宿主）。
+- 配套离线清理命令可原地中和历史 `turn:null` marker。
+
+## [0.4.8] — 2026-08-30 · 编辑前自动停止 agent
+
+- 编辑/重发/重新生成前不再抛 `agent-busy`，而是自动请求停止并等待干净收尾，消除跨 step 引用
+  导致的刷屏。
+- 无停止 API（headless/测试桩）时回退为 `agent-busy`。
+
+## [0.4.7] — 2026-08-30 · 回合内编辑写合法 turn/step
+
+- 回合内编辑的 marker 携带当前打开的 `turn/step`，token-meter 配对通过、不再刷屏。
+- 配套可原地中和历史问题 marker（不改 seq/行数）。
+
+## [0.4.6] — 2026-08-29 · 实时看门狗 + marker 契约标注 + 会话谱系
+
+- **实时看门狗**：订阅会话事件，每 10s 比较文件尾部 seq 与内存事件数；文件领先 ⇒ 判定并发写入，
+  立刻字节级快照日志并告警（每会话 5 分钟防刷屏）。只检查一个方向，避免误报。
+- **marker 契约标注**：写前逐字复刻官方自检；不通过**不阻断写入**（编辑必须生效），而是在 marker
+  上标注并在客户端提示「此标记会使本会话的 /compact 失效」及离线清理命令。
+- **会话谱系卡片**（视图头部）：沿 `parentSession` 追溯父链（带环保护），与 CLI 同一语义。
+- 修复启动崩溃：不再访问 cordis ctx 上未 inject 的属性。
+
+## [0.4.5] — 2026-08-28 · 分叉图骨架 + 稳定性修复
+
+- 新增分叉图投影与「分叉」视图：镜像官方表面折叠，标记每个替换边界被遮蔽的旧路径节点；
+  固定行高窗口化，节点可点击跳转对话。
+- 撤回/编辑隐藏判定回退为按标记（此前一次大范围守卫让所有标记降级、撤回失效）；仅单次覆盖
+  超过 40% 的操作降级并显示提示。
+- 修复原输入对照残留、跳转只翻一页、热重载重复注册等问题。
+
+## [0.4.2] — 2026-08-26 · 时间线迁移为视图 Tab
+
+- 时间线从 header 浮层迁移为官方视图 Tab（与「对话/轨迹」平级），分页与视图切换复用官方机制；
+  版本数据仍由插件自持（推送帧 + HTTP 降级）。
+- 行内「详情」改为跳官方轨迹台账；跳转适配视图切换。
+
+## [0.4.1] — 2026-08-26 · 「加载更早看不到历史」问题闭环
+
+- 默认配置由破坏性改为安全：编辑一条消息不再回绕隐藏整个会话（此前一次编辑可隐藏 80%–92% 的
+  消息行，看起来像「加载更早」失效；数据本身完好）。
+- 单个标记要隐藏超过 40% 的对话行时拒绝隐藏，只显示标记提示。
+- 补齐宿主注入（`fs` / `subprocess` / `sandboxPolicy`），修复快照全部 skipped 与 git 适配器
+  不可用。
+
+## [0.4.0] — 2026-08-26 · 时间线与产物回退
+
+- **版本数据服务**：撤回/编辑/重新生成/恢复、压缩检查点与其它替换的版本边界检测；触碰文件
+  （增/改/删）窗口归集；`session/projection` 推送帧 + HTTP `GET /versions` 双通道。
+- **内容寻址产物快照**（工作区围栏 + 4MiB 上限 + 二进制跳过），带引用计数去重。
+- **产物回退**：仅对话 / 仅产物 / 两者，先干跑预览再执行；git 优先 + 快照兜底 + 删除文件护栏；
+  回退本身记录为新版本（`restore`）可再回退。
+- **跳转对话**：时间线节点一键跳到对应位置（自动翻页 + 锚点高亮）。
+- **GitAdapter**：自动检测仓库（含外层），记录 HEAD + 脏状态（不自动提交、不动分支）；非仓库
+  工作区可一键 `git init`。
+- **防膨胀 GC**：节流后台扫掠回收被截断版本的快照与引用。
+- **写前校验**：撤回/编辑/重新生成/恢复的 marker 落盘前先过契约校验，error 级违规不落盘；
+  依赖缺失自动降级、可配置关闭。
+- 修复：投影单元 wire 契约缺 `stateSchema`/`wire` 导致版本数据从未进入推送帧（时间线无数据）；
+  `ctx.subprocess` 未注入时 git 适配器不再抛错。
+
+## [0.3.0] — 品牌重塑为 dsh-retrace
+
+> 包名从 `dsh-message-editor` 迁移为 `dsh-retrace`：从「消息编辑插件」升维为「会话与产物
+> 版本化管理」的 Harness 增强插件。旧包冻结在 0.2.2。
+
+- 包名、插件 id、HTTP 路由（`/api/plugins/retrace`）、localStorage key、CSS 前缀同步改名；
+  marker 前缀 `message-editor` → `retrace`，RPC 键 `messageEditor.*` → `retrace.*`。
+- 迁移：旧安装请改用 `dsh plugin --profile <name> add dsh-retrace` 并移除旧包，重启后生效。
+
+## [0.2.2] — 修复 Host 路由注册（以 dsh-message-editor 名义发布）
+
+- `inject` 补充 `webServer`，避免 apply 时取不到而静默不注册路由、所有操作 404。
+
+## [0.2.1] — 修复客户端 loader entry（以 dsh-message-editor 名义发布）
+
+- `exports["./client"]` 改为构建后的自注册 bundle；此前发布原始 ESM 源码，首次带插件重启报
+  `loaded without registering`。
+- 新增 esbuild 构建脚本，发布前必须重建。
+
+## [0.2.0] — 迁移到 dsh.bundle 清单（以 dsh-message-editor 名义发布）
+
+- 通过 `cordis.patch.yml` 的 `dsh.bundle` 清单安装，加入 `dsh-plugin` topic。
+
+---
+
+## 旧版（`dsh-message-editor` 时代）功能演进摘要
+
+- **v3.8** — 撤回时隐藏工具行（bash/task 卡片）
+- **v3.7** — 撤回回合忽略注入的上下文用户消息
+- **v3.6** — 新消息下方渲染「原输入」对照（折叠，可配置）
+- **v3.5** — 编辑/撤回操作行上方渲染原输入对照
+- **v3.4** — 修复撤回后回合尾部操作栏（copy/feedback）未隐藏
+- **v3.3** — 整轮撤回（输入+输出）；编辑对照显示最近被替换文本（以宿主为准）
+- **v3.2** — 隐藏规则在提示消失后保持挂载；折叠摘要显示截断的原输入
+- **v3.1** — 单消息撤回（隐藏消息与操作行）、自动消失的回退提示、重发消息下折叠原输入对照

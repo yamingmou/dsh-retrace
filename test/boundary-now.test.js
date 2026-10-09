@@ -1,7 +1,7 @@
 /**
  * dsh-retrace · test/boundary-now.test.js
  *
- * READ-SIDE 「现在这条」 (lib/boundary-now.js). User feedback 2026-09-15: an entry
+ * READ-SIDE 「现在这条」 (lib/boundary-now.js). User feedback an entry
  * said WHAT it replaced but never WHERE it was replaced from, so the reader could
  * not tell what the entry IS. The anchor is the message the action left behind —
  * our own `retrace-resend-*` node for an edit, the host's new assistant reply for

@@ -5,19 +5,19 @@
  * 会话日志考古 CLI——只读，不写任何日志。
  *
  *   retrace index <session> [--json]
- *       工具调用索引：调用数 / 配对率 / 孤儿数 / 命令分布（）
+ *       工具调用索引：调用数 / 配对率 / 孤儿数 / 命令分布（A1）
  *   retrace query <session> --cmd <regex> [--json]
- *       按命令正则查工具输出（）
+ *       按命令正则查工具输出（A1）
  *   retrace extract <session> --pattern <regex> --out <dir> [--min-size N]
- *       导出匹配命令的工具输出到目录（）
+ *       导出匹配命令的工具输出到目录（A2）
  *   retrace file-history <session> <path> [--json]
- *       某文件的所有 write/edit 历史版本（）
+ *       某文件的所有 write/edit 历史版本（A3）
  *   retrace file-diff <session> <path> <v1> <v2>
- *       两个历史版本的行级 diff（）
+ *       两个历史版本的行级 diff（A3）
  *   retrace lineage <session> [--json]
- *       会话 parent 链谱系（，分叉图数据源）
+ *       会话 parent 链谱系（A4，分叉图数据源）
  *
- * <session> 为完整文件路径或 sessionId（按 sessions 基座候选查找：$DSH_HOME/~/.dsh/~/.dsh）。
+ * <session> 为完整文件路径或 sessionId（按 sessions 基座候选查找：$DSH_HOME/~/.dsh/~/dsh-v3）。
  */
 import fs from 'node:fs';
 import { loadSessionLog, extractToolOutputs, auditToolCalls } from 'dsh-log-contract';

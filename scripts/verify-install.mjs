@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * verify-install — 多端口/多入口完整性校验（2026-08-30 问题产物）。
+ * verify-install — 多端口/多入口完整性校验。
  *
  * DSH 本地运行涉及多个入口，任何一处装旧/装漏都会造成行为分裂：
  *   ① GUI 端口 43120（DSH Desktop 主进程监听）——打不开 = host 未起；
  *   ② profileDir 下**实际装着的每个** profile 的 dsh-retrace / dsh-log-contract 实装版本
- *      ——旧版会继续写 turn-null marker，污染新会话（2026-08-30 问题源头之一）；
+ *      ——旧版会继续写 turn-null marker，污染新会话；
  *      清单从磁盘发现（此前写死 desktop/web/audit20260822，换基座后必报假红）；
  *   ③ 插件 HTTP 路由 /api/plugins/retrace/{versions,forkmap,doctor} ——404 = 插件
  *      host 侧未注册；
@@ -16,14 +16,14 @@
  *       [--expect-retrace 0.4.11] [--expect-log-contract 0.3.6] [--session <sessionId>]
  *
  * 默认 profileDir = `<pluginDataHome()>/profiles`（与会话基座**同源**：$DSH_HOME 设了
- * 就是 $DSH_HOME/profiles，未设 = ~/.dsh/profiles → ~/.dsh/profiles）。此前硬编码
+ * 就是 $DSH_HOME/profiles，未设 = ~/dsh-v3/profiles → ~/.dsh/profiles）。此前硬编码
  * `~/.dsh/profiles`：未设 $DSH_HOME 时校验的是旧 home 的装态，而会话/GUI 跑在新基座
- * ⇒ 校验对象与运行对象不是同一份（2026-09-14 实测）。
+ * ⇒ 校验对象与运行对象不是同一份。
  *
  * 默认期望版本从仓库 package.json 读取（开发态），可用 --expect-* 覆盖（发版校验）。
  * 任一检查失败 → 打印 ✗ 并 exit 1；全过 → 打印 ✅ 汇总并 exit 0。
  *
- * 2026-08-30 问题回顾：web profile 停在 0.4.6/0.3.2 时仍会写 turn-null marker，
+ * 问题回顾：web profile 停在 0.4.6/0.3.2 时仍会写 turn-null marker，
  * 与 desktop 0.4.10 行为分裂——本脚本就是防这种"半装态"再次发生。
  */
 import fs from 'node:fs';
@@ -65,7 +65,7 @@ function expectedFromProfile(profileDir, prof, pkg) {
 // caret 范围匹配（npm semver 语义的足够子集）：
 //   ^0.4.11 → >=0.4.11 <0.5.0；^0.3.6 → >=0.3.6 <0.4.0；^1.2.3 → >=1.2.3 <2.0.0。
 //  ⚠️ 0.x 时 minor 是"不兼容边界"：^0.3.6 要求 minor==3 且 patch>=6——
-//    0.3.2 / 0.4.6 都不满足（2026-08-30 web 停在 0.3.2 的问题场景必须 FAIL）。
+//    0.3.2 / 0.4.6 都不满足（web 停在 0.3.2 的问题场景必须 FAIL）。
 function satisfiesRange(installed, range) {
   if (!installed) return false;
   if (!range) return true;
@@ -114,9 +114,9 @@ function declaredKind(declared) {
  * 待校验的 profile 清单 = 该 profileDir 下**实际装着**的入口（目录内带 package.json）。
  *
  * 此前硬编码 `['desktop','web','audit20260822']`：那是旧 home 时代的入口名单。新基座
- * （v3，2026-09-14）下 `audit20260822` 根本不存在 —— 于是每次校验都报一条**假红**
+ * （v3，）下 `audit20260822` 根本不存在 —— 于是每次校验都报一条**假红**
  * 并让整个脚本 exit 1，而真正的入口（v3 的 acp）反而没被校验。校验的语义是
- * 「**已装**的入口之间不许出现半装态」（2026-08-30 问题），所以清单应当从磁盘发现，
+ * 「**已装**的入口之间不许出现半装态」，所以清单应当从磁盘发现，
  * 而不是写死一份会随基座过期的名单。
  */
 function discoverProfiles(profileDir) {
@@ -159,7 +159,7 @@ function checkProfiles(args) {
       if (localSpec) {
         // file:/link:/workspace: 的**相对**路径按 profile 目录解析（pnpm 的语义）。
         // 此前直接 path.join(localSpec,'package.json') 交给 cwd 解析——只有恰好从
-        // 同深度的目录运行时才碰对，换个 cwd 就误报「仓库不可读」（2026-09-14 实测）。
+        // 同深度的目录运行时才碰对，换个 cwd 就误报「仓库不可读」。
         const localPath = path.resolve(path.join(args.profileDir, prof), localSpec);
         // 本地挂载：期望 = 本地仓库 package.json version
         let repoVer = null;

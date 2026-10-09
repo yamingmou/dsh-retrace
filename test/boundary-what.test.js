@@ -1,5 +1,5 @@
 /**
- * dsh-retrace — `what` digest contract tests (frozen 2026-09-14).
+ * dsh-retrace — `what` digest contract tests (frozen).
  *
  * The projection wire used to be the candidate carrier for `what`; the measured
  * cost (+70.8% versions / +93.7% forkmap per frame, and 188 KB/180 KB in the

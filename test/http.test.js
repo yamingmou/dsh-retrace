@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { DEFAULT_CONFIG, parseRetraceConfig, ROUTE_PREFIX, createRetraceHttpHandler } from '../lib/http.js'
+import { createRollbackExecutor } from '../lib/rollback.js'
 
 /**
  * 让"宿主进程是不是 Electron"在本用例内**确定**,不随跑测的 node 而变。
@@ -265,7 +266,7 @@ describe('P1 HTTP routes', () => {
     expect(parsed.value.nodes).toHaveLength(2)
   })
 
-  it('GET /lineage proxies the seam ()', async () => {
+  it('GET /lineage proxies the seam (A4)', async () => {
     const seam = makeSeam()
     seam.lineage = vi.fn(() => [
       { id: 'leaf', parentId: 'mid' },
@@ -347,6 +348,43 @@ describe('P1 HTTP routes', () => {
     const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback: undefined, log: () => {} })
     const res = await post(handler, `${ROUTE_PREFIX}/rollback`, { sessionId: 's1', versionId: 'v3', scope: 'both' })
     expect(res.status).toBe(503)
+  })
+
+  it('rollback 的 replay-failed 结构化错误原样透出到 wire(不降级成 internal)', async () => {
+    // 退化路径的自有错误码:sendError 取 error.code ⇒ 客户端能据此给出明确指引,
+    // 而不是把「畸形 sourceEventSeqs」显示成笼统 internal(见 lib/rollback.js targetSurface)。
+    const seam = makeSeam()
+    const replayError = Object.assign(new Error('cannot replay session "s1" up to seq 2: … 畸形 sourceEventSeqs'), {
+      code: 'replay-failed',
+      details: { boundarySeq: 2, versionId: 'v2' },
+    })
+    const rollback = { preview: vi.fn(async () => { throw replayError }), execute: vi.fn(async () => { throw replayError }) }
+    const lines = []
+    const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, rollback, log: (line) => lines.push(line) })
+    const res = await post(handler, `${ROUTE_PREFIX}/rollback/preview`, { sessionId: 's1', versionId: 'v2', scope: 'context' })
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(false)
+    expect(parsed.error.code).toBe('replay-failed') // ← 不是 'internal'
+    expect(parsed.error.boundarySeq).toBe(2) // details 透传
+    expect(parsed.error.message).toContain('畸形 sourceEventSeqs')
+    expect(lines.some((line) => line.includes('[replay-failed]'))).toBe(true) // 服务端也留痕
+  })
+
+  it('POST /rollback/preview 运行中 → wire 原样带出 agent-busy(不被改写成 internal)', async () => {
+    // 独立审计的「预览说行、确认说不行」:preview 现在与 execute 同一道 idle 闸
+    // (lib/rollback.js requireIdle)。本用例用**真** rollback 执行器走完整 HTTP 路径,
+    // 证明 sendError 不改写 code、客户端拿到的就是 agent-busy。
+    const seam = makeSeam()
+    seam.agentOf = () => ({ status: 'running' })
+    const session = { id: 's1', header: { cwd: '/work' }, events: [], surface: { nodes: [] } }
+    const sessions = { get: (id) => (id === 's1' ? session : undefined), flush: vi.fn(async () => {}) }
+    const rollback = createRollbackExecutor({ ctx: {}, sessions, seam, writeMarker: () => {} })
+    const handler = createRetraceHttpHandler({}, { sessions, agents: {}, seam, rollback, log: () => {} })
+    const res = await post(handler, `${ROUTE_PREFIX}/rollback/preview`, { sessionId: 's1', versionId: 'v3', scope: 'both' })
+    const parsed = JSON.parse(res.body)
+    expect(parsed.ok).toBe(false)
+    expect(parsed.error.code).toBe('agent-busy')
+    expect(parsed.error.message).toBe('The agent is still responding; stop the current reply before rolling back.')
   })
 
   it('GET /doctor scans token-meter-breaking markers (B1)', async () => {
@@ -537,7 +575,8 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
       expect(followup).toHaveBeenCalledTimes(1)
       expect(followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
       // 载体:遮蔽该轮;业务溯源 targetSeq 由区间起点派生(读端口径)
-      expect(markers[0].surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+      // 现役内核 v4(SESSION_FORMAT_VERSION=4):replace 区间键名 = startSeq/endSeq
+      expect(markers[0].surfaceOp).toEqual({ op: 'replace', startSeq: 3, endSeq: 4 })
       expect(carrierTargetSeq(markers[0])).toBe(3)
       expect(markers[0].data.id).toMatch(/^retrace-regenerate-/)
     } finally {
@@ -613,7 +652,7 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
     expect(JSON.parse(res.body).value.running).toHaveLength(1)
   })
 
-  // ── 宿主承载面(2026-09-18 外部 issue #1:桌面端托盘退出死锁)──────────────
+  // ── 宿主承载面(外部 issue #1:桌面端托盘退出死锁)──────────────
   // 宿主是唯一能判定"本页宿主是否承载 quit-veto"的一方:Desktop 主进程给 Electron
   // renderer 的每个请求挂 `x-dsh-desktop-renderer`,普通浏览器页面没有这个头。
   it('GET:无能力头且宿主不是桌面 → surface=browser / quitVeto=true(网页端照常武装)', async () => {

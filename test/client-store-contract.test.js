@@ -1,5 +1,5 @@
 /**
- * dsh-retrace — published client source guards (2026-09-14 live-incident).
+ * dsh-retrace — published client source guards (live-regression).
  *
  * These are static checks on `lib/client.js` (the file that is bundled into
  * `lib/client.bundle.js` and shipped). They pin the two halves of the fix that
@@ -148,9 +148,9 @@ describe('client source guard: chat nodes come from snapshot.nodes', () => {
   })
 
   it('reads snapshot.nodes, and every one of the six hooks does so (directly or via hidePlanOf)', () => {
-    // INTENTIONAL exact count (change-detector), not noise. The incident fix
+    // INTENTIONAL exact count (change-detector), not noise. The regression fix
     // routed the node reads through `snapshot.nodes`, not `snapshot.chat.nodes`.
-    // The count moved 7 -> 5 with the 2026-09-14 performance fix: the reads that
+    // The count moved 7 -> 5 with the performance fix: the reads that
     // used to live inside `useMarkerHidePlan` and `useSeqHidden` now live in the
     // shared `hidePlanOf` plan (which still reads `snapshot.nodes`). A legitimate
     // NEW read must be added here on purpose — do NOT delete this assertion as
@@ -228,7 +228,7 @@ describe('client source guard: slot props are declared by the host contract', ()
       expect(source).toContain(`name: '${seat}'`)
       if (key !== null) expect(source).toContain(`key: '${key}'`)
       // The component is the second argument of that registration form — since
-      // 2026-09-15 every surface is wrapped in the shared panel error boundary,
+      // every surface is wrapped in the shared panel error boundary,
       // so accept either the bare or the wrapped form (the surface must still be
       // the one registered; that is what this guard protects).
       const bare = `}, ${component})`
@@ -239,7 +239,7 @@ describe('client source guard: slot props are declared by the host contract', ()
 })
 
 // ---------------------------------------------------------------------------
-// §8.1 correction (2026-09-14 independent review): "the host has no `chat`
+// §8.1 correction (independent review): "the host has no `chat`
 // path" was concluded from a scan for the LITERAL `snapshot.chat` (0 hits) —
 // which missed the live survivor `store.getSnapshot()?.chat?.nodes`
 // (lib/client.js:1391/1405/1407 before this fix). The scan below enumerates
@@ -311,7 +311,7 @@ describe('client source guard: the jump path never reads chat nodes off the stor
   })
 
   it('the view components read useChat through one unconditional hook (no ternary call)', () => {
-    // HIGH review MEDIUM-B: `useChat(...)` inside a `typeof … ? … : …` in a
+    // HIGH review MEDIUM-B: `useChat(...)` inside a `typeof … ? …: …` in a
     // component body makes the hook call conditional (Rules of Hooks). It must
     // go through the always-called `useChatNodes` wrapper instead.
     const wrapper = functionSlice(source, 'useChatNodes')
@@ -326,7 +326,7 @@ describe('client source guard: the jump path never reads chat nodes off the stor
 })
 
 // ---------------------------------------------------------------------------
-// UX source guard (2026-09-14): the single checkpoint view must keep its
+// UX source guard: the single checkpoint view must keep its
 // concept sentence and every row must keep the plain-language why line.
 // ---------------------------------------------------------------------------
 describe('client source guard: the checkpoint view explains itself', () => {
@@ -365,7 +365,7 @@ describe('client source guard: the checkpoint view explains itself', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Naming + summary switch + digest rendering guards (2026-09-14).
+// Naming + summary switch + digest rendering guards.
 // ---------------------------------------------------------------------------
 const FORBIDDEN_VISIBLE_WORDS = /版本|分叉|岔路口|路径|谱系|分支/
 describe('client source guard: checkpoints copy + summary switch + digest rendering', () => {
@@ -406,7 +406,7 @@ describe('client source guard: checkpoints copy + summary switch + digest render
   })
 
   it('the row wires the digest quote / summary / colour classes', () => {
-    // 2026-09-15: the digest LINES moved into whatLineElement (compact row +
+    // the digest LINES moved into whatLineElement (compact row +
     // detail block share one line model), so the colour classes live there.
     const body = functionSlice(source, 'whatLineElement')
     expect(body).toContain('dsh-rt-what-quote')

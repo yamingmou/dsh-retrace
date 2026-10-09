@@ -21,10 +21,10 @@ import {
 import { workspaceAbbr } from '../lib/platform/session-paths.js'
 
 const SP = 'session-'
-const A = `${SP}00000000-0000-4000-8000-bd7662a5eeb4`
-const B = '00000000-0000-4000-8000-b454f82c5857'
-const C = '00000000-0000-4000-8000-f6222a1106ee'
-const AU = '00000000-0000-4000-8000-bd7662a5eeb4'
+const A = `${SP}11111111-1111-4111-8111-111111111111`
+const B = '22222222-2222-4222-8222-222222222222'
+const C = '33333333-3333-4333-8333-333333333333'
+const AU = '11111111-1111-4111-8111-111111111111'
 
 /** 合成会话行（形状与 scanSessions 产出一致）。 */
 const mk = (id, ws, createdAt, parent = null, path = '/nonexistent') => ({
@@ -90,8 +90,7 @@ describe('谱系标识规则(长度/字符集/构成)', () => {
     // 机器无关:用当前 home 的编码前缀构造输入(函数按 os.homedir() 剥前缀)
     const homeEnc = homedir().replace(/\//g, '-').replace(/^-+/, '').replace(/-+$/, '')
     expect(workspaceAbbr(`--${homeEnc}-projects--`)).toBe('pr')
-    // 2026-09-15 隐私审计:此前这里用了**真实工作区名**(`workspace` / `workspace`,
-    // 其中 `xiu` 疑似人名片段)⇒ 换成合成名。断言口径不变(仍是"取前两段首字母")。
+    // 用合成工作区名，断言口径不变（仍是"取前两段首字母"）。
     expect(workspaceAbbr(`--${homeEnc}-Demo-alpha--`)).toBe('da')
     expect(workspaceAbbr(`--${homeEnc}-Sample-beta--`)).toBe('sb')
     // 不在 home 下的路径走平台前缀分支(平台前缀:Volumes/…)
@@ -114,7 +113,7 @@ describe('R3 谱系标识 → 唯一 session id', () => {
     sessions: [mk(A, 'qq', 1), mk(B, 'zz', 2)],
   })
 
-  it('谱系标识 → 唯一 session id:已登记码解析到登记的会话', () => {
+  it('A2 谱系标识 → 唯一 session id:已登记码解析到登记的会话', () => {
     const r = resolveCode(index, 'qq035qq034')
     expect(r.status).toBe('unique')
     expect(r.sessionId).toBe(A)
@@ -355,9 +354,9 @@ describe('R6 世系覆盖层:身份映射补父边(绝不回退 FF000、绝不�
   const mkRoot = () => {
     const root = mkdtempSync(join(tmpdir(), 'sc-root-'))
     // 父会话(有 header 父=None,是根)+ 两个子会话(header 里 parentSession 已丢)
-    writeSession(root, '--Volumes-Quebec-quartz--', '00000000-0000-4000-8000-7cac378a5787', 10)
-    writeSession(root, '--Volumes-Quebec-quartz--', '00000000-0000-4000-8000-9c9c92612cf7', 20)
-    writeSession(root, '--Volumes-Quebec-quartz--', '00000000-0000-4000-8000-f25c8a6c7ca5', 30)
+    writeSession(root, '--Volumes-Quebec-quartz--', 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', 10)
+    writeSession(root, '--Volumes-Quebec-quartz--', 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', 20)
+    writeSession(root, '--Volumes-Quebec-quartz--', 'cccccccc-3333-4333-8333-cccccccccccc', 30)
     return root
   }
   const writeIdmap = (pairs) => {
@@ -371,30 +370,30 @@ describe('R6 世系覆盖层:身份映射补父边(绝不回退 FF000、绝不�
     const root = mkRoot()
     const idmap = writeIdmap([
       // ⚠️ 归一化陷阱:newId 裸 uuid,parentNewId 带 session- 前缀
-      { newId: '00000000-0000-4000-8000-9c9c92612cf7', parentNewId: '00000000-0000-4000-8000-7cac378a5787', class: 'A' },
-      { newId: '00000000-0000-4000-8000-f25c8a6c7ca5', parentNewId: '00000000-0000-4000-8000-9c9c92612cf7', class: 'A' },
+      { newId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', parentNewId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', class: 'A' },
+      { newId: 'cccccccc-3333-4333-8333-cccccccccccc', parentNewId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', class: 'A' },
     ])
     const edges = loadIdentityMapEdges(idmap)
     expect(edges.size).toBe(2)
-    expect(edges.get(uuidOf('00000000-0000-4000-8000-9c9c92612cf7')).parentUuid)
-      .toBe(uuidOf('00000000-0000-4000-8000-7cac378a5787'))
+    expect(edges.get(uuidOf('bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb')).parentUuid)
+      .toBe(uuidOf('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'))
 
     const { rows } = scanSessions(root, { parentEdges: edges })
-    const b = rows.find((r) => r.uuid === uuidOf('00000000-0000-4000-8000-9c9c92612cf7'))
+    const b = rows.find((r) => r.uuid === uuidOf('bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'))
     expect(b.parentSource).toBe('identity-map')
     const codes = deriveCodes(rows)
     // 父段承载父的 (ws,seq),而不是 FF000
     expect(codes[b.uuid]).toBe('qq002qq001')
     expect(codes[b.uuid].endsWith(ROOT_PARENT)).toBe(false)
     // 孙子辈同理,链式不塌
-    const c = rows.find((r) => r.uuid === uuidOf('00000000-0000-4000-8000-f25c8a6c7ca5'))
+    const c = rows.find((r) => r.uuid === uuidOf('cccccccc-3333-4333-8333-cccccccccccc'))
     expect(codes[c.uuid]).toBe('qq003qq002')
   })
 
   it('身份映射不在场时父段回退 FF000(如实降级,不臆造父边)', () => {
     const root = mkRoot()
     const { rows } = scanSessions(root, { parentEdges: new Map() })
-    const b = rows.find((r) => r.uuid === uuidOf('00000000-0000-4000-8000-9c9c92612cf7'))
+    const b = rows.find((r) => r.uuid === uuidOf('bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'))
     expect(b.parent).toBe(null)
     expect(b.parentSource).toBe(null)
     expect(deriveCodes(rows)[b.uuid]).toBe('qq002FF000')
@@ -402,26 +401,26 @@ describe('R6 世系覆盖层:身份映射补父边(绝不回退 FF000、绝不�
 
   it('header 父边优先于映射(映射只补位,不改写既有事实)', () => {
     const root = mkdtempSync(join(tmpdir(), 'sc-root-'))
-    const dir = join(root, '--Volumes-Quebec-quartz--', '00000000-0000-4000-8000-e6bdd83c17d2')
+    const dir = join(root, '--Volumes-Quebec-quartz--', 'dddddddd-4444-4444-8444-dddddddddddd')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'session.v3.jsonl.zstd'),
-      JSON.stringify({ id: '00000000-0000-4000-8000-e6bdd83c17d2', createdAt: 5, parentSession: '00000000-0000-4000-8000-7cac378a5787' }) + '\n')
-    writeSession(root, '--Volumes-Quebec-quartz--', '00000000-0000-4000-8000-7cac378a5787', 1)
+      JSON.stringify({ id: 'dddddddd-4444-4444-8444-dddddddddddd', createdAt: 5, parentSession: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' }) + '\n')
+    writeSession(root, '--Volumes-Quebec-quartz--', 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', 1)
     const idmap = writeIdmap([
-      { newId: '00000000-0000-4000-8000-e6bdd83c17d2', parentNewId: '00000000-0000-4000-8000-9c9c92612cf7', class: 'A' },
+      { newId: 'dddddddd-4444-4444-8444-dddddddddddd', parentNewId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', class: 'A' },
     ])
     const { rows } = scanSessions(root, { parentEdges: loadIdentityMapEdges(idmap) })
-    const d = rows.find((r) => r.uuid === uuidOf('00000000-0000-4000-8000-e6bdd83c17d2'))
+    const d = rows.find((r) => r.uuid === uuidOf('dddddddd-4444-4444-8444-dddddddddddd'))
     expect(d.parentSource).toBe('header')
-    expect(uuidOf(d.parent)).toBe(uuidOf('00000000-0000-4000-8000-7cac378a5787'))
+    expect(uuidOf(d.parent)).toBe(uuidOf('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'))
   })
 
   it('父边来源只读:扫描身份映射不写回会话文件(sha 不变)', () => {
     const root = mkRoot()
-    const target = join(root, '--Volumes-Quebec-quartz--', '00000000-0000-4000-8000-9c9c92612cf7', 'session.v3.jsonl.zstd')
+    const target = join(root, '--Volumes-Quebec-quartz--', 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', 'session.v3.jsonl.zstd')
     const before = readFileSync(target, 'utf8')
     const idmap = writeIdmap([
-      { newId: '00000000-0000-4000-8000-9c9c92612cf7', parentNewId: '00000000-0000-4000-8000-7cac378a5787', class: 'A' },
+      { newId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', parentNewId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', class: 'A' },
     ])
     scanSessions(root, { parentEdges: loadIdentityMapEdges(idmap) })
     expect(readFileSync(target, 'utf8')).toBe(before)
@@ -429,9 +428,9 @@ describe('R6 世系覆盖层:身份映射补父边(绝不回退 FF000、绝不�
   })
 
   it('已登记父的坐标取自码本身:非登记子会话的父段不回退 FF000(父不在扫描集也成立)', () => {
-    const CHILD = '00000000-0000-4000-8000-e6bdd83c17d2'
-    const P = '00000000-0000-4000-8000-867678044762'
-    const G = '00000000-0000-4000-8000-8401a36c876f'
+    const CHILD = 'dddddddd-4444-4444-8444-dddddddddddd'
+    const P = 'ffffffff-6666-4666-8666-ffffffffffff'
+    const G = '99999999-7777-4777-8777-999999999999'
     const sessions = [mk(A, 'qq', 100, null), mk(CHILD, 'qq', 500, A)]
     const { assignments } = allocateCodes({
       sessions,
@@ -457,8 +456,8 @@ describe('R6 世系覆盖层:身份映射补父边(绝不回退 FF000、绝不�
 
   it('自指/无父的映射项被忽略(不制造假父边)', () => {
     const idmap = writeIdmap([
-      { newId: '00000000-0000-4000-8000-7cac378a5787', parentNewId: null },
-      { newId: '00000000-0000-4000-8000-9c9c92612cf7', parentNewId: `${SP}00000000-0000-4000-8000-9c9c92612cf7` },
+      { newId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', parentNewId: null },
+      { newId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', parentNewId: `${SP}bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb` },
     ])
     expect(loadIdentityMapEdges(idmap).size).toBe(0)
   })

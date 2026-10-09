@@ -1,12 +1,12 @@
 /**
  * lib/platform/session-paths.js —— 会话基座/文件名/谱系标识表落点/插件数据家的单一实现。
  *
- * 判据(2026-09-14 口径统一:未设 $DSH_HOME 时**新基座优先于旧 home**,与 archive
+ * 判据(口径统一:未设 $DSH_HOME 时**新基座优先于旧 home**,与 archive
  * 侧生成器(内部谱系标识生成脚本)resolveHome() 逐字同序):
  *   ① $DSH_HOME 优先(设了就只认它);
- *   ② 未设 $DSH_HOME 且两基座都在 → 选 ~/.dsh(口径统一后的新行为;旧行为选 ~/.dsh);
+ *   ② 未设 $DSH_HOME 且两基座都在 → 选 ~/dsh-v3(口径统一后的新行为;旧行为选 ~/.dsh);
  *   ③ 未设 $DSH_HOME 且只有 ~/.dsh → 兜底旧 home;
- *   ④ 同一会话目录两种文件名并存 → 取 mtime 新者,平局按数组序(新基座优先);
+ *   ④ 同一会话目录多代文件名并存 → 取 mtime 新者,平局按数组序(世代高者优先:v4 → v3 → v0);
  *   ⑤ pluginDataHome(插件数据家)与会话基座**同源**(设了 $DSH_HOME 逐字一致;
  *      未设则 = 活动基座父目录)——钉住"存储不再分裂到旧 home"。
  */
@@ -28,6 +28,7 @@ import {
   resolveBadgeTablePath,
 } from '../lib/platform/session-paths.js'
 
+const V4 = 'session.v4.jsonl.zstd'
 const V3 = 'session.v3.jsonl.zstd'
 const V0 = 'session.jsonl.zstd'
 const T0 = 1_700_000_000_000
@@ -75,7 +76,7 @@ describe('sessionRoots / activeSessionsRoot', () => {
     mkSession(home, 'dsh-v3', '--w--', 'v3only', V3)
     // 只有新基座存在 → 新基座
     expect(activeSessionsRoot({ home, dshHome: null })).toBe(join(home, 'dsh-v3', 'sessions'))
-    // 两基座都在 → 新基座优先(2026-09-14 口径统一;此前旧 home 优先)
+    // 两基座都在 → 新基座优先(口径统一;此前旧 home 优先)
     mkSession(home, '.dsh', '--w--', 'old1', V0)
     expect(activeSessionsRoot({ home, dshHome: null })).toBe(join(home, 'dsh-v3', 'sessions'))
     // 设了 DSH_HOME → 它排第一
@@ -117,8 +118,17 @@ describe('pickSessionFile', () => {
     const b = join(dir, V0)
     writeFileSync(b, '{}\n'); utimesSync(b, new Date(T0), new Date(T0))
     writeFileSync(a, '{}\n'); utimesSync(a, new Date(T0), new Date(T0))
+    // 旧断言 `SESSION_FILE_NAMES[0] === V3` 已不成立:实现补了 **v4 世代**
+    // （lib/platform/session-paths.js:38-45，依据实测:某会话 v3 停在 09-27 而 v4 在写）
+    // ⇒ 平局时数组序里**世代最高者**优先,首位是 v4 而不是 v3。
+    const c = join(dir, V4)
+    writeFileSync(c, '{}\n'); utimesSync(c, new Date(T0), new Date(T0))
+    expect(pickSessionFile(dir)).toBe(c)
+    expect(SESSION_FILE_NAMES[0]).toBe(V4)
+    // v4 不在时,同一数组序继续取 v3（原断言要锁的语义仍在,只是往后挪了一代）
+    rmSync(c)
     expect(pickSessionFile(dir)).toBe(a)
-    expect(SESSION_FILE_NAMES[0]).toBe(V3)
+    expect(SESSION_FILE_NAMES[1]).toBe(V3)
   })
 
   it('都没命中返回 null', () => {
@@ -219,9 +229,9 @@ describe('badgeTableCandidates / resolveBadgeTablePath', () => {
 
   it('取第一个存在的落点;**只读**(不写文件)', () => {
     // ⚠️ 本用例**必须**显式传 `dshHome: null`:pluginDataHome() 的实现是 `$DSH_HOME` 优先,
-    // 不传就退回读进程环境 ⇒ 在 `DSH_HOME=~/.dsh` 下(启动纪律要求显式设)
-    // dataHome 会解析成**活家**,下面的 writeFileSync 就把用户真谱系标识表覆盖成空表
-    // (2026-09-19 实测问题:跑一次全量测试即清空 ~/.dsh/dsh-retrace/codes.json)。
+    // 不传就退回读进程环境 ⇒ 设了 `DSH_HOME` 时 dataHome 会解析成**活家**,
+    // 下面的 writeFileSync 就把用户真谱系标识表覆盖成空表。
+    // (回归:全量测试不得触碰真实插件数据目录)
     const home = tmpRoot()
     const dataHome = pluginDataHome({ home, dshHome: null })
     const canonical = join(dataHome, 'dsh-retrace', 'codes.json')
@@ -240,7 +250,7 @@ describe('badgeTableCandidates / resolveBadgeTablePath', () => {
 
 /**
  * pluginDataHome —— 插件数据家(快照 / 存储根 / profiles 默认落点)与会话基座**同源**。
- * 变更点:未设 $DSH_HOME 且两基座都在时,插件数据家由旧行为 ~/.dsh 改为 ~/.dsh
+ * 变更点:未设 $DSH_HOME 且两基座都在时,插件数据家由旧行为 ~/.dsh 改为 ~/dsh-v3
  * (改前 = 官方 resolveDshHome 口径,数据落旧 home 而会话读新基座 ⇒ 存储分裂)。
  */
 describe('pluginDataHome(插件数据家:与会话基座同源)', () => {
@@ -280,7 +290,7 @@ describe('pluginDataHome(插件数据家:与会话基座同源)', () => {
     expect(pluginDataHome({ home, dshHome: null })).toBe(join(home, '.dsh'))
   })
 
-  it('④ 还没有 sessions/(全新基座):存在 ~/.dsh 目录 → 仍选新基座;都不在 → 兜底 ~/.dsh', () => {
+  it('④ 还没有 sessions/(全新基座):存在 ~/dsh-v3 目录 → 仍选新基座;都不在 → 兜底 ~/.dsh', () => {
     const home = tmpRoot()
     expect(pluginDataHome({ home, dshHome: null })).toBe(join(home, '.dsh')) // 全空
     mkdirSync(join(home, 'dsh-v3'), { recursive: true })                    // 只有裸基座目录
@@ -315,7 +325,7 @@ describe('pluginDataHome(插件数据家:与会话基座同源)', () => {
 
 /**
  * 口径守卫(源码级):三个"插件数据落点"不得再各自 import 官方 home resolver
- * (@deepseek-ai/dsh-home-paths 只认 $DSH_HOME → ~/.dsh,不认识 ~/.dsh)。
+ * (@deepseek-ai/dsh-home-paths 只认 $DSH_HOME → ~/.dsh,不认识 ~/dsh-v3)。
  * 行为测不到它们(看门狗/versioning 默认路径只在无注入的装配里生效),故钉源码。
  */
 describe('插件数据落点口径守卫:只走 pluginDataHome()', () => {

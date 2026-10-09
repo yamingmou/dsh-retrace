@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The structure check recomputes facts from git history itself, so it
+          # needs the full history and a real origin/main to diff against.
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -41,3 +45,8 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+
+      # Structural history gate: version consistency / tree authenticity /
+      # timeline monotonicity / commit-identity hygiene, each recomputed from git.
+      - name: History structure check
+        run: pnpm check:history

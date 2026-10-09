@@ -303,7 +303,7 @@ const CHECKS = [
   { kind: 'present', id: 'sessions.flush', file: SESSION, re: /async flush\(session\)\s*\{/, what: 'SessionStore.flush(session)', usedBy: 'lib/host-core.js:412, lib/rollback.js:283' },
   // reverse: measured hosts (0.1.0-rc.7 and 0.1.5-rc.1) have no values()/keys().
   // The plugin keeps them as DEFENSIVE old-host fallbacks; these assertions record
-  // that neither is the contract of a measured host (review //LOW-2/LOW-3).
+  // that neither is the contract of a measured host (review A3/A4/LOW-2/LOW-3).
   { kind: 'absent', id: 'sessions.values (never existed)', file: SESSION, scope: SESSION_STORE_CLASS, member: 'values', what: 'SessionStore.values() must NOT exist', usedBy: 'lib/index.js:387 dead fallback (list() is the enumerator)', hint: 'keep the fallback for unmeasured hosts, but do not treat it as a live API' },
   { kind: 'absent', id: 'sessions.keys (never existed)', file: SESSION, scope: SESSION_STORE_CLASS, member: 'keys', what: 'SessionStore.keys() must NOT exist', usedBy: 'lib/host-compat.js:sessionIds defensive keys() fallback', hint: 'list() is the measured enumeration API; keys() is a defensive shape only' },
 
@@ -328,7 +328,7 @@ const CHECKS = [
 
   // ── service NAMES the plugin injects / resolves (review A5) ───────────────
   // A wrong service name makes the plugin fiber permanently pending (client boot
-  // failure) or ctx.get() return undefined — this class of incident already
+  // failure) or ctx.get() return undefined — this class of regression already
   // happened in this repo (conversationEvents / dsh-client-runtime).
   //
   // ⚠️ 防重踩（review-independent §8.7 假警报）:服务名一律取自 `super(ctx,"X")`

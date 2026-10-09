@@ -2,7 +2,7 @@
  * **跨通道一致性**：客户端会调的每个 op，必须在**它实际使用的那条通道**上可达；
  * 而谱系标识那组 op 必须在 **harness 与 HTTP 两条通道都在**。
  *
- * 真回归（2026-09-19 重启实测）：`badgeMap` 只挂了 harness（`harness.handle('retrace.badgeMap')`），
+ * 真回归：`badgeMap` 只挂了 harness（`harness.handle('retrace.badgeMap')`），
  * 而 App 走 **HTTP**（http.js 的 `api[op]` 分发）⇒ 客户端 `callOp('badgeMap')` 拿到 **404**，
  * 一条可选拉取的失败被误读成"客户端半没注册"。这类"挂了一条忘另一条"的错
  * **必须由测试拦下**，不能靠重启才发现。
@@ -80,7 +80,7 @@ export const HTTP_ONLY_BY_DESIGN = {
 }
 
 /** **必须两条通道都在**的 op 组：谱系标识这一族（本次回归的教训直接钉在这里）。 */
-export const BOTH_CHANNELS_REQUIRED = ['sessionBadge', 'setBadgeTitle', 'initBadgeTitles', 'badgeMap']
+export const BOTH_CHANNELS_REQUIRED = ['sessionBadge', 'setBadgeTitle', 'initBadgeTitles', 'badgeMap', 'titleMap']
 
 /** 纯函数：HTTP 集合里缺哪些客户端 op。 */
 export function missingOnHttp(clientOps, httpOps) {

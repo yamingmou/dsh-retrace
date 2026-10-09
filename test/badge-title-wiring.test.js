@@ -1,7 +1,7 @@
 /**
  * dsh-retrace — 谱系标识/名字展示层接线测试（B 步）。
  *
- * 覆盖 本轮复核 §B 三件：① 客户端真去调 `initBadgeTitles`；② `setBadgeTitle`
+ * 覆盖本轮复核 §B 三件：① 客户端真去调 `initBadgeTitles`；② `setBadgeTitle`
  * 不静默吞错；③ 名字取 `session/title` 日志真值（无事件 ⇒ 留空，不回落项目名）。
  *
  * ── 阴性对照（本文件的重点）────────────────────────────────────────────────
@@ -298,7 +298,7 @@ describe('B fail-soft:一次可选拉取绝不许把客户端注册带崩', () =
     expect(/try \{ return bootstrapBadgeTitles\(\) \} catch \(error\) \{/.test(clientSource)).toBe(true)
   })
 
-// 2026-09-20：bootstrap 已改为**默认关闭**（收尾，见 ROADMAP §0.4 T3）
+// bootstrap 已改为**默认关闭**（收尾，见 ROADMAP §0.4 T3）
 // 本文件测的是【机制本身】，故显式打开开关；生产默认不打开。
 globalThis.__DSH_RETRACE_BADGE_BOOTSTRAP = true
 })

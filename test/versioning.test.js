@@ -239,7 +239,7 @@ describe('createVersioningSeam', () => {
     })
   })
 
-  it('lineage walks header.parentSession to the root ()', async () => {
+  it('lineage walks header.parentSession to the root (A4)', async () => {
     const ctx = fakeCtx()
     const seam = createVersioningSeam(ctx, () => {}, { storeRoot: await freshRoot() })
     await settle()
