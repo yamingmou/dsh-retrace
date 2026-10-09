@@ -121,7 +121,7 @@ describe('回归守卫(防兜底再次被悄悄删掉)', () => {
     const { carrier } = await writeCarrier()
     expect(isCarrierMarkerEvent(carrier)).toBe(true)
     const source = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
-    // 2026-09-14：注册入口改由 conversationRegistrar 解析（新基座 UI 服务把注册表
+    // 注册入口改由 conversationRegistrar 解析（新基座 UI 服务把注册表
     // 挂在 `.events` 上，服务本身没有 register）——断言只看"审计上下文定义仍被注册"。
     expect(source).toMatch(/\.register\(auditContextDefinition\(\)\)/)
     expect(source).toContain('shadowedSeqsOfAudit')
@@ -152,7 +152,7 @@ describe('回归守卫(防兜底再次被悄悄删掉)', () => {
 })
 
 /**
- * 第 2 段 content 的**通道路径**(2026-09-10):写入器不自带业务序列化,
+ * 第 2 段 content 的**通道路径**:写入器不自带业务序列化,
  * 业务元数据 → 人读文本由**注入面**给出(`deriveContentText`,与 meter/deriveMessage
  * 同一形态)。注入面缺席 = 该宿主本就没有结构化业务数据 ⇒ 直接落留痕文案。
  */

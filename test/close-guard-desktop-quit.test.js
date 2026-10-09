@@ -20,6 +20,21 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { apply, __setMessageEditorWire } from '../lib/client.js'
 
+// 关闭守卫自 0.4.128 起**默认关闭**（CHANGELOG 0.4.128 修复项：「关闭守卫的说明此前写作
+// “开（默认）”，实际默认关闭」；`CONFIG_DEFAULTS.closeGuard = false`，lib/client.js:810）。
+// 本文件锁的是守卫**开启后**的装配行为（原生门武装 / 运行中横幅），所以这里必须显式开闸。
+// `readConfig()` 只在 `../lib/client.js` 被 import 时执行一次 ⇒ 只能在 import 之前把配置
+// 注入 localStorage，普通顶层语句晚于 import，必须用 vi.hoisted（同 test/foldsurface-projections.test.js 的先例）。
+vi.hoisted(() => {
+  const store = new Map([['dsh-retrace:config', JSON.stringify({ version: 3, closeGuard: true })]])
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => { store.set(key, String(value)) },
+    removeItem: (key) => { store.delete(key) },
+    clear: () => store.clear(),
+  }
+})
+
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 // ---------------------------------------------------------------------------
@@ -187,7 +202,7 @@ function fire(handler) {
 }
 
 // ---------------------------------------------------------------------------
-// 锁 0(2026-09-19 复核):真实装配有**两条** beforeunload 监听器 —— [0] = client.js
+// 锁 0:真实装配有**两条** beforeunload 监听器 —— [0] = client.js
 // 的原生门(桌面不武装),[1] = 自绘确认门(桌面真正拦下的那条)。此前用例只取 [0],
 // 于是"桌面不武装"看着绿、真实装配的拦截没人测(假绿)。这里列出两条并断言**聚合**
 // 行为:有任务 ⇒ 恰一条拦下(自绘门)且确认框在;无任务/隐藏 ⇒ 两条都不拦。
@@ -297,7 +312,7 @@ describe('网页端仍然武装原生门（行为不变）', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 锁 2b：客户端一票否决（2026-09-18 第二轮,issue #1 复测仍卡死）
+// 锁 2b：客户端一票否决（第二轮,issue #1 复测仍卡死）
 //
 // 第一轮修复只改了宿主判据;报告人那台壳三条宿主判据**全不成立** ⇒ 宿主错回
 // `surface=browser, quitVeto=true` ⇒ 客户端照旧武装 ⇒ 仍然退不掉。这一组从
@@ -343,7 +358,7 @@ describe('客户端一票否决：宿主判错也不许把桌面端卡死（第�
 // 两类失效，各一把锁：
 //   (a) 把"未覆盖的路径"写成结论（旧病）：断言"桌面端退出不经过 beforeunload /
 //       Desktop 不受影响"；
-//   (b) **无限定地把某一条退出入口当成全部事实**（2026-09-18 对抗复核抓到的新病）：
+//   (b) **无限定地把某一条退出入口当成全部事实**：
 //       "托盘退出…会触发页面 beforeunload" —— 对 2.0.9 是假的（托盘项走
 //       requestQuit(0) → window.destroy() → app.exit(code)，不经过 beforeunload），
 //       只有 0.9.0/Windows 那一类入口才走到它。
@@ -366,7 +381,7 @@ const TEXT_SURFACES = [
  * 刻意只收**断言措辞**，不收 API 名或普通词：
  *  - 不收"不受影响"这类在别处有正常用法的词（README.zh.md 的"安装/启动不受影响"）；
  *  - 不收 `window.destroy()` / `app.exit()` —— 修正后的文本**必须**引用它们来描述
- *    2.0.9 的真实路径，收 API 名会把正确文本判红（2026-09-18 复核修订）。
+ *    2.0.9 的真实路径，收 API 名会把正确文本判红。
  */
 const OLD_CLAIM_MARKERS = [
   '不触发页面 beforeunload',
@@ -407,7 +422,7 @@ function markdownTolerant(source) {
 /**
  * 触发类动词（"beforeunload 会不会走到/被触发"的说法）。
  * 兼容 markdown 强调：线上文本写过 `该路径**会**触发页面`（会 ** 触发），
- * 朴素的 `会触发` 字面量会**漏判**（2026-09-18 复核自查抓到）。
+ * 朴素的 `会触发` 字面量会**漏判**。
  */
 const TRIGGER_VERB_RE = new RegExp(
   [
@@ -426,7 +441,7 @@ const TRIGGER_VERB_RE = new RegExp(
  * 要求"触发词 + `beforeunload` + 限定词"三者同句。
  *
  * 为什么按句而不是按固定半径：半径判定会被**邻近分句**的限定词连带赦免 —— 实测
- * （2026-09-18 复核自查）把 close-guard.js 里 0.9.0 那条改回无限定句后，紧邻的
+ * 把 close-guard.js 里 0.9.0 那条改回无限定句后，紧邻的
  * 2.0.9 分句落在 ±100 半径内，半径版放行。改成同句判定后该变异必红。
  * 分隔符含 `:` / `：`（引子分句与列表项之间常用冒号），否则限定词会从上一分句
  * 漏过来；不含裸 `.`（`0.9.0` 里的点会被误切）：只在不夹数字处切。
@@ -449,8 +464,8 @@ function unqualifiedTriggerHits(text) {
  * 也要红。逐文件列出**必须存在**的限定事实（"按版本二选一"的那两半）。
  */
 const VERSION_CONDITIONAL_FACTS = [
-  { file: 'README.md', requires: [/0\.9\.0/, /2\.0\.9/, /by\s+version\/platform/i, /never\*{0,2}\s*arms/i] },
-  { file: 'README.zh.md', requires: [/0\.9\.0/, /2\.0\.9/, /版本\/[\s*]{0,12}平台[\s*]{0,12}而变/, /一律不武装/] },
+  { file: 'README.md', requires: [/jointly by the host and the page/i, /does\s*\*{0,2}\s*not\*{0,2}\s*use the host/i, /own in-page confirmation/i] },
+  { file: 'README.zh.md', requires: [/由宿主与页面共同决定/, /不弹宿主原生框/, /页面内自绘确认/] },
   { file: 'lib/close-guard-client.js', requires: [/0\.9\.0/, /2\.0\.9/, /版本\/[\s*]{0,12}平台[\s*]{0,12}而变/, /一律不武装/] },
   { file: 'lib/close-guard.js', requires: [/0\.9\.0/, /2\.0\.9/, /版本\/[\s*]{0,12}平台[\s*]{0,12}而变/, /一律不武装/] },
   { file: 'lib/client.js', requires: [/0\.9\.0/, /2\.0\.9/, /版本\/[\s*]{0,12}平台[\s*]{0,12}而变/, /never\*{0,2}\s*arms/i] },
@@ -474,30 +489,33 @@ describe('对外文本不再把未覆盖的路径写成结论', () => {
     }
   })
 
-  it('对外文本都写明了"壳未处理 will-prevent-unload / 退出入口随版本而变 / 桌面端不武装宿主原生确认框(改自绘门)"', () => {
-    for (const rel of ['README.md', 'README.zh.md', 'lib/close-guard-client.js']) {
-      const text = readRepoFile(rel)
-      expect({ file: rel, hasFact: text.includes('will-prevent-unload') }).toEqual({ file: rel, hasFact: true })
-      expect({ file: rel, hasBeforeUnload: text.includes('beforeunload') }).toEqual({ file: rel, hasBeforeUnload: true })
+  it('对外文本只写用户可见口径（原生框由宿主与页面共同决定 / 桌面端改页面内自绘确认 / 壳 seam 限制）', () => {
+    // 实现通道（will-prevent-unload / beforeunload）只在**源码**里写；README 只写用户可见行为。
+    const clientSrc = readRepoFile('lib/close-guard-client.js')
+    expect(clientSrc.includes('will-prevent-unload')).toBe(true)
+    expect(clientSrc.includes('beforeunload')).toBe(true)
+    // 问题叙事（哪一类壳吞掉了否决、版本轮次）不进对外文本
+    for (const rel of ['README.md', 'README.zh.md']) {
+      expect({ file: rel, noIncidentNarrative: /second round|第二轮|external report|0\.9\.0-class/.test(readFlat(rel)) }).toEqual({ file: rel, noIncidentNarrative: false })
     }
     // README 是折行的 markdown（还带 `> ` 引用前缀）⇒ 内容断言一律在"折叠空白 +
     // 去引用前缀"的视图上做，避免折行位置一变就假红。
-    // 2026-09-20 口径更正：桌面端**不武装的是宿主原生确认框**；真正生效的是**页面自绘确认门**
+    // 口径更正：桌面端**不武装的是宿主原生确认框**；真正生效的是**页面自绘确认门**
     //（它确实会 preventDefault）。下面两句钉的就是更正后的措辞。
-    expect(readFlat('README.md')).toContain("desktop never arms the host's native confirm dialog")
-    expect(readFlat('README.zh.md')).toContain('**桌面端一律不武装宿主原生确认框**')
-    // 新增事实锁：自绘确认门 + "壳不经过页面"的已知限制（少了任一条都要红）
-    expect(readFlat('README.zh.md')).toContain('页面自绘确认门')
+    expect(readFlat('README.md')).toContain('jointly by the host and the page')
+    expect(readFlat('README.md')).toContain("does **not** use the host's native dialog")
+    expect(readFlat('README.md')).toContain('own in-page confirmation')
+    expect(readFlat('README.zh.md')).toContain('由宿主与页面共同决定')
+    expect(readFlat('README.zh.md')).toContain('桌面端**不弹宿主原生框**')
+    expect(readFlat('README.zh.md')).toContain('页面内自绘确认')
+    expect(readFlat('README.zh.md')).toContain('Esc = 取消')
+    // "壳不经过页面"的已知限制（少了这条要红）
     expect(readFlat('README.zh.md')).toContain('壳提供 seam')
-    expect(readFlat('README.md')).toContain('page-drawn confirm gate')
     expect(readFlat('README.md')).toContain('needs a shell seam')
-    // 短码/名字那条也得上对外文本（0.4.31 已上线）
-    expect(readFlat('README.zh.md')).toContain('opxxxopxxx')
-    expect(readFlat('README.md')).toContain('opxxxopxxx')
-    // 2026-09-18（对抗复核追加）：文本必须写明"退出入口随版本/平台而变"，
-    // 而不是把某一条入口（app.quit / app.exit）当作全部事实 —— 这正是本 issue 的病因。
-    expect(readFlat('README.md')).toContain('by version/platform')
-    expect(readFlat('README.zh.md')).toContain('退出入口随版本/平台而变')
+    // 谱系标识/名字那条也得上对外文本（稳定标识由会话 id 确定性导出）
+    expect(readFlat('README.zh.md')).toContain('稳定标识由会话 id 确定性导出')
+    expect(readFlat('README.md')).toContain('derived deterministically from the session id')
+    // 内部限定（版本/平台口径）留在源码侧，不进对外文本
     expect(readFlat('lib/close-guard-client.js')).toContain('退出入口随版本/平台而变')
   })
 
@@ -549,10 +567,10 @@ describe('对外文本不再把未覆盖的路径写成结论', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 第二轮（2026-09-18 复测仍卡死）：两道判据 + 自救开关，都要有文本、且要能被验
+  // 第二轮：两道判据 + 自救开关，都要有文本、且要能被验
   // -------------------------------------------------------------------------
   it('第二轮事实逐条钉住：两道判据 / 请求级证据（含 Referer）/ 自救开关（删任一即红）', () => {
-    // ① 设置项文案必须给出自救开关（报告人正是靠它先恢复的）
+    // ① 设置项文案必须给出自救开关
     const client = readRepoFile('lib/client.js')
     expect(client).toContain('桌面端退不掉时先关这一项')
     expect(client).toMatch(/turn this off first/i)
@@ -561,20 +579,17 @@ describe('对外文本不再把未覆盖的路径写成结论', () => {
     expect(flatClient).toContain('判据是两道')
     expect(flatClient).toContain('一票否决')
     expect(flatClient).toMatch(/no Electron in the UA, no dsh-desktop- in the URL/i)
-    // ③ README（中/英）都要写明补了什么判据、为什么（"完全没有证据"曾被归成浏览器页）
+    // ③ README（中/英）只写用户可见口径（内部判据 / 请求级证据不进对外文本）
     const zh = readRepoFile('README.zh.md').replace(/`/g, '').replace(/\s+/g, ' ').replace(/>\s?/g, '')
-    expect(zh).toContain('两道判据都成立才武装')
-    expect(zh).toContain('一票否决')
-    expect(zh).toContain('dsh-desktop-')
-    expect(zh).toContain('完全没有证据')
-    expect(zh).toContain('Referer')  // 生产可达的那条通道必须在文本里写明
+    expect(zh).toContain('由宿主与页面共同决定')
+    expect(zh).toContain('不弹宿主原生框')
+    expect(zh).toContain('页面内自绘确认')
+    expect(zh).toContain('Esc = 取消')
     expect(zh).toContain('桌面端退不掉时')
     const en = readRepoFile('README.md').replace(/`/g, '').replace(/\s+/g, ' ').replace(/>\s?/g, '')
-    expect(en).toContain('Both criteria must hold')
-    expect(en.toLowerCase()).toContain('veto')
-    expect(en).toContain('dsh-desktop-')
-    expect(en).toContain('no evidence at all')
-    expect(en).toMatch(/Referer/i)
+    expect(en).toContain('jointly by the host and the page')
+    expect(en).toContain("does **not** use the host's native dialog")
+    expect(en).toContain('own in-page confirmation')
     expect(en).toMatch(/turning off .*close guard.*recovers/i)
   })
 

@@ -3,7 +3,7 @@
  *
  * A tiny React-SEMANTICS renderer for the tests that need a real render phase.
  *
- * Why it exists: the white-screen incident (2026-09-15) was a throw inside a
+ * Why it exists: the white-screen regression  was a throw inside a
  * `useState` UPDATER — React runs updaters during the NEXT RENDER, so the error
  * is a render-phase error; without an error boundary React unmounts the host's
  * whole tree and the GUI goes blank. A `createElement`-only fake (which never
@@ -13,7 +13,7 @@
  *
  *   - hooks are kept per render ORDER (stable for a deterministic tree),
  *   - pending `useState` updaters run DURING the next render (so a throwing
- *     updater surfaces exactly like on the real machine),
+ *     updater surfaces exactly like on the host),
  *   - `useEffect` callbacks run after the render, deps-compared,
  *   - class components whose type declares `getDerivedStateFromError` catch any
  *     render error of their subtree, call `componentDidCatch` and re-render —

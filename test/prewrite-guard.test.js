@@ -5,7 +5,7 @@
  *    disabled / degraded).
  * 2. Real integration: the guard wired to the actual `dsh-log-contract`
  *    `createPreWriter` — a well-formed marker envelope passes, a corrupt one
- *    (the 8-25 incident's shape: empty sourceEventSeqs) is rejected.
+ *    (the malformed-replace shape: empty sourceEventSeqs) is rejected.
  * 3. The host-core hook: `hooks.validateMarker` runs before the append and a
  *    rejecting guard aborts the write (session unchanged, op fails).
  */
@@ -32,7 +32,7 @@ function validEnvelope(session) {
   }
 }
 
-describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮蔽数判定）', () => {
+describe('快照点守卫（绝对遮蔽数判定）', () => {
   // 会话工厂：n 个 surface 节点 + header(不算节点)
   // ⚠️ 事件必须带**真实消息形状**(user/message 带 content、assistant/message 带
   // message):写入器现在按官方口径给被遮蔽区间估令牌价(estimateMessage 口径),
@@ -69,7 +69,7 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     return env
   }
 
-  it('遮蔽 ≤ 40 节点(绝对阈值):即使大会话也不拦(2026-09-01 编辑最后一条修复)', async () => {
+  it('遮蔽 ≤ 40 节点(绝对阈值):即使大会话也不拦(编辑最后一条修复)', async () => {
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ prewriterFactory: factory })
     // 大会话(2500 事件)但只遮蔽 12 个节点 = 编辑最后一条 → 不拦
@@ -79,15 +79,43 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('遮蔽 > 40 节点 + 大会话(>2000 事件)→ 抛 rollback-guide(回档请求拒绝落盘)', async () => {
+  it('口径①(c):超阈值但未达极端 ⇒ **告警不拦**(50 遮蔽 / 2500 事件,占比 0.02)', async () => {
     const log = vi.fn()
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ log, prewriterFactory: factory })
     const session = hugeSession(60, 2500)
-    const envelope = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49) // 遮蔽 50 > 40
+    const envelope = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49) // 遮蔽 50 > 1000? 不, >40 但 <1000 ⇒ 阈值内
+    expect(rollbackShareOf(session, envelope)).toBe(0) // 默认阈值已升到 1000 ⇒ 阈值内直接放行
+    await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
+  })
+
+  it('口径①(c):**超 1000 阈值但非极端** ⇒ 写日志 + 继续(不抛错)', async () => {
+    const log = vi.fn()
+    const factory = () => ({ validateAppend: () => ({ ok: true }) })
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    const session = hugeSession(3000, 40000) // 大会话
+    const envelope = replaceEnvelope(Array.from({ length: 1500 }, (_, i) => i), 0, 1499) // 1500 > 1000,占比 0.0375
     expect(rollbackShareOf(session, envelope)).toBeGreaterThan(0)
-    await expect(guard.validateMarkerAppend(session, envelope)).rejects.toMatchObject({ code: 'rollback-guide' })
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('rollback guard'))
+    await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('告警不拦'))
+  }, 60_000)  // 大会话夹具(3000 节点/4 万事件)在 CI 慢机上会超 5s 默认超时 ⇒ 显式放宽
+
+  it('口径①(d):**极端**(遮蔽>2000 且 占比>0.9) ⇒ 仍拦,且文案给出路', async () => {
+    const log = vi.fn()
+    const factory = () => ({ validateAppend: () => ({ ok: true }) })
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    const session = hugeSession(2100, 2100)
+    const envelope = replaceEnvelope(Array.from({ length: 2050 }, (_, i) => i), 0, 2049)
+    expect(rollbackShareOf(session, envelope)).toBeGreaterThan(0.9)
+    await expect(guard.validateMarkerAppend(session, envelope)).rejects.toMatchObject({ code: 'rollback-guide', needsConfirm: true })
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('极端回档'))
+  }, 60_000)  // 同上:极端档夹具同样重
+
+  it('口径①(a):阈值可由 DSH_RETRACE_ROLLBACK_MIN_SHADOWED 覆盖', async () => {
+    const { rollbackMinShadowedOf } = require('../lib/prewrite-guard.js')
+    expect(rollbackMinShadowedOf({})).toBe(1000)
+    expect(rollbackMinShadowedOf({ DSH_RETRACE_ROLLBACK_MIN_SHADOWED: '5000' })).toBe(5000)
+    expect(rollbackMinShadowedOf({ DSH_RETRACE_ROLLBACK_MIN_SHADOWED: 'abc' })).toBe(1000)
   })
 
   it('遮蔽 > 40 节点但小会话(<2000 事件)→ 不拦(短会话豁免)', async () => {
@@ -181,19 +209,21 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     await expect(guard.validateMarkerAppend(session, env)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('非 restore 的 遮蔽 >40 节点 仍被拦(问题 A 不误伤编辑)', async () => {
+  it('非 restore 但遮蔽在阈值内(50 ≤ 1000) ⇒ 不拦(口径①(a) 阈值上调后的新边界)', async () => {
     const factory = () => ({ validateAppend: () => ({ ok: true }) })
     const guard = createMarkerGuard({ prewriterFactory: factory })
     const session = hugeSession(60, 2500)
     const env = replaceEnvelope(Array.from({ length: 50 }, (_, i) => i), 0, 49)
     expect(isRestoreMarker(env)).toBe(false)
-    await expect(guard.validateMarkerAppend(session, env)).rejects.toMatchObject({ code: 'rollback-guide' })
+    await expect(guard.validateMarkerAppend(session, env)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('导出常量:ROLLBACK_MIN_SHADOWED=40, ROLLBACK_MIN_EVENTS=2000', () => {
-    const { ROLLBACK_MIN_SHADOWED, ROLLBACK_MIN_EVENTS } = require('../lib/prewrite-guard.js')
-    expect(ROLLBACK_MIN_SHADOWED).toBe(40)
+  it('导出常量:ROLLBACK_MIN_SHADOWED=1000(口径①a), ROLLBACK_MIN_EVENTS=2000, 极端线 0.9/2000', () => {
+    const { ROLLBACK_MIN_SHADOWED, ROLLBACK_MIN_EVENTS, ROLLBACK_EXTREME_RATIO, ROLLBACK_EXTREME_NODES } = require('../lib/prewrite-guard.js')
+    expect(ROLLBACK_MIN_SHADOWED).toBe(1000)
     expect(ROLLBACK_MIN_EVENTS).toBe(2000)
+    expect(ROLLBACK_EXTREME_RATIO).toBe(0.9)
+    expect(ROLLBACK_EXTREME_NODES).toBe(2000)
   })
 })
 
@@ -202,7 +232,7 @@ describe('createMarkerGuard (fake prewriter)', () => {
     const factory = vi.fn(() => ({ validateAppend: () => ({ ok: true }) }))
     const guard = createMarkerGuard({ prewriterFactory: factory })
     await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toEqual({ t1Ok: true })
-    // 2026-09-14：显式传 header（版本单一真相）；缺 header 时由契约按形状推断。
+    // 显式传 header（版本单一真相）；缺 header 时由契约按形状推断。
     expect(factory).toHaveBeenCalledWith({ events: [], header: null })
   })
 
@@ -228,6 +258,62 @@ describe('createMarkerGuard (fake prewriter)', () => {
       code: 'marker-rejected',
     })
     expect(log).toHaveBeenCalledWith(expect.stringContaining('S5'))
+  })
+
+  // (独立核查记录 1665): E6/E9 是**内核版本漂移型误报** —— 判据照
+  //   dsh-session@0.1.5-rc.1 写, 现役内核 0.1.7-rc.2 已改(system/message 用
+  //   source.kind==='system-prompt'; tool/result 的 role 是 'tool')。实测方向相反:
+  //   内核 ACCEPT 的行被 E9 报违规、内核 THROW 的行被 E9 放过。
+  it('剔除版本漂移误报: 仅 E6/E9 时不得拒写(否则编辑/撤回会被误拦)', async () => {
+    const factory = () => ({
+      validateAppend: () => ({
+        ok: false,
+        violations: [
+          { id: 'E9', severity: 'error', message: '系统提示词行：system/message 必须带 plugin source' },
+          { id: 'E6', severity: 'error', message: 'role 必须为 "user"，实际 tool' },
+        ],
+      }),
+      validateEdit: () => ({ violations: [] }),
+    })
+    const log = vi.fn()
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toMatchObject({ t1Ok: true })
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('内核版本漂移'))
+  })
+
+  it('剔除非漂移规则: E9 与真实规则并存时, 仍按真实规则拒写(不能顺带放过)', async () => {
+    const factory = () => ({
+      validateAppend: () => ({
+        ok: false,
+        violations: [
+          { id: 'E9', severity: 'error', message: 'system/message 必须带 plugin source' },
+          { id: 'S5', severity: 'error', message: 'missing seq' },
+        ],
+      }),
+      validateEdit: () => ({ violations: [] }),
+    })
+    const log = vi.fn()
+    const guard = createMarkerGuard({ log, prewriterFactory: factory })
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).rejects.toMatchObject({
+      code: 'marker-rejected',
+    })
+    expect(log.mock.calls.flat().join(' ')).toContain('S5')
+  })
+
+  it('seq 重排场景: 基线里的 E9 因 message 含 seq 而键不同, 也不得因此拒写', async () => {
+    // 这是最危险的一条: `id|message` 是基线差分的键, message 里含 seq ⇒ seq 一变,
+    //   既有违规就被归入 ours 并以 ERROR 拒写(marker-rejected)。
+    const factory = () => ({
+      validateAppend: () => ({
+        ok: false,
+        violations: [{ id: 'E9', severity: 'error', message: '(seq 12) system/message 必须带 plugin source' }],
+      }),
+      validateEdit: () => ({
+        violations: [{ id: 'E9', severity: 'error', message: '(seq 8) system/message 必须带 plugin source' }],
+      }),
+    })
+    const guard = createMarkerGuard({ log: vi.fn(), prewriterFactory: factory })
+    await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toMatchObject({ t1Ok: true })
   })
 
   it('wraps a throwing prewriter as marker-rejected', async () => {
@@ -279,7 +365,7 @@ describe('createMarkerGuard (real dsh-log-contract integration)', () => {
     await expect(guard.validateMarkerAppend({ id: 's1', events }, envelope)).resolves.toEqual({ t1Ok: true })
   })
 
-  it('rejects the 8-25 incident shape: empty sourceEventSeqs on a replace', async () => {
+  it('rejects the malformed-replace shape: empty sourceEventSeqs on a replace', async () => {
     const events = realLog()
     const { createPreWriter } = await import('dsh-log-contract')
     const guard = createMarkerGuard({ prewriterFactory: createPreWriter })
@@ -300,17 +386,18 @@ describe('host-core hooks.validateMarker', () => {
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents, { validateMarker }))
     const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(true)
-    // 两阶段:pre(业务闸)+ pair(计划中的两段:审计按预言 seq 合成 + 载体一起校验)
+    // 两阶段:pre(业务闸)+ pair(计划中的两段:审计按预期 seq 合成 + 载体一起校验)
     expect(validateMarker).toHaveBeenCalledTimes(2)
     const [calledSession, preEnvelope, preExtra] = validateMarker.mock.calls[0]
     expect(calledSession).toBe(session)
     expect(preExtra?.phase).toBe('pre')
     expect(preEnvelope.type).toBe('user/message')
-    expect(preEnvelope.surfaceOp).toEqual({ op: 'replace', start: 0, end: 1 })
+    // 现役内核 v4(SESSION_FORMAT_VERSION=4):钩子收到的信封里区间键名 = startSeq/endSeq
+    expect(preEnvelope.surfaceOp).toEqual({ op: 'replace', startSeq: 0, endSeq: 1 })
     expect(preEnvelope.sourceEventSeqs).toEqual([0, 1])
     const [, pairEnvelope, pairExtra] = validateMarker.mock.calls[1]
     expect(pairExtra?.phase).toBe('pair')
-    expect(pairEnvelope.sourceEventSeqs).toEqual([2, 0, 1]) // 首元素 = 审计段 seq(预言值 == 真实值)
+    expect(pairEnvelope.sourceEventSeqs).toEqual([2, 0, 1]) // 首元素 = 审计段 seq(预期值 == 真实值)
     expect(pairExtra?.auditSeq).toBe(2)
     expect(pairExtra?.audit?.shadowedSeqs).toEqual([0, 1])
     // 校验全部发生在写入之前;写完后审计段确实落在 seq 2(两段成对)

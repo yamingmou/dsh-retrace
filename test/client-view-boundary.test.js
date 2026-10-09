@@ -1,9 +1,9 @@
 /**
  * dsh-retrace · test/client-view-boundary.test.js
  *
- * 白屏事故回归 (2026-09-15 real machine: 「点了收起。直接白屏了」).
+ * 回归:折叠交互不得导致空白视图。
  *
- * The incident: the 收起 chip called the view's `toggle`, whose `setExpanded`
+ * The regression: the 收起 chip called the view's `toggle`, whose `setExpanded`
  * updater referenced an UNBOUND `row`. React runs updaters during the next
  * render, so the ReferenceError was a RENDER error; with no error boundary React
  * unmounted the host's whole tree and the entire GUI went blank.
@@ -13,7 +13,7 @@
  * updaters in render and error boundaries) and lock:
  *   ① every row kind has a FINITE height (the row model's single source),
  *   ② an out-of-range window can never render a non-existent row,
- *   ③ the collapse round trip does not throw (the exact incident path),
+ *   ③ the collapse round trip does not throw (the exact regression path),
  *   ④ the panel error boundary catches a throwing child and keeps the app alive.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -48,7 +48,7 @@ beforeAll(async () => {
   globalThis.document = globalThis.document ?? { querySelector: () => null, addEventListener() {}, removeEventListener() {} }
   globalThis.window = globalThis.window ?? { addEventListener() {}, removeEventListener() {}, innerHeight: 900 }
   // The view reads its digest + outline through `GET /summaries` (the same read
-  // path the real machine uses). Serve it, plus the routes the mount effects hit.
+  // path the host uses). Serve it, plus the routes the mount effects hit.
   const asJson = (value) => Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(value) })
   globalThis.fetch = (url) => {
     const target = String(url)
@@ -224,7 +224,7 @@ describe('越界窗口不会渲染不存在的行', () => {
   })
 })
 
-describe('收起往返不崩（白屏事故的真机路径）', () => {
+describe('收起往返不崩（读档点视图回归）', () => {
   const chips = (treeRoot) => collectElements(treeRoot)
     .filter((el) => String(el.props?.className ?? '').includes('dsh-rt-tree-btn'))
 
@@ -235,7 +235,7 @@ describe('收起往返不崩（白屏事故的真机路径）', () => {
     const foldChip = chips(mounted).find((el) => textOf(el).includes(zh['tree.changes'].split('{')[0]))
     expect(foldChip, '默认应收起，留一个折叠入口').toBeDefined()
 
-    // 点击展开（事故路径：updater 在下一次渲染里执行）
+    // 点击展开（问题路径：updater 在下一次渲染里执行）
     expect(() => { foldChip.props.onClick(); mini.flush() }).not.toThrow()
     const opened = mini.tree()
     expect(textOf(opened)).toContain('宿主其他面板')
@@ -453,7 +453,7 @@ describe('面板级错误边界：坏的是这一块，不是整页', () => {
 
   it('注册处必须把视图包在边界里（源码守卫）', () => {
     const source = readFileSync(CLIENT_SOURCE_PATH, 'utf8')
-    // One shared factory wraps every surface (2026-09-15 收尾).
+    // One shared factory wraps every surface.
     expect(source).toContain("}, withPanelBoundary(RetraceView, 'view.errorTitle')))")
     expect(source).toContain('const withPanelBoundary = (Component, titleKey) =>')
     expect(source).toContain('getDerivedStateFromError')

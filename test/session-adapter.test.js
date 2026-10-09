@@ -1,5 +1,5 @@
 /**
- * Session adapter unit tests (2026-09-01).
+ * Session adapter unit tests.
  *
  * DSH 会话 → 业务输入(messages + shadows)的翻译层:
  * 日志客观记录,适配器翻译,业务层投影——三层分离。

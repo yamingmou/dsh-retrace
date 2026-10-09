@@ -1,5 +1,5 @@
 /**
- * Adapter layer unit tests (2026-09-01).
+ * Adapter layer unit tests.
  *
  * 适配器层:业务层(message-list/守卫)与平台解耦——换架构时实现新的
  * EventReader/ReplaceWriter 即可,业务逻辑零改动。
@@ -7,12 +7,12 @@
 import { describe, it, expect } from 'vitest'
 import { createAdapter, NULL_ADAPTER, assertSpanShape, assertSpanResult, assertMarkerShape, assertEventListShape, CONTRACT_VIOLATION } from '../lib/adapter/contract.js'
 
-import { computeSpan, computeSpanProbe, isRoundBoundary, roundPromptOf, readEventsFromFile, dshAdapter } from '../lib/adapter/dsh.js'
+import { computeSpan, computeSpanProbe, isRoundBoundary, roundPromptOf, readEventsFromFile, dshAdapter, surfaceNodeSeqs } from '../lib/adapter/dsh.js'
 import { SPAN_STATUS, spanMissArgsOf, spanAt, spanForSeq } from '../lib/span-semantics.js'
 import { foldSurface } from '@deepseek-ai/dsh-session'
 
 // 通用事件夹具(3 轮对话)——surface 候选须带 surfaceOp:'append'(官方 foldSurface 语义,
-// computeSpan 现在重放 foldSurface 得真实 nodes,2026-09-07 修复后必需)
+// computeSpan 现在重放 foldSurface 得真实 nodes,修复后必需)
 const events = [
   { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
   { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: 'yo' }] } } },
@@ -122,7 +122,7 @@ describe('adapter/dsh computeSpan · 显式状态枚举(null 不再承载四种�
     const marked = [
       { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
       { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: 'yo' }] } } },
-      { seq: 2, type: 'assistant/message', surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [0, 1], data: { turn: 1, message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 0, text: 'hi' } } },
+      { seq: 2, type: 'user/message', surfaceOp: { op: 'replace', startSeq: 0, endSeq: 1 }, sourceEventSeqs: [0, 1], data: { id: 'retrace-recall-x', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'model', provider: 'p', model: 'm' } } },
     ]
     // 按 seq 与按 messageId 两条路径都给 already-shadowed(不再只是 null)
     expect(computeSpan(marked, 0).status).toBe('already-shadowed')
@@ -210,7 +210,7 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 回�
       { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
       { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: 'yo' }] } } },
       // marker 遮蔽 [0..1](轮1),replace 节点 seq 2 插入位置 0 → nodes 非 seq 单调
-      { seq: 2, type: 'assistant/message', surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [0, 1], data: { turn: 1, message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 0, text: 'hi' } } },
+      { seq: 2, type: 'user/message', surfaceOp: { op: 'replace', startSeq: 0, endSeq: 1 }, sourceEventSeqs: [0, 1], data: { id: 'retrace-recall-x', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'model', provider: 'p', model: 'm' } } },
       { seq: 3, type: 'user/message', surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: 'again' }] } },
       { seq: 4, type: 'assistant/message', surfaceOp: 'append', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: 'ok' }] } } },
     ]
@@ -230,9 +230,9 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 回�
       expect(result.status).toBe(SPAN_STATUS.OK)
       const span = result.span
       const marker = {
-        type: 'assistant/message', seq: 5,
-        data: { turn: 1, message: { id: 'retrace-recall-test', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 3, text: 'x' } },
-        surfaceOp: { op: 'replace', start: span.start, end: span.end },
+        type: 'user/message', seq: 5,
+        data: { id: 'retrace-recall-test', role: 'user', content: [{ type: 'text', text: 'x' }], source: { kind: 'model', provider: 'p', model: 'm' } },
+        surfaceOp: { op: 'replace', startSeq: span.start, endSeq: span.end },
         sourceEventSeqs: span.shadowedSeqs,
       }
       expect(() => foldSurface([...events, marker])).not.toThrow() // S4/S8 不拒
@@ -265,7 +265,7 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 回�
       { seq: 3, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a3', content: [] } } },
       { seq: 4, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a4', content: [] } } },
       // marker seq 5 插到 [1..2] 的位置 → nodes = [0, 5, 3, 4](非 seq 单调)
-      { seq: 5, type: 'assistant/message', surfaceOp: { op: 'replace', start: 1, end: 2 }, sourceEventSeqs: [1, 2], data: { turn: 1, message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 1, text: '' } } },
+      { seq: 5, type: 'user/message', surfaceOp: { op: 'replace', startSeq: 1, endSeq: 2 }, sourceEventSeqs: [1, 2], data: { id: 'retrace-recall-x', role: 'user', content: [{ type: 'text', text: 'x' }], source: { kind: 'model', provider: 'p', model: 'm' } } },
     ]
     const result = computeSpan(events, 5, 'round') // 目标 = marker 自身(位置 1;向前无轮边界)
     expect(result.status).toBe(SPAN_STATUS.OK)
@@ -275,9 +275,9 @@ describe('adapter/dsh computeSpan · 官方 foldSurface nodes（2026-09-07 回�
     expect(() => assertSpanShape(result.span, 'test')).not.toThrow()
     // 官方重放接受该区间(按位置 startIdx=1 <= endIdx=3)
     const marker = {
-      type: 'assistant/message', seq: 6,
-      data: { turn: 1, message: { id: 'retrace-recall-y', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 5, text: '' } },
-      surfaceOp: { op: 'replace', start: result.span.start, end: result.span.end },
+      type: 'user/message', seq: 6,
+      data: { id: 'retrace-recall-y', role: 'user', content: [{ type: 'text', text: 'y' }], source: { kind: 'model', provider: 'p', model: 'm' } },
+      surfaceOp: { op: 'replace', startSeq: result.span.start, endSeq: result.span.end },
       sourceEventSeqs: result.span.shadowedSeqs,
     }
     expect(() => foldSurface([...events, marker])).not.toThrow()
@@ -369,7 +369,7 @@ describe('adapter/dsh computeSpanProbe · prompt(round 起点 user 原文)', () 
     const evts = [
       { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: '影子轮旧输入' }] } },
       { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: '影子轮回复' }] } } },
-      { seq: 2, type: 'assistant/message', surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [0, 1], data: { turn: 1, message: { id: 'retrace-recall-x', content: [], source: { kind: 'model', provider: 'p', model: 'm' } }, editor: { targetSeq: 0, text: '' } } },
+      { seq: 2, type: 'user/message', surfaceOp: { op: 'replace', startSeq: 0, endSeq: 1 }, sourceEventSeqs: [0, 1], data: { id: 'retrace-recall-x', role: 'user', content: [{ type: 'text', text: 'recalled' }], source: { kind: 'model', provider: 'p', model: 'm' } } },
       { seq: 3, type: 'user/message', surfaceOp: 'append', data: { id: 'u2', source: { kind: 'user' }, content: [{ type: 'text', text: '当前轮真实输入' }] } },
       { seq: 4, type: 'assistant/message', surfaceOp: 'append', data: { turn: 2, message: { id: 'a2', content: [{ type: 'text', text: '当前轮回复' }] } } },
     ]

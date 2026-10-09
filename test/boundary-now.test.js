@@ -1,7 +1,7 @@
 /**
  * dsh-retrace · test/boundary-now.test.js
  *
- * READ-SIDE 「现在这条」 (lib/boundary-now.js). User feedback 2026-09-15: an entry
+ * READ-SIDE 「现在这条」 (lib/boundary-now.js). User feedback an entry
  * said WHAT it replaced but never WHERE it was replaced from, so the reader could
  * not tell what the entry IS. The anchor is the message the action left behind —
  * our own `retrace-resend-*` node for an edit, the host's new assistant reply for
@@ -99,7 +99,7 @@ describe('boundary-now — 「现在这条」是从日志读出来的，不是�
       // 普通事件也会引用自己的来源（tool/result → tool/call）：不算遮蔽
       { seq: 2, type: 'tool/result', time: T0 + 2, surfaceOp: 'append', sourceEventSeqs: [1], data: { id: 'tool-x' } },
       // 别的插件的折叠：一次替换上千条 —— 不算"我们的遮蔽"
-      { seq: 3, type: 'user/message', time: T0 + 3, surfaceOp: { op: 'replace', startSeq: 0, endSeq: 2 }, sourceEventSeqs: [0, 1, 2], data: { id: 'fix-line-fold-v0-1' } },
+      { seq: 3, type: 'user/message', time: T0 + 3, surfaceOp: { op: 'replace', startSeq: 0, endSeq: 2 }, sourceEventSeqs: [0, 1, 2], data: { id: 'interop-fold-v0-1' } },
       // 官方压缩 checkpoint：同理（上下文压缩 ≠ 对话里没有这条了）
       { seq: 4, type: 'user/message', time: T0 + 4, surfaceOp: { op: 'replace', startSeq: 0, endSeq: 3 }, sourceEventSeqs: [0, 1, 2, 3], data: { id: 'compact-4', source: { kind: 'plugin', plugin: 'compact' } } },
       // 我们自己的替换：算

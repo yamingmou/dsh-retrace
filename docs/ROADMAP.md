@@ -136,4 +136,4 @@ dsh-retrace 的位置不是「又一个同类工具」，而是：
 
 - [README](../README.md)（dsh-retrace 安装与使用）
 - [CHANGELOG](../CHANGELOG.md)（版本记录）
-- [dsh-log-contract](https://github.com/yamingmou/dsh-log-contract)（业务层「医生」组件：体检/修复）
+- `dsh-log-contract`（业务层「医生」组件：体检/修复）

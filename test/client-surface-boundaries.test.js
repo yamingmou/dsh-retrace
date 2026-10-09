@@ -1,9 +1,9 @@
 /**
  * dsh-retrace · test/client-surface-boundaries.test.js
  *
- * 2026-09-15 白屏事故的收尾：**每一个** React 注册面都要有自己的错误边界。
+ * 白屏问题的收尾：**每一个** React 注册面都要有自己的错误边界。
  *
- * 事故本身（读档点视图的 `setExpanded` updater 引用未绑定变量）已在
+ * 问题本身（读档点视图的 `setExpanded` updater 引用未绑定变量）已在
  * client-view-boundary.test.js 复现并锁死；这里锁"其余注册面"：
  *   ① 设置行（settings.general.item）
  *   ② 聊天节点行（conversation.chat.node：user-actions / retrace-reference / recall-marker）

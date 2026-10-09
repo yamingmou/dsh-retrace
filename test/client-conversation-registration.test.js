@@ -1,5 +1,5 @@
 /**
- * 2026-09-14 事故 2 回归：会话 Definition 的注册入口。
+ * 问题 2 回归：会话 Definition 的注册入口。
  *
  * 现场：插件装好后客户端**没有编辑和撤回**。根因不是"服务名缺失"，而是**注册入口取错
  * 了一层**：当前基座的 `uiConversation`（UiConversation 类）把注册表挂在 `.events` 上，
@@ -65,7 +65,7 @@ afterEach(() => {
   __setMessageEditorWire(null)
 })
 
-describe('会话 Definition 注册入口（2026-09-14 事故 2 回归）', () => {
+describe('会话 Definition 注册入口（注册回归）', () => {
   it('新基座形态：入口在服务的 .events 上（服务自身没有 register）→ 四个 Definition 全部注册', async () => {
     const register = vi.fn(() => vi.fn())
     // 真实 UiConversation 的公开面：没有 register，只有 events/views/binding/…

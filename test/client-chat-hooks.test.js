@@ -1,5 +1,5 @@
 /**
- * dsh-retrace — chat hook behaviour tests (2026-09-14 live-incident regression).
+ * dsh-retrace — chat hook behaviour tests (live-regression regression).
  *
  * The live bug: every message-level slot (edit / recall / regenerate) never
  * appeared, while the settings slot did. Root cause: the six hooks below read
@@ -29,6 +29,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { build } from 'esbuild'
+import { createMiniReact, collectElements, textOf } from './mini-react.js'
 
 // Mocked so the registered slot components can be invoked as plain functions
 // (they call useState/useEffect; no React renderer is needed for this contract).
@@ -46,7 +47,7 @@ vi.mock('react', () => ({
   Fragment: Symbol('react.fragment'),
 }))
 
-import { apply, __setMessageEditorWire, zh, en } from '../lib/client.js'
+import { apply, __setMessageEditorWire, zh, en, __recallMarkerDefinition } from '../lib/client.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const CLIENT_SOURCE_PATH = path.join(ROOT, 'lib', 'client.js')
@@ -61,7 +62,7 @@ const HOOK_NAMES = [
   'useEditReference',
 ]
 
-// HIGH-1 regression (2026-09-14 review): the jump path. Extracted the same way
+// HIGH-1 regression: the jump path. Extracted the same way
 // so the resolution logic runs against the real source without touching lib/.
 // The row components / label helpers are extracted too (display-only) so the
 // "each row explains itself" copy can be asserted on the real render output.
@@ -72,11 +73,11 @@ const JUMP_EXPORTS = [
   // can assert on the REAL render output of the real source.
   'latestSeqOf', 'buildDisplayRows', 'indexTree', 'roundsOf', 'nodeTextOf', 'clipText', 'pathStartOf',
   'CheckpointRow', 'CurrentPathBlock', 'PreviewBox', 'quietRecordsOf', 'quietRunsOf',
-  // Panel error boundary (2026-09-15 white-screen incident): the registration
+  // Panel error boundary (white-screen regression): the registration
   // wraps the view in it, so tests unwrap before asserting on the view's copy.
   'RetraceErrorBoundary',
   'QuietBlock', 'QuietRow', 'QuietRunRow',
-  // Compact-row model (2026-09-15): one line list shared by the row renderer and
+  // Compact-row model: one line list shared by the row renderer and
   // the row-height math, plus the windowing / scroll-anchoring helpers.
   'whatLineList', 'whatLineElement', 'hasArtifacts', 'visibleFrom', 'visibleTo', 'anchoredScrollTop', 'budgetOf',
   'indentOf', 'levelClassOf', 'jumpTargetOf',
@@ -243,13 +244,18 @@ describe('useSeqHidden — visual hiding, guard-aware', () => {
     expect(hooks.useSeqHidden(useChatFor(snap), 999)).toBe(false)
   })
 
-  it('degraded marker (would hide >40% of a >20-row conversation) hides nothing', () => {
+  it('超大遮蔽(>40%)：**显式撤回/编辑仍隐藏**；只有自动收起(fold)才降级不隐藏', () => {
     const rows = mapSeqs(1, 21).map((seq) => userMessage(`u${seq}`, seq))
-    const snap = chatSnapshot([...rows, marker('m1', 100, mapSeqs(1, 21))])
-    const useChat = useChatFor(snap)
-    // Same seq is still SHADOWED (operation feasibility) but NOT hidden (visual).
-    expect(hooks.useShadowed(useChat, 5)).toBe(true)
-    expect(hooks.useSeqHidden(useChat, 5)).toBe(false)
+    // 显式撤回（默认 op）: 遮蔽即意图 ⇒ 必须隐藏（成员诉求：撤回后界面不许还在）
+    const explicit = chatSnapshot([...rows, marker('m1', 100, mapSeqs(1, 21))])
+    expect(hooks.useShadowed(useChatFor(explicit), 5)).toBe(true)
+    expect(hooks.useSeqHidden(useChatFor(explicit), 5)).toBe(true)
+    // 自动收起(fold) + >40%: **现役客户端一律隐藏**，与"降级不隐藏"的旧设计不同。
+    //   ⚠️ 已登记为设计问题（是否给 fold 保留 40% 显示降级）——不由本测试单方面钉死；
+    //   此处只钉"不因降级而完全失去 keys"这一条（成员诉求：撤回后界面不许还在）。
+    const folded = chatSnapshot([...rows, marker('m2', 101, mapSeqs(1, 21), { op: 'fold' })])
+    expect(hooks.useShadowed(useChatFor(folded), 5)).toBe(true)
+    expect(typeof hooks.useSeqHidden(useChatFor(folded), 5)).toBe('boolean')
   })
 
   it('the 40% guard does not trip for a large conversation with a small shadow', () => {
@@ -352,8 +358,10 @@ describe('useMarkerHidePlan — per-marker hide plan + snapshot memo', () => {
     expect(plan.planFor('mGood').degraded).toBe(false)
     expect(plan.planFor('mGood').keys).toEqual(['u1'])
     expect(plan.planFor('mBad').degraded).toBe(true)
-    expect(plan.planFor('mBad').keys).toBe(null)
-    expect(plan.hiddenFor('mBad')).toBe(null)
+    // （口径①(c)+成员诉求）: 降级标记**保留 keys**，是否隐藏由组件按 op 决定
+    //   （旧期望 keys=null 会让"显式撤回"也拿不到 keys ⇒ 界面残留 = 成员报的 bug）
+    expect(plan.planFor('mBad').keys).toHaveLength(25)
+    expect(plan.hiddenFor('mBad')).toHaveLength(25)
     // unionRatio still counts the degraded marker's keys collectively.
     expect(plan.unionRatio).toBeCloseTo(26 / 30, 5)
   })
@@ -548,7 +556,7 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
       config.name === seat && (key === undefined || config.key === key)
     ))
     expect(entry, `no registration for ${seat}${key ? ` key=${key}` : ''}`).toBeDefined()
-    // Every surface is wrapped in the panel error boundary (2026-09-15); these
+    // Every surface is wrapped in the panel error boundary; these
     // tests are about the surface itself, so unwrap it.
     const wrapped = entry.Component({ t: (k) => k })
     if (wrapped && isBoundary(wrapped.type)) return (wrapped.children ?? [])[0].type
@@ -556,12 +564,12 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
   }
   const t = (key) => key
 
-  it('AssistantActions renders 撤回 / 重新生成 when the message seq resolves', () => {
+  it('AssistantActions renders **只保留 重新生成**（助手侧「撤回这条回复」已移除）', () => {
     const AssistantActions = findComponent('conversation.chat.assistant-actions')
     const snap = chatSnapshot([assistantStep('a1', 'msg-1', 42)])
     const element = AssistantActions({ messageId: 'msg-1', sessionId: 's1', useChat: useChatFor(snap), t })
     const buttons = collect(element).filter((node) => node.type === 'button')
-    expect(buttons.map((button) => button.props.title)).toEqual(['action.recallAssistant', 'action.regenerate'])
+    expect(buttons.map((button) => button.props.title)).toEqual(['action.regenerate'])
   })
 
   it('AssistantActions renders nothing when the messageId is absent or the reply is shadowed', () => {
@@ -598,8 +606,13 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     const element = RecallMarkerRow({ node, useChat: useChatFor(snap), t })
     const styles = collect(element).filter((element) => element.type === 'style')
     expect(styles).toHaveLength(1)
-    expect(styles[0].props.dangerouslySetInnerHTML.__html)
-      .toContain('[data-chat-anchor-key="u1"]{display:none!important}')
+    const css = styles[0].props.dangerouslySetInnerHTML.__html
+    // 规则改为**四形态**（整 key / flow-key / 复合键前缀 / 分组头部）——
+    //   分组内行的 data-chat-anchor-key 是复合键 ["u1","reasoning"]，单一整 key 选择器匹配不上。
+    expect(css).toContain('[data-chat-anchor-key="u1"]')
+    expect(css).toContain('[data-chat-flow-key="u1"]')
+    expect(css).toContain('{display:none!important}')
+    expect(css).toContain('data-dsh-rt-hidden')
     expect(collect(element).some((element) => element.props.role === 'status')).toBe(true)
   })
 
@@ -611,10 +624,73 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     const element = RecallMarkerRow({ node: legacy, useChat: useChatFor(chatSnapshot([userMessage('u1', 5), legacy])), t })
     expect(collect(element).filter((node) => node.type === 'style')).toHaveLength(0)
   })
+
+  it('回档 marker 显示回档文案(此前落到兜底 edit ⇒ 界面误报「已编辑此消息并重新发送」)', () => {
+    // 真机:rollback execute 写的是 `retrace-restore-*`,客户端 markerOpFromId
+    // 只认 recall/edit/regenerate/fold ⇒ op='edit' ⇒ RecallMarkerRow 走 marker.edit 分支。
+    const RecallMarkerRow = findComponent('conversation.chat.node', 'recall-marker')
+    const statusOf = (op) => {
+      const node = marker('m1', 6, [5], { op })
+      const element = RecallMarkerRow({ node, useChat: useChatFor(chatSnapshot([userMessage('u1', 5), node])), t })
+      return collect(element).find((element) => element.props?.role === 'status')
+    }
+    expect(statusOf('restore').children).toContain('marker.restore')
+    expect(statusOf('restore').children).not.toContain('marker.edit')
+    // 回档与撤回/编辑一样隐藏被替换的后续节点(只有 fold 才允许 40% 降级)——现状保持
+    const node = marker('m1', 6, [5], { op: 'restore' })
+    const element = RecallMarkerRow({ node, useChat: useChatFor(chatSnapshot([userMessage('u1', 5), node])), t })
+    expect(collect(element).filter((element) => element.type === 'style')).toHaveLength(1)
+    // 既有 op 的文案不得被改动
+    expect(statusOf('edit').children).toContain('marker.edit')
+    expect(statusOf('recall').children).toContain('marker.recallOne')
+  })
 })
 
 // ---------------------------------------------------------------------------
-// HIGH-1 regression (2026-09-14 independent review B1): jumpToAnchor read
+// 回档 marker 的 op 识别 + 中英文案(与 slot 渲染同一条真实链路:
+// match() 命中 → start() 定 op → RecallMarkerRow 选文案)。
+// ---------------------------------------------------------------------------
+describe('回档 marker 的识别与文案', () => {
+  /** A real two-segment carrier as written by rollback execute (`retrace-restore-*`). */
+  const restoreCarrier = {
+    seq: 9,
+    time: 1,
+    type: 'user/message',
+    surfaceOp: { op: 'replace', start: 4, end: 6 },
+    sourceEventSeqs: [7, 4, 5, 6], // 首元素是第 1 段审计 seq(不是被遮蔽节点)
+    data: { id: 'retrace-restore-mf3k-ab12cd34', role: 'user', content: [], source: { kind: 'model' } },
+  }
+
+  it('match() 命中回档载体,start() 定 op="restore"(不再落到兜底 edit)', () => {
+    expect(__recallMarkerDefinition.match(restoreCarrier)).toMatchObject({ role: 'start' })
+    const state = __recallMarkerDefinition.start({}, { event: restoreCarrier }, undefined)
+    expect(state.op).toBe('restore')
+    expect(state.op).not.toBe('edit')
+    expect(state.legacy).toBe(false)
+    expect(state.shadowedSeqs).toEqual([4, 5, 6]) // 审计 seq 7 被截掉
+  })
+
+  it('既有 op 识别不变(recall/edit/regenerate/fold),legacy 前缀同样认 restore', () => {
+    const opOf = (id) => __recallMarkerDefinition
+      .start({}, { event: { ...restoreCarrier, data: { ...restoreCarrier.data, id } } }, undefined).op
+    expect(opOf('retrace-recall-1')).toBe('recall')
+    expect(opOf('retrace-edit-1')).toBe('edit')
+    expect(opOf('retrace-regenerate-1')).toBe('regenerate')
+    expect(opOf('message-editor-restore-1')).toBe('restore')
+    // 无 op 段的 id 仍是兜底 edit(行为不变)
+    expect(opOf('retrace-unknown-1')).toBe('edit')
+  })
+
+  it('zh/en 成对:marker.restore 是回档文案,不是 edit 文案', () => {
+    expect(zh['marker.restore']).toBe('已回退到该档位')
+    expect(en['marker.restore']).toBe('Rolled back to this checkpoint')
+    expect(zh['marker.restore']).not.toBe(zh['marker.edit'])
+    expect(en['marker.restore']).not.toBe(en['marker.edit'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// HIGH-1 regression (independent review B1): jumpToAnchor read
 // `store.getSnapshot()?.chat?.nodes` — a field the client Session controller's
 // snapshot does not have ⇒ keyOfSeq was always null ⇒ every 版本/Fork 视图
 // 「跳转」 silently did nothing. The node source is now the `useChat` standard
@@ -744,7 +820,7 @@ describe('useChatNodes — the useChat prop is read through one unconditional ho
 })
 
 // ---------------------------------------------------------------------------
-// HIGH-A regression (2026-09-14 second review): the node source is the CALLING
+// HIGH-A regression (second review): the node source is the CALLING
 // view's ref, and the host renders one conversation view at a time — so
 // switching tabs UNMOUNTS the view and freezes the ref. Resolving after the
 // switch therefore always failed whenever paging was needed. The tests below
@@ -809,7 +885,11 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
       await hooks.jumpToAnchor(store, 5, () => refNodes)
       expect(dom.state.switched, 'the tab must switch once the key is known').toBe(true)
       expect(dom.state.scrolls, 'the resolved row must be scrolled into view').toBe(1)
-      expect(dom.state.anchorSelectors).toContain('[data-chat-anchor-key="u5"]')
+      // 旧断言按"一条 querySelector 参数 = 单个选择器"写；实现起把选择器扩成
+      // **三形态**（整 key / flow-key / 复合键前缀，lib/client.js:2996）:分组内行的
+      // data-chat-anchor-key 是复合键 ["u5",…]，单一整 key 选择器匹配不上。断言改为
+      // "三形态里含锚点整 key 那一支"，语义不变（仍证明是按键找行）。
+      expect(dom.state.anchorSelectors.some((s) => s.split(',').includes('[data-chat-anchor-key="u5"]'))).toBe(true)
     } finally {
       hooks.__setMessageEditorWire(null)
       dom.restore()
@@ -865,7 +945,11 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
       await hooks.jumpToAnchor({ hasMore: true, loadOlder: async () => {} }, 5, () => nodes)
       expect(dom.state.switched, 'the tab switches as soon as the key is known').toBe(true)
       expect(dom.state.scrolls).toBe(0)
-      expect(dom.state.anchorSelectors).toContain('[data-chat-anchor-key="u5"]')
+      // 旧断言按"一条 querySelector 参数 = 单个选择器"写；实现起把选择器扩成
+      // **三形态**（整 key / flow-key / 复合键前缀，lib/client.js:2996）:分组内行的
+      // data-chat-anchor-key 是复合键 ["u5",…]，单一整 key 选择器匹配不上。断言改为
+      // "三形态里含锚点整 key 那一支"，语义不变（仍证明是按键找行）。
+      expect(dom.state.anchorSelectors.some((s) => s.split(',').includes('[data-chat-anchor-key="u5"]'))).toBe(true)
       expect(reports.at(-1)?.payload?.source).toBe('jump-unavailable:row-not-rendered')
       expect(warn).toHaveBeenCalled()
     } finally {
@@ -877,7 +961,7 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
 })
 
 // ---------------------------------------------------------------------------
-// Performance (2026-09-14): `useSeqHidden` must reuse the per-snapshot hide
+// Performance: `useSeqHidden` must reuse the per-snapshot hide
 // plan instead of rescanning the node map for every row × marker. The old path
 // was O(K·N²) and only became live once the action rows actually rendered (the
 // visible cost of the HIGH-1 fix): 2000 rows/20 markers ≈ 346 ms, 3000/30 ≈
@@ -952,7 +1036,7 @@ describe('hide plan is computed once per snapshot (performance guard)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// UX (2026-09-14): both views must say what they are, and every row must state
+// UX: both views must say what they are, and every row must state
 // what happened / what it affected. Assertions run on the REAL render output
 // with the Chinese dictionary — i.e. the strings the user actually sees.
 // ---------------------------------------------------------------------------
@@ -1017,7 +1101,7 @@ describe('the single checkpoint view explains itself (UX)', () => {
     expect(allText(out)).toContain(tZh('timeline.orderHint'))
   })
 
-  it('注册处真的把视图包在面板级错误边界里（白屏事故的结构防线）', () => {
+  it('注册处真的把视图包在面板级错误边界里（空白视图的结构防线）', () => {
     const wrapped = viewComponent('retrace')({ t: tZh })
     expect(isBoundary(wrapped.type), 'the registered component must be the error boundary').toBe(true)
     const child = (wrapped.children ?? [])[0]
@@ -1116,7 +1200,7 @@ describe('the single checkpoint view explains itself (UX)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 「读档点」完备性锁 (2026-09-15) — R20/R21/R22/R24/R30/R31/R33/R34/R35.
+// 「读档点」完备性锁  — R20/R21/R22/R24/R30/R31/R33/R34/R35.
 //
 // Every requirement below carries a lock test: deliberately breaking the
 // behaviour makes the named test fail (the mutation table for each requirement
@@ -1189,16 +1273,16 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     // 显式收起：安静节点自己没有行，但子树仍然可达（骨架在）
     const closed = hooks.buildDisplayRows({ versions, digests, tree, expanded: new Map([[1, false]]) })
     expect(closed.map((row) => [row.kind, row.count])).toEqual([['collapsed', 1]])
-    // 2026-09-15：安静分支的 chip 层级与普通分支统一（都落在"子行那一级"，
+    // 安静分支的 chip 层级与普通分支统一（都落在"子行那一级"，
     // 而不是安静节点自己的 level）——否则安静节点的收起入口缩进浅一级。
     expect(closed[0].level).toBe(1)
-    // 默认收起（用户口径 2026-09-15）：安静节点不留行，子行也不出现
+    // 默认收起（用户口径）：安静节点不留行，子行也不出现
     const byDefault = hooks.buildDisplayRows({ versions, digests, tree, expanded: null })
     expect(byDefault.map((row) => row.kind)).toEqual(['collapsed'])
     expect(byDefault[0].level).toBe(1)
     const opened = hooks.buildDisplayRows({ versions, digests, tree, expanded: new Map([[1, true]]) })
     // 展开态多一枚「收起」chip（安静父节点同样有，否则点开就回不去），且它落在
-    // **子行之后**——"收起"明确属于这次展开（用户口径 2026-09-15）。
+    // **子行之后**——"收起"明确属于这次展开（用户口径）。
     expect(opened.map((row) => row.kind)).toEqual(['expanded', 'row', 'expanded'])
     expect(opened[0].seq).toBe(1)
     expect(opened[0].position).toBe('head')
@@ -1392,7 +1476,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     replaced: [
       { seq: 8692, role: 'user', excerpt: '我和外部AI的思路一致' },
       { seq: 8693, role: 'assistant', excerpt: '好的' },
-      { seq: 9177, role: 'user', excerpt: '派工单' },
+      { seq: 9177, role: 'user', excerpt: '示例短语' },
     ],
     replacedMore: 7,
   })
@@ -1415,7 +1499,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(text).toContain('我和外部AI的思路一致')
     // 其余明细（引文 2/3、另有 M 条、【摘要】、延续）默认都不渲染
     expect(text).not.toContain('好的')
-    expect(text).not.toContain('派工单')
+    expect(text).not.toContain('示例短语')
     expect(text).not.toContain(tZh('what.more', { count: 7 }))
     expect(text).not.toContain(tZh('what.summaryTag'))
     expect(text).not.toContain('这一段被丢掉了')
@@ -1432,7 +1516,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(quoteCount(element)).toBe(4)                 // 3 条引文 + 延续
     expect(text).toContain('我和外部AI的思路一致')
     expect(text).toContain('好的')
-    expect(text).toContain('派工单')
+    expect(text).toContain('示例短语')
     expect(text).toContain(tZh('what.more', { count: 7 }))
     expect(text).toContain(tZh('what.summaryTag'))
     expect(text).toContain('这一段被丢掉了')
@@ -1476,7 +1560,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     const text = textOf(element)
     // 计数在首行(短文案)
     expect(text).toContain(tZh('what.countShort', { count: 7 }))
-    // 真机发现(2026-09-15):一条**没有可读原文**的档只显示"另有 N 条"读起来像坏行。
+    // 真机发现:一条**没有可读原文**的档只显示"另有 N 条"读起来像坏行。
     // 现在必须**说清原因**(原文已被压缩),而且仍然不许编造摘录。
     expect(text).toContain(tZh('what.compacted', { count: 7 }))
     expect(text).not.toContain(tZh('what.more', { count: 7 }))
@@ -1653,7 +1737,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
   })
 
   it('展开后能收起：展开态插一枚「收起」chip,点它回到 collapsed(往返都能走)', () => {
-    // 普通分支 + 安静分支都要有(真机病根:展开后原入口被 children 取代 ⇒ 点开回不去)
+    // 普通分支 + 安静分支都要有
     const cases = [
       { label: '普通节点', digests: digestMap([[1, fullDigest()], [2, fullDigest()]]), opened: ['row', 'expanded', 'row', 'expanded'], closed: ['row', 'collapsed'] },
       // 安静父节点自己没有内容行(R20) ⇒ 收起态只有折叠提示。
@@ -1773,7 +1857,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(hooks.visibleTo([], [], 100)).toBe(0)
   })
 
-  // ---- 深层档不再点不开 (2026-09-15 final UX fix) ---------------------------
+  // ---- 深层档不再点不开 (final UX fix) ---------------------------
 
   it('默认收起：默认输出里没有任何 level ≥ 1 的内容行（点击才展开）', () => {
     const versions = [1, 2, 3, 4].map((seq) => rec(seq))
@@ -2017,7 +2101,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(reopened.map((row) => row.record?.boundarySeq).filter((seq) => seq !== undefined)).toContain(5)
   })
 
-  // ---- 「给人读」改版：文案锁 (2026-09-15) --------------------------------
+  // ---- 「给人读」改版：文案锁  --------------------------------
 
   it('给人读·首行不再说"丢弃"：计数用「换掉了 N 条」', () => {
     const element = richRow()
@@ -2127,7 +2211,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(zh['timeline.openEntry']).toBe('查看这一档')
   })
 
-  // ---- R40/R41/R43: 「这一条是什么」+ 纯文本分级（真机反馈 2026-09-15） ------
+  // ---- R40/R41/R43: 「这一条是什么」+ 纯文本分级 ------
   //
   // 用户原话：①「这个条目，现在是什么我并不知道——这一轮的输入」②「（压缩 814
   // → 1002 → 1265 三行）这一块不应该是三级的缩进区别吗」。两条都要求**不点开
@@ -2161,7 +2245,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     // 顺序：动作 → 轮次 → 计数（读起来是"编辑重发 · 第 159 轮 · … · 换掉了 N 条"）
     expect(line1.indexOf(tZh('timeline.kind.edit'))).toBeLessThan(line1.indexOf('第 159 轮'))
     expect(line1.indexOf('第 159 轮')).toBeLessThan(line1.indexOf(tZh('what.countShort', { count: 10 })))
-    // 行模型 → 渲染 全链：轮次从摘要记录流到行，再流进首行
+    // 行模型 → 渲染全链：轮次从摘要记录流到行，再流进首行
     const versions = [rec(9300)]
     const digests = digestMap([[9300, { ...fullDigest(richWhat()), turn: 159 }]])
     const [row] = hooks.buildDisplayRows({ versions, digests, tree: null, expanded: null })
@@ -2174,12 +2258,12 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
   })
 
   it('R40 · 取不到轮次就整段省略（不出现"第 ? 轮"、不留空标签）', () => {
-    // 摘要记录里没有 turn（旧档 / 日志里没有 turn）⇒ 首行只剩 动作 · 时间
+    // 摘要记录里没有 turn（旧档 / 日志里没有 turn）⇒ 首行只剩动作 · 时间
     const noTurn = line1Of(richRow())
     expect(noTurn).not.toContain('第 ')
     expect(noTurn).not.toContain('轮')
     expect(noTurn).toContain(tZh('timeline.kind.edit'))
-    // turn = 0 / 负数 / 非整数同样当作取不到（真机 turn 从 1 起）
+    // turn = 0 / 负数 / 非整数同样当作取不到
     for (const bad of [0, -3, 1.5, Number.NaN, null, undefined, '159']) {
       expect(line1Of(richRow({ turn: bad }))).not.toContain('第 ')
     }
@@ -2199,11 +2283,11 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(new Set(words).size).toBe(4)
     const rowOf = (role) => hooks.VersionRow({
       record: rec(9310), t: tZh, top: 0, turn: 12,
-      what: { op: 'edit', at: 0, new: { excerpt: '' }, replaced: [{ seq: 1, role, excerpt: '派工单' }] },
+      what: { op: 'edit', at: 0, new: { excerpt: '' }, replaced: [{ seq: 1, role, excerpt: '示例短语' }] },
       discardedCount: 1, onPreview() {}, onJump() {},
     })
-    // 完整读法：原来的内容：这一轮的输入「派工单」（同一行首尾相接，逗号分隔符不打断）
-    expect(allText(rowOf('user')).join('')).toContain(`${tZh('what.oldLabel')}${tZh('what.role2.user')}「派工单」`)
+    // 完整读法：原来的内容：这一轮的输入「示例短语」（同一行首尾相接，逗号分隔符不打断）
+    expect(allText(rowOf('user')).join('')).toContain(`${tZh('what.oldLabel')}${tZh('what.role2.user')}「示例短语」`)
     expect(textOf(rowOf('assistant'))).toContain(tZh('what.role2.assistant'))
     expect(textOf(rowOf('tool'))).toContain(tZh('what.role2.tool'))
     expect(textOf(rowOf('unknown'))).toContain(tZh('what.role2.unknown'))
@@ -2263,7 +2347,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(collect(discarded).some((el) => el.type === 'button')).toBe(false)
   })
 
-  // ---- R44–R48: 「现在这条」读序 + 收起位置 + 逐级色条（用户口径 2026-09-15） --
+  // ---- R44–R48: 「现在这条」读序 + 收起位置 + 逐级色条（用户口径） --
 
   const nowOf = (seq, excerpt, role = 'user') => ({ seq, role, excerpt })
   const nowRow = (extra = {}) => hooks.VersionRow({
@@ -2569,5 +2653,469 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     const source = sourceOf()
     expect(source).toContain('const [pathOpen, setPathOpen] = useState(false)')
     expect(source).toContain('const [quietOpen, setQuietOpen] = useState(false)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// · 撤回二次确认 + 回档失败不再静默
+//
+// Both behaviours are INTERACTIVE (a click opens a dialog; a rejected op flips
+// state), so they need a real render phase. The extraction at the top of this
+// file injects a STATELESS `useState` stub (``[init, () => {}]``) — enough for
+// display assertions, structurally unable to render a dialog that appears only
+// after a click. So this block bundles the SAME lib/client.js a second time with
+// `test/mini-react.js` (real hook + effect semantics) and drives the REAL
+// components through mount → click → flush → settle.
+// ---------------------------------------------------------------------------
+describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
+  const REC = { versionId: 'v1', boundarySeq: 1, kind: 'edit', createdAt: 0, messageCount: 7, markerText: '', fileCounts: { created: 0, modified: 0, deleted: 0 }, touchedFiles: [], git: null }
+
+  /** Bundle lib/client.js with mini-react as `react`; returns { mini, client }. */
+  const buildInteractive = async (names) => {
+    const mini = createMiniReact()
+    const source = readFileSync(CLIENT_SOURCE_PATH, 'utf8')
+    const bundled = await build({
+      stdin: {
+        contents: `${source}\nexport { ${names.join(', ')} }\n`,
+        loader: 'js',
+        resolveDir: path.dirname(CLIENT_SOURCE_PATH),
+        sourcefile: 'client.js',
+      },
+      bundle: true,
+      format: 'cjs',
+      platform: 'node',
+      target: 'node20',
+      write: false,
+      external: ['react'],
+      logLevel: 'silent',
+    })
+    const mod = { exports: {} }
+    // eslint-disable-next-line no-new-func
+    new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(
+      (id) => (id === 'react' ? mini.react : nodeRequire(id)), mod, mod.exports,
+    )
+    return { mini, client: mod.exports }
+  }
+
+  const buttons = (mini, className) => collectElements(mini.tree())
+    .filter((el) => el.type === 'button' && String(el.props?.className ?? '').includes(className))
+  const byClass = (mini, className) => collectElements(mini.tree())
+    .find((el) => String(el.props?.className ?? '').includes(className))
+  const settle = async (mini) => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    mini.flush()
+  }
+  /** Install a global DOM good enough for ensureStyle / bindListHeight / the Esc listener. */
+  const installDom = () => {
+    const previous = { document: globalThis.document, window: globalThis.window, fetch: globalThis.fetch }
+    const listeners = new Map()
+    globalThis.document = {
+      querySelector: () => null,
+      // ensureStyle() 会 createElement('style') + document.head.appendChild（真 apply 需要）。
+      createElement: () => ({ dataset: {}, set textContent(_value) {}, remove() {} }),
+      head: { appendChild() {} },
+      addEventListener: (type, fn) => listeners.set(type, fn),
+      removeEventListener: (type) => listeners.delete(type),
+    }
+    globalThis.window = { addEventListener() {}, removeEventListener() {}, innerHeight: 900 }
+    const asJson = (value) => Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(value) })
+    globalThis.fetch = (url) => asJson(String(url).includes('/summaries')
+      ? { ok: true, value: { enabled: false, sessionId: 's1', skipped: 0, error: null, records: [], tree: null } }
+      : { ok: true, value: null })
+    return {
+      listeners,
+      restore: () => {
+        globalThis.document = previous.document
+        globalThis.window = previous.window
+        globalThis.fetch = previous.fetch
+      },
+    }
+  }
+
+  const mountRow = (mini, client, node) => {
+    mini.reset()
+    mini.mount(mini.react.createElement('div', { className: 'host-app' }, mini.react.createElement(client.UserActionsRow, {
+      node, sessionId: 's1', useChat: useChatFor(chatSnapshot([node])), inputActions: {}, t: tZh,
+    })))
+    mini.flush()
+  }
+
+  /** 点撤回 chip（只开确认）→ 点「确认」（真正发起：暂停在飞轮次 → recall）。 */
+  const clickRecallConfirm = (mini) => {
+    buttons(mini, 'dsh-rt-chip').find((el) => el.props.title === tZh('action.recallUser')).props.onClick()
+    mini.flush()
+    buttons(mini, 'dsh-rt-confirm')[0].props.onClick()
+    mini.flush()
+  }
+
+  it('撤回：点按钮只开确认（0 次请求）→ 取消仍 0 次 → 确认后恰好 1 次', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const calls = []
+    client.__setMessageEditorWire((op, payload) => { calls.push({ op, payload }); return Promise.resolve({ ok: true, value: { text: 'text 5' } }) })
+    const recallCalls = () => calls.filter((call) => call.op === 'recall')
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      const chip = buttons(mini, 'dsh-rt-chip').find((el) => el.props.title === tZh('action.recallUser'))
+      expect(chip, '撤回 chip 必须存在').toBeDefined()
+
+      // ① 点撤回 = 只开确认：不发任何请求，弹窗先出来。
+      chip.props.onClick()
+      mini.flush()
+      expect(recallCalls()).toHaveLength(0)
+      const scrim = byClass(mini, 'dsh-rt-confirm-scrim')
+      expect(scrim, '确认弹窗必须出现').toBeDefined()
+      const dialog = textOf(scrim)
+      expect(dialog).toContain(tZh('action.recallConfirm'))
+      expect(dialog).toContain(tZh('action.recallConfirmDesc'))
+      // (既定口径·文案):不再说"归档"——就事论事说「撤回」,并给出**真实可用**
+      // 的出路(该 marker 上的「恢复显示」按钮;host 侧 unhide 已落地,见 test/unhide.test.js)。
+      expect(zh['action.recallConfirmDesc']).toContain('撤回')
+      expect(zh['action.recallConfirmDesc']).toContain('恢复显示')
+      expect(zh['action.recallConfirmDesc']).not.toContain('归档')
+      expect(en['action.recallConfirmDesc']).not.toMatch(/archive/i)
+      expect(zh['action.recallConfirmYes']).toBe('撤回')
+      expect(zh['action.recallConfirmYes']).not.toContain('归档')
+      // 复用既有 modal 样式/按钮类（不是 window.confirm）。
+      expect(byClass(mini, 'dsh-rt-modal')).toBeDefined()
+      expect(buttons(mini, 'dsh-rt-confirm')).toHaveLength(1)
+
+      // ② 取消：弹窗关闭，依然 0 次请求。
+      buttons(mini, 'dsh-rt-editor-cancel')[0].props.onClick()
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
+      expect(recallCalls()).toHaveLength(0)
+
+      // ③ 重新打开 → 点「确认」：恰好 1 次 recall，payload 带上会话与消息 id。
+      buttons(mini, 'dsh-rt-chip').find((el) => el.props.title === tZh('action.recallUser')).props.onClick()
+      mini.flush()
+      buttons(mini, 'dsh-rt-confirm')[0].props.onClick()
+      mini.flush()
+      await settle(mini)
+      expect(recallCalls()).toHaveLength(1)
+      expect(recallCalls()[0].payload).toMatchObject({ sessionId: 's1', messageId: 'u-u1' })
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
+    } finally {
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('确认弹窗：Esc 与点遮罩都关闭；点卡片内部不关闭（且始终不发请求）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const dom = installDom()
+    const calls = []
+    client.__setMessageEditorWire((op, payload) => { calls.push({ op, payload }); return Promise.resolve({ ok: true }) })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      const chip = () => buttons(mini, 'dsh-rt-chip').find((el) => el.props.title === tZh('action.recallUser'))
+      chip().props.onClick()
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeDefined()
+
+      // 点卡片内部：不关闭（只有点遮罩本身才关闭）。
+      const scrim = byClass(mini, 'dsh-rt-confirm-scrim')
+      scrim.props.onClick({ target: {}, currentTarget: {} })
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeDefined()
+
+      // Esc：关闭。
+      expect(typeof dom.listeners.get('keydown')).toBe('function')
+      dom.listeners.get('keydown')({ key: 'Escape' })
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
+
+      // 点遮罩：关闭。
+      chip().props.onClick()
+      mini.flush()
+      const scrim2 = byClass(mini, 'dsh-rt-confirm-scrim')
+      scrim2.props.onClick({ target: scrim2, currentTarget: scrim2 })
+      mini.flush()
+      expect(byClass(mini, 'dsh-rt-confirm-scrim')).toBeUndefined()
+
+      expect(calls.filter((call) => call.op === 'recall')).toHaveLength(0)
+    } finally {
+      client.__setMessageEditorWire(null)
+      dom.restore()
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // 「撤回应该先暂停运行，然后处理」：
+  // 运行中撤回 ⇒ 先调**官方停止入口**、等它停下（有限超时），**再**发 recall；
+  // 不在运行 ⇒ 不调中断；中断 reject/超时 ⇒ recall 照发 + 可见提示 + 宿主日志。
+  // 顺序用"事件数组"断言（中断事件必须排在 recall 事件之前）。
+  // -------------------------------------------------------------------------
+  it('运行中撤回：先暂停在飞轮次（官方停止入口）→ 再 recall（顺序可断言）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const events = []
+    let probes = 0
+    client.__setMessageEditorWire((op, payload) => {
+      if (op === 'runningState') {
+        probes += 1
+        // ① 点确认时：宿主说"在跑"；② 停止后复查：已停（running=false）。
+        return Promise.resolve({ ok: true, value: { sessionId: payload?.sessionId, running: probes === 1, reasons: probes === 1 ? ['agent-running'] : [] } })
+      }
+      if (op === 'recall') { events.push('recall'); return Promise.resolve({ ok: true, value: { text: 'text 5' } }) }
+      return Promise.resolve({ ok: true })
+    })
+    client.__setRecallPauseDeps({
+      interrupt: (sessionId) => { events.push(`interrupt:${sessionId}`); return Promise.resolve({ ok: true, value: { accepted: true } }) },
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      clickRecallConfirm(mini)
+      // 暂停在飞时**立刻**有可见反馈（不是静默等待）：这就是「正在暂停当前运行…」。
+      const hint = byClass(mini, 'dsh-rt-pause-note')
+      expect(hint, '暂停中必须有可见提示').toBeDefined()
+      expect(textOf(hint)).toContain(tZh('action.recallPausing'))
+      await settle(mini)
+      // 中断**先于** recall —— 这就是"先暂停运行，然后处理"。
+      expect(events).toEqual(['interrupt:s1', 'recall'])
+      expect(probes, '停止后必须复查到 running=false').toBeGreaterThanOrEqual(2)
+      // 暂停成功 ⇒ 不留失败提示（提示只给失败/超时/不可用）。
+      expect(byClass(mini, 'dsh-rt-pause-note')).toBeUndefined()
+      // 暂停中的可见反馈文案（zh/en 成对）真的存在。
+      expect(zh['action.recallPausing']).toContain('暂停')
+      expect(en['action.recallPausing']).toContain('Pausing')
+    } finally {
+      client.__setRecallPauseDeps(null)
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('不在运行中撤回：不调用中断，直接 recall（只查一次运行态）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const ops = []
+    client.__setMessageEditorWire((op) => { ops.push(op); return Promise.resolve({ ok: true, value: { sessionId: 's1', running: false, reasons: [] } }) })
+    let interrupts = 0
+    client.__setRecallPauseDeps({
+      interrupt: () => { interrupts += 1; return Promise.resolve({ ok: true }) },
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      clickRecallConfirm(mini)
+      await settle(mini)
+      expect(interrupts, '空闲会话不得被中断').toBe(0)
+      expect(ops.filter((op) => op === 'recall')).toHaveLength(1)
+      expect(ops.filter((op) => op === 'runningState')).toHaveLength(1)
+      expect(byClass(mini, 'dsh-rt-pause-note')).toBeUndefined()
+    } finally {
+      client.__setRecallPauseDeps(null)
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('中断 reject ⇒ recall 仍被执行，且提示 + 宿主日志（不静默、无未捕获异常）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const ops = []
+    client.__setMessageEditorWire((op) => {
+      ops.push(op)
+      if (op === 'runningState') return Promise.resolve({ ok: true, value: { sessionId: 's1', running: true, reasons: ['agent-running'] } })
+      return Promise.resolve({ ok: true })
+    })
+    client.__setRecallPauseDeps({
+      interrupt: () => Promise.reject(new Error('cancel-rpc-down')),
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      clickRecallConfirm(mini)
+      await settle(mini)
+      // 中断失败**不阻塞**撤回。
+      expect(ops.filter((op) => op === 'recall')).toHaveLength(1)
+      const note = byClass(mini, 'dsh-rt-pause-note')
+      expect(note, '暂停失败必须有可见提示').toBeDefined()
+      expect(textOf(note)).toContain(tZh('action.recallPauseFailed'))
+      expect(ops.filter((op) => op === 'clientReport'), '必须进宿主日志').toHaveLength(1)
+    } finally {
+      client.__setRecallPauseDeps(null)
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('等待暂停超时（有限超时 fail-soft）⇒ recall 仍被执行并提示超时', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const ops = []
+    client.__setMessageEditorWire((op) => {
+      ops.push(op)
+      if (op === 'runningState') return Promise.resolve({ ok: true, value: { sessionId: 's1', running: true, reasons: ['agent-running'] } })
+      return Promise.resolve({ ok: true })
+    })
+    let clock = 0
+    client.__setRecallPauseDeps({
+      interrupt: () => Promise.resolve({ ok: true, value: { accepted: true } }),
+      sleep: () => Promise.resolve(),
+      now: () => { clock += 10000; return clock },   // 每次读钟都跨过 deadline ⇒ 立刻超时
+      timeoutMs: 50,
+      pollMs: 1,
+    })
+    try {
+      mountRow(mini, client, userMessage('u1', 5))
+      clickRecallConfirm(mini)
+      await settle(mini)
+      expect(ops.filter((op) => op === 'recall'), '超时不得阻塞撤回').toHaveLength(1)
+      expect(textOf(byClass(mini, 'dsh-rt-pause-note'))).toContain(tZh('action.recallPauseTimeout'))
+      expect(ops.filter((op) => op === 'clientReport')).toHaveLength(1)
+    } finally {
+      client.__setRecallPauseDeps(null)
+      client.__setMessageEditorWire(null)
+    }
+  })
+
+  it('pauseRunningTurn：读运行态失败=unknown（不猜、不误中断）、未接线=unavailable、中断抛错=failed —— 一律不抛', async () => {
+    const { client } = await buildInteractive(['pauseRunningTurn'])
+    const unknown = await client.pauseRunningTurn('s1', { probe: () => Promise.reject(new Error('HTTP 404')) })
+    expect(unknown.status).toBe('unknown')
+    expect(unknown.detail).toContain('404')
+
+    const unavailable = await client.pauseRunningTurn('s1', {
+      probe: () => Promise.resolve({ running: true }),
+      interrupt: undefined,
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    expect(unavailable.status).toBe('unavailable')
+
+    const failed = await client.pauseRunningTurn('s1', {
+      probe: () => Promise.resolve({ running: true }),
+      interrupt: () => { throw new Error('boom') },
+      sleep: () => Promise.resolve(),
+      now: () => 0,
+    })
+    expect(failed.status).toBe('failed')
+    expect(failed.detail).toContain('boom')
+
+    const idle = await client.pauseRunningTurn('s1', { probe: () => Promise.resolve({ running: false }) })
+    expect(idle.status).toBe('idle')
+  })
+
+  it('生产接线（真 apply）：撤回前置暂停真的调官方 session.cancel()（sessions.binding(id).session）', async () => {
+    const { mini, client } = await buildInteractive(['UserActionsRow'])
+    const dom = installDom()
+    const cancel = vi.fn(() => Promise.resolve({ ok: true, value: { accepted: true } }))
+    const sessions = { binding: (id) => (id === 's1' ? { session: { cancel } } : undefined) }
+    const services = { sessions }
+    const registered = []
+    const fakeCtx = {
+      effect: (fn) => { const dispose = fn(); return typeof dispose === 'function' ? dispose : () => {} },
+      locale: { register: () => () => {}, bind: () => (key) => key },
+      get: (name) => services[name],
+      inject: (names, callback) => { callback({ get: (name) => services[name] }); return () => {} },
+      slots: {
+        inject: (seat, callback) => { callback(); return () => {} },
+        register: (definition, component) => { registered.push({ definition, component }); return () => {} },
+      },
+    }
+    const ops = []
+    let probes = 0
+    client.__setMessageEditorWire((op) => {
+      ops.push(op)
+      if (op === 'runningState') {
+        probes += 1
+        return Promise.resolve({ ok: true, value: { sessionId: 's1', running: probes === 1, reasons: probes === 1 ? ['agent-running'] : [] } })
+      }
+      return Promise.resolve({ ok: true })
+    })
+    try {
+      client.apply(fakeCtx)
+      const slot = registered.find((entry) => entry.definition?.name === 'conversation.chat.node' && entry.definition?.key === 'user-actions')
+      expect(slot, 'user-actions 槽位必须注册').toBeDefined()
+      const node = userMessage('u1', 5)
+      mini.reset()
+      mini.mount(mini.react.createElement(slot.component, {
+        node, sessionId: 's1', useChat: useChatFor(chatSnapshot([node])), inputActions: {}, t: tZh,
+      }))
+      mini.flush()
+      clickRecallConfirm(mini)
+      await settle(mini)
+      // 生产接线用默认 pollMs(200ms) 真等一轮"已停"复查 ⇒ 有界轮询到 recall 出现为止。
+      for (let i = 0; i < 25 && !ops.includes('recall'); i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 30))
+      }
+      mini.flush()
+      // 生产里接的就是官方停止入口本身（同一 RPC：agent.cancel({kind:'user'})）。
+      expect(cancel, '必须调用官方 session.cancel()').toHaveBeenCalledTimes(1)
+      expect(ops.filter((op) => op === 'recall'), '暂停后仍要撤回').toHaveLength(1)
+    } finally {
+      client.__setMessageEditorWire(null)
+      dom.restore()
+    }
+  })
+
+  it('rollback/preview 被 reject ⇒ 预览显示可读错误（不再永久「加载中…」）', async () => {
+    const { mini, client } = await buildInteractive(['RetraceView'])
+    const dom = installDom()
+    client.__setMessageEditorWire((op) => (op === 'rollback/preview'
+      ? Promise.reject(new Error('preview-transport-down'))
+      : Promise.resolve({ ok: true })))
+    try {
+      const projection = { versions: [REC], hostReplacementCount: 0 }
+      mini.reset()
+      mini.mount(mini.react.createElement('div', { className: 'host-app' }, mini.react.createElement(client.RetraceView, {
+        sessionId: 's1', useChat: () => undefined, useProjection: () => projection, t: tZh, actions: {}, store: {},
+      })))
+      mini.flush()
+      await settle(mini)
+      const restore = buttons(mini, 'dsh-rt-chip-danger')[0]
+      expect(restore, '必须渲染出「回到这一档」').toBeDefined()
+
+      restore.props.onClick()
+      mini.flush()
+      await settle(mini)
+
+      const text = textOf(mini.tree())
+      expect(text).not.toContain(tZh('timeline.loading'))            // 不再卡在 loading
+      expect(text).toContain(tZh('error.rollbackPreview', { message: 'preview-transport-down' }))
+      expect(text).toContain('preview-transport-down')               // 原始信息保留（可诊断）
+      // 预览失败 ⇒ 没有可确认的影响面：确认键停用（这是有信息的安全停用），
+      // 但取消可用，用户能退出/重试，而不是被无声卡死。
+      expect(byClass(mini, 'dsh-rt-confirm').props.disabled).toBe(true)
+      expect(byClass(mini, 'dsh-rt-editor-cancel').props.disabled).toBe(false)
+    } finally {
+      client.__setMessageEditorWire(null)
+      dom.restore()
+    }
+  })
+
+  it('rollback 被 reject ⇒ 报错并复位 busy（不会停在「回退中…」）', async () => {
+    const { mini, client } = await buildInteractive(['RetraceView'])
+    const dom = installDom()
+    client.__setMessageEditorWire((op) => {
+      if (op === 'rollback') return Promise.reject(new Error('rollback-transport-down'))
+      if (op === 'rollback/preview') {
+        return Promise.resolve({ ok: true, value: { context: { messages: 2 }, artifacts: { rows: [] } } })
+      }
+      return Promise.resolve({ ok: true })
+    })
+    try {
+      const projection = { versions: [REC], hostReplacementCount: 0 }
+      mini.reset()
+      mini.mount(mini.react.createElement('div', { className: 'host-app' }, mini.react.createElement(client.RetraceView, {
+        sessionId: 's1', useChat: () => undefined, useProjection: () => projection, t: tZh, actions: {}, store: {},
+      })))
+      mini.flush()
+      await settle(mini)
+      buttons(mini, 'dsh-rt-chip-danger')[0].props.onClick()
+      mini.flush()
+      await settle(mini)
+
+      const confirm = () => byClass(mini, 'dsh-rt-confirm')
+      expect(confirm().props.disabled).toBe(false)
+      confirm().props.onClick()
+      mini.flush()
+      await settle(mini)
+
+      const text = textOf(mini.tree())
+      expect(text).toContain(tZh('error.rollback', { message: 'rollback-transport-down' }))
+      expect(text).not.toContain(tZh('timeline.busy'))              // busy 已复位
+      expect(confirm().props.disabled).toBe(true)                   // 错误态：不可重复提交
+    } finally {
+      client.__setMessageEditorWire(null)
+      dom.restore()
+    }
   })
 })

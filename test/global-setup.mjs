@@ -1,11 +1,11 @@
 /**
- * 全轮**金丝雀**：跑测试前后比对"活家短码表"的指纹；**变了就整轮红**。
+ * 全轮**金丝雀**：跑测试前后比对"活家谱系标识表"的指纹；**变了就整轮红**。
  *
  * 为什么需要它：`test/setup/forbid-live-data-writes.mjs` 的沙箱能保证"通过正常 API
  * 解析不到活家"，但挡不住有人**硬编码**活家路径。金丝雀是最后一道 fail-closed：
  * 只要有东西真的改写了活家表，这一轮测试立刻失败并指名文件，而不是让用户的数据悄悄没了。
  *
- * 只盯**短码表**（`codes.json` / 两代基座旁的旧落点）——它们是"只读数据"，
+ * 只盯**谱系标识表**（`codes.json` / 两代基座旁的旧落点）——它们是"只读数据"，
  * 插件稳态只读不写（源码一手），所以任何变化都必然是测试/工具写的。
  * 不盯整个 dsh-retrace 目录：里面 objects/snapshots 是运行中的 App 在正常写入的。
  */
@@ -63,11 +63,11 @@ export async function teardown() {
   if (changed.length > 0) {
     const lines = changed.map((c) => `  ${c.file}\n    before: ${c.before.sha256 ?? '(missing)'}\n    after : ${c.after.sha256 ?? '(missing)'}`)
     process.stderr.write(
-      `\n[test-guard] 活家短码表在本轮测试中被改写（fail-closed）：\n${lines.join('\n')}\n`
+      `\n[test-guard] 活家谱系标识表在本轮测试中被改写（fail-closed）：\n${lines.join('\n')}\n`
       + `  ⇒ 某个测试/工具写了活家数据目录。请改到临时目录（显式 { dshHome: null } 或 tmpRoot()）。\n`,
     )
     // vitest 的 globalSetup.teardown 抛错只会打一句 "error during close"，
-    // **不会**让退出码非 0（实测）⇒ 金丝雀就成了摆设。这里显式把退出码置非 0，
+    // **不会**让退出码非 0⇒ 金丝雀就成了摆设。这里显式把退出码置非 0，
     // 并用 process.exit(1) 兜底（安全跳闸优先于完整报告）。
     process.exitCode = 1
     process.exit(1)

@@ -63,7 +63,7 @@ describe('close-guard-client sessionLine/runningLines(A 明细聚合)', () => {
       .toBe('- session s1: 2 queued')
   })
 
-  it('label 覆盖原始 id(UI 传短码)', () => {
+  it('label 覆盖原始 id(UI 传谱系标识)', () => {
     expect(sessionLine({ sessionId: 'a-very-long-id', reasons: ['agent-running'] }, { locale: 'zh', label: 'zz065zz016' }))
       .toBe('- 会话 zz065zz016: 正在运行')
   })
@@ -72,7 +72,7 @@ describe('close-guard-client sessionLine/runningLines(A 明细聚合)', () => {
     expect(sessionLine({ sessionId: 's1' }, { locale: 'zh' })).toBe('- 会话 s1: 运行中(原因未识别)')
   })
 
-  it('runningLines 多会话聚合(labelOf 逐会话短码)', () => {
+  it('runningLines 多会话聚合(labelOf 逐会话谱系标识)', () => {
     const running = [
       { sessionId: 'aaa', reasons: ['agent-running'] },
       { sessionId: 'bbb', reasons: ['jobs-2', 'unclosed-turn-5'] },
@@ -162,7 +162,7 @@ describe('close-guard-client 轮询常量(与装配一致)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 客户端一票否决(2026-09-18 第二轮,issue #1 复测仍卡死)
+// 客户端一票否决(第二轮,issue #1 复测仍卡死)
 //
 // 现场:报告人那台壳三条宿主判据全不成立 ⇒ 宿主错回 `surface=browser, quitVeto=true`
 // ⇒ 客户端照旧武装 ⇒ 仍然退不掉。⇒ 页面**自己**的两条属性(UA / URL)成为最后一道。

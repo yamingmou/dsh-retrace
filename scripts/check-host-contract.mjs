@@ -328,7 +328,7 @@ const CHECKS = [
 
   // ── service NAMES the plugin injects / resolves (review A5) ───────────────
   // A wrong service name makes the plugin fiber permanently pending (client boot
-  // failure) or ctx.get() return undefined — this class of incident already
+  // failure) or ctx.get() return undefined — this class of regression already
   // happened in this repo (conversationEvents / dsh-client-runtime).
   //
   // ⚠️ 防重踩（review-independent §8.7 假警报）:服务名一律取自 `super(ctx,"X")`

@@ -76,7 +76,7 @@ describe('generated dynamic-client', () => {
   it('exposes the canonical inject list and wires host.call before apply', () => {
     const source = read('lib/dynamic-client.js')
     expect(source).toMatch(/^\/\*\*[\s\S]*?\nreturn \{/) // header comment, then the plugin body
-    // 2026-09-14：`conversationEvents` 由**已移除**的旧客户端运行时提供（新基座 0 命中）
+    // `conversationEvents` 由**已移除**的旧客户端运行时提供（新基座 0 命中）
     // ⇒ 留在 inject 里会让插件行永远不就绪、整个 renderer boot 失败。故 inject 只留
     // 确实存在的服务；`uiConversation → conversationEvents` 的兼容查找在 apply 里。
     expect(source).toMatch(/inject: \['slots', 'locale'\]/)

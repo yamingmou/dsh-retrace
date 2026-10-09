@@ -1,8 +1,8 @@
 /**
  * "活家插件数据目录"护栏的**自检 / 阴性对照**。
  *
- * 事故背景：2026-09-19 短码表被测试覆盖成空表三次。这里证明三道防线不是摆设：
- *  ① 沙箱 ⇒ 事故原形（未传 dshHome）**解析不到活家**；
+ * (回归:全量测试不得触碰真实插件数据目录)。这里证明三道防线不是摆设：
+ *  ① 沙箱 ⇒ 问题原形（未传 dshHome）**解析不到活家**；
  *  ② fs 写护栏 ⇒ 硬编码活家路径被拦（并如实标注其已知限制）；
  *  ③ 金丝雀 ⇒ 真被改写时**整轮红**（用纯函数证明它会红）。
  */
@@ -31,10 +31,10 @@ describe('护栏① 沙箱:$DSH_HOME 不指向活家', () => {
   })
 })
 
-describe('护栏自检:事故原形(未传 dshHome)不再落到活家', () => {
+describe('护栏自检:问题原形(未传 dshHome)不再落到活家', () => {
   it('阴性对照:pluginDataHome({home}) 解析到沙箱,而不是活家', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'guard-bad-'))
-    const dataHome = pluginDataHome({ home: tmp })          // ← 事故写法：不带 dshHome: null
+    const dataHome = pluginDataHome({ home: tmp })          // ← 问题写法：不带 dshHome: null
     const liveBase = dirname(__LIVE_DIRS[0])
     // 关键断言:可能解析到沙箱(DSH_HOME 被沙箱化),但**绝不会**是活家
     expect(dataHome).not.toBe(liveBase)

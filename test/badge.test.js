@@ -1,7 +1,7 @@
 /**
- * Session identity badge unit tests (2026-08-31).
+ * Session identity badge unit tests.
  *
- * 短码 = 从 session id（唯一值）确定性导出：uuid → FNV-1a 64 → base36 → 10 位。
+ * 谱系标识 = 从 session id（唯一值）确定性导出：uuid → FNV-1a 64 → base36 → 10 位。
  * 铁律：同一 id 永远同码；不同 id 不同码；无状态纯函数；`session-` 前缀不影响。
  */
 import { describe, it, expect } from 'vitest'
@@ -15,7 +15,7 @@ const U3 = 'cccccccc-3333-4333-8333-cccccccccccc'
 const U4 = 'dddddddd-4444-4444-8444-dddddddddddd'
 const U5 = 'eeeeeeee-5555-4555-8555-eeeeeeeeeeee'
 
-describe('sessionBadge（唯一值 → 短码）', () => {
+describe('sessionBadge（唯一值 → 谱系标识）', () => {
   it('同一 id 确定性：两次调用结果相同', () => {
     const id = U1
     expect(sessionBadge(id)).toBe(sessionBadge(id))
@@ -25,7 +25,7 @@ describe('sessionBadge（唯一值 → 短码）', () => {
     expect(sessionBadge(`session-${U1}`)).toBe(sessionBadge(U1))
   })
 
-  it('不同 id → 不同短码', () => {
+  it('不同 id → 不同谱系标识', () => {
     const a = sessionBadge(U1)
     const b = sessionBadge(U2)
     expect(a).not.toBe(b)

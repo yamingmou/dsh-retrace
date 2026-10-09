@@ -1,14 +1,14 @@
 /**
- * 短码四条 op 的**真端到端**测试（假 ctx + 假 sessions store + 真 HTTP handler）。
+ * 谱系标识四条 op 的**真端到端**测试（假 ctx + 假 sessions store + 真 HTTP handler）。
  *
- * 事故（2026-09-20 重启实测）：`badgeOps` 在 apply 作用域构造，却引用 `pinTitle`/`pinAllResident`
+ * 问题：`badgeOps` 在 apply 作用域构造，却引用 `pinTitle`/`pinAllResident`
  * —— 它们在**更深的 `disposeHarness` IIFE 闭包**里 ⇒ 调用即
  * `ReferenceError: pinTitle is not defined`；而迟绑定赋值那行**落在条件分支里**（没被走到）
- * ⇒ `initBadgeTitles` 永远 `not ready`。带 `[短码]` 的标题 = 0。
+ * ⇒ `initBadgeTitles` 永远 `not ready`。带 `[谱系标识]` 的标题 = 0。
  *
  * 本用例跑**真的 apply()**（不是复刻逻辑），并断言：
  *   ① `initBadgeTitles` 返回 `ok:true` 且**真的调用了 rename（pinTitle）**；
- *   ② `setBadgeTitle` 不再抛 `pinTitle is not defined`，且写出 `[短码] 名字`；
+ *   ② `setBadgeTitle` 不再抛 `pinTitle is not defined`，且写出 `[谱系标识] 名字`；
  *   ③ `badgeMap` **走 HTTP 路径**（真 handler + 假 req/res）拿得到；
  *   ④ 阴性对照：把 holder 的写入拿掉 ⇒ 同上必红。
  */
@@ -59,7 +59,7 @@ function fakeReq(method, url, body = '') {
 }
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms))
 
-/** 建一个临时 home：一个会话目录（明文 JSON 放进 .zstd 名，读取器认明文）+ 一张短码表。 */
+/** 建一个临时 home：一个会话目录（明文 JSON 放进 .zstd 名，读取器认明文）+ 一张谱系标识表。 */
 function tempHome() {
   const home = mkdtempSync(join(tmpdir(), 'badge-e2e-'))
   const dir = join(home, 'sessions', '--proj--', SID)
@@ -127,7 +127,7 @@ beforeAll(async () => {
   ROUTE_PREFIX = http.ROUTE_PREFIX
 })
 
-describe('短码四条 op 真端到端(真 apply + 假 ctx + 真 HTTP handler)', () => {
+describe('谱系标识四条 op 真端到端(真 apply + 假 ctx + 真 HTTP handler)', () => {
   let env
   beforeAll(() => { env = bootEnvironment() })
   afterAll(() => { env.restore() })
@@ -142,7 +142,7 @@ describe('短码四条 op 真端到端(真 apply + 假 ctx + 真 HTTP handler)',
     expect(env.renames[0]).toBe(`[${CODE}] 项目讨论`)
   })
 
-  it('setBadgeTitle 不再抛 pinTitle is not defined,且写出 [短码] 名字', async () => {
+  it('setBadgeTitle 不再抛 pinTitle is not defined,且写出 [谱系标识] 名字', async () => {
     const op = env.handles.get('retrace.setBadgeTitle')
     const result = await op({ sessionId: SID })
     expect(result.ok).toBe(true)
