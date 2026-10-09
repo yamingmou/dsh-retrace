@@ -575,7 +575,8 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
       expect(followup).toHaveBeenCalledTimes(1)
       expect(followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
       // 载体:遮蔽该轮;业务溯源 targetSeq 由区间起点派生(读端口径)
-      expect(markers[0].surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+      // 现役内核 v4(SESSION_FORMAT_VERSION=4):replace 区间键名 = startSeq/endSeq
+      expect(markers[0].surfaceOp).toEqual({ op: 'replace', startSeq: 3, endSeq: 4 })
       expect(carrierTargetSeq(markers[0])).toBe(3)
       expect(markers[0].data.id).toMatch(/^retrace-regenerate-/)
     } finally {
