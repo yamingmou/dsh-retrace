@@ -98,7 +98,7 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     expect(rollbackShareOf(session, envelope)).toBeGreaterThan(0)
     await expect(guard.validateMarkerAppend(session, envelope)).resolves.toEqual({ t1Ok: true })
     expect(log).toHaveBeenCalledWith(expect.stringContaining('告警不拦'))
-  })
+  }, 60_000)  // 大会话夹具(3000 节点/4 万事件)在 CI 慢机上会超 5s 默认超时 ⇒ 显式放宽
 
   it('口径①(d):**极端**(遮蔽>2000 且 占比>0.9) ⇒ 仍拦,且文案给出路', async () => {
     const log = vi.fn()
@@ -109,7 +109,7 @@ describe('快照点守卫（2026-08-31 事故修复；2026-09-01 改为绝对遮
     expect(rollbackShareOf(session, envelope)).toBeGreaterThan(0.9)
     await expect(guard.validateMarkerAppend(session, envelope)).rejects.toMatchObject({ code: 'rollback-guide', needsConfirm: true })
     expect(log).toHaveBeenCalledWith(expect.stringContaining('极端回档'))
-  })
+  }, 60_000)  // 同上:极端档夹具同样重
 
   it('口径①(a):阈值可由 DSH_RETRACE_ROLLBACK_MIN_SHADOWED 覆盖', async () => {
     const { rollbackMinShadowedOf } = require('../lib/prewrite-guard.js')
