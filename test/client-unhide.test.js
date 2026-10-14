@@ -71,7 +71,7 @@ async function bundleClient(react) {
   // eslint-disable-next-line no-new-func
   new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(
     (id) => (id === 'react' ? react : nodeRequire(id)), mod, mod.exports,
-)
+  )
   return mod.exports
 }
 
@@ -257,7 +257,7 @@ describe('RecallMarkerRow — 未取消的既有隐藏行为逐字节不变,已�
     expect(textOf(collectElements(element).find((el) => el.props?.role === 'status'))).toBe('marker.recallMany')
   })
 
-  it('op=fold / op=restore 的既有渲染不变(fold 仍走降级闸,restore 仍是回档文案)', () => {
+  it('op=fold / op=restore 的既有渲染不变(fold 仍走 40% 遮蔽比例判定,restore 仍是回档文案)', () => {
     const fold = marker('mf', 17, [15], { op: 'fold' })
     const folded = hooks.RecallMarkerRow({
       node: fold, sessionId: 's1', useChat: useChatFor(chatSnapshot([userMessage('u1', 15), fold])), t: tKey,
@@ -605,7 +605,7 @@ describe('端到端:hidePlanOf 认出真写入的取消标记', () => {
       headerEvent(),
       hostUserMessage('u1', 'first question'),
       hostAssistantMessage('a1', 'first answer'),
-)
+    )
     const api = makeApi(session, makeAgent())
     const recall = await api.recall({ sessionId: 's1', messageId: 'u1' })
     expect(recall.ok).toBe(true)

@@ -135,7 +135,7 @@ const LEGITIMATE = {
 
 const indent = (line) => `\t${line}`
 
-describe('declaresMember — resurrection forms are caught (review (a))', () => {
+describe('declaresMember — resurrection forms are caught (review 2.2(a))', () => {
   for (const [member, forms] of Object.entries(RESURRECTIONS)) {
     it(`${member}: all ${forms.length} resurrection forms are detected`, () => {
       const missed = forms.filter((form) => !declaresMember(indent(form), member))

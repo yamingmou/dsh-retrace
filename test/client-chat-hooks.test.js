@@ -1,5 +1,5 @@
 /**
- * dsh-retrace — chat hook behaviour tests (2026-09-14 live-incident regression).
+ * dsh-retrace — chat hook behaviour tests (live-regression regression).
  *
  * The live bug: every message-level slot (edit / recall / regenerate) never
  * appeared, while the settings slot did. Root cause: the six hooks below read
@@ -62,7 +62,7 @@ const HOOK_NAMES = [
   'useEditReference',
 ]
 
-// HIGH-1 regression (2026-09-14 review): the jump path. Extracted the same way
+// HIGH-1 regression: the jump path. Extracted the same way
 // so the resolution logic runs against the real source without touching lib/.
 // The row components / label helpers are extracted too (display-only) so the
 // "each row explains itself" copy can be asserted on the real render output.
@@ -73,11 +73,11 @@ const JUMP_EXPORTS = [
   // can assert on the REAL render output of the real source.
   'latestSeqOf', 'buildDisplayRows', 'indexTree', 'roundsOf', 'nodeTextOf', 'clipText', 'pathStartOf',
   'CheckpointRow', 'CurrentPathBlock', 'PreviewBox', 'quietRecordsOf', 'quietRunsOf',
-  // Panel error boundary (2026-09-15 white-screen incident): the registration
+  // Panel error boundary (white-screen regression): the registration
   // wraps the view in it, so tests unwrap before asserting on the view's copy.
   'RetraceErrorBoundary',
   'QuietBlock', 'QuietRow', 'QuietRunRow',
-  // Compact-row model (2026-09-15): one line list shared by the row renderer and
+  // Compact-row model: one line list shared by the row renderer and
   // the row-height math, plus the windowing / scroll-anchoring helpers.
   'whatLineList', 'whatLineElement', 'hasArtifacts', 'visibleFrom', 'visibleTo', 'anchoredScrollTop', 'budgetOf',
   'indentOf', 'levelClassOf', 'jumpTargetOf',
@@ -246,11 +246,11 @@ describe('useSeqHidden — visual hiding, guard-aware', () => {
 
   it('超大遮蔽(>40%)：**显式撤回/编辑仍隐藏**；只有自动收起(fold)才降级不隐藏', () => {
     const rows = mapSeqs(1, 21).map((seq) => userMessage(`u${seq}`, seq))
-    // 显式撤回（默认 op）: 遮蔽即意图 ⇒ 必须隐藏（成员 2026-09-29 诉求：撤回后界面不许还在）
+    // 显式撤回（默认 op）: 遮蔽即意图 ⇒ 必须隐藏（成员诉求：撤回后界面不许还在）
     const explicit = chatSnapshot([...rows, marker('m1', 100, mapSeqs(1, 21))])
     expect(hooks.useShadowed(useChatFor(explicit), 5)).toBe(true)
     expect(hooks.useSeqHidden(useChatFor(explicit), 5)).toBe(true)
-    // 自动收起(fold) + >40%: **现役客户端一律隐藏**（实测），与"降级不隐藏"的旧设计不同。
+    // 自动收起(fold) + >40%: **现役客户端一律隐藏**，与"降级不隐藏"的旧设计不同。
     //   ⚠️ 已登记为设计问题（是否给 fold 保留 40% 显示降级）——不由本测试单方面钉死；
     //   此处只钉"不因降级而完全失去 keys"这一条（成员诉求：撤回后界面不许还在）。
     const folded = chatSnapshot([...rows, marker('m2', 101, mapSeqs(1, 21), { op: 'fold' })])
@@ -358,7 +358,7 @@ describe('useMarkerHidePlan — per-marker hide plan + snapshot memo', () => {
     expect(plan.planFor('mGood').degraded).toBe(false)
     expect(plan.planFor('mGood').keys).toEqual(['u1'])
     expect(plan.planFor('mBad').degraded).toBe(true)
-    // 2026-09-29（既定场景(c)+成员诉求）: 降级标记**保留 keys**，是否隐藏由组件按 op 决定
+    // （既定场景(c)+成员诉求）: 降级标记**保留 keys**，是否隐藏由组件按 op 决定
     //   （旧期望 keys=null 会让"显式撤回"也拿不到 keys ⇒ 界面残留 = 成员报的 bug）
     expect(plan.planFor('mBad').keys).toHaveLength(25)
     expect(plan.hiddenFor('mBad')).toHaveLength(25)
@@ -485,7 +485,7 @@ describe('negative control: nodes must come from snapshot.nodes, never snapshot.
           return Reflect.get(target, prop, receiver)
         },
       },
-)
+    )
     const useChat = useChatFor(sessionish)
     expect(hooks.useMessageSeq(useChat, 'msg-1')).toBe(42)
     expect(hooks.useShadowed(useChat, 7)).toBe(true)
@@ -554,9 +554,9 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
   const findComponent = (seat, key) => {
     const entry = captureSlotComponents().find(({ config }) => (
       config.name === seat && (key === undefined || config.key === key)
-))
+    ))
     expect(entry, `no registration for ${seat}${key ? ` key=${key}` : ''}`).toBeDefined()
-    // Every surface is wrapped in the panel error boundary (2026-09-15); these
+    // Every surface is wrapped in the panel error boundary; these
     // tests are about the surface itself, so unwrap it.
     const wrapped = entry.Component({ t: (k) => k })
     if (wrapped && isBoundary(wrapped.type)) return (wrapped.children ?? [])[0].type
@@ -564,7 +564,7 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
   }
   const t = (key) => key
 
-  it('AssistantActions renders **只保留 重新生成**（成员 2026-09-29 指令：移除助手侧「撤回这条回复」）', () => {
+  it('AssistantActions renders **只保留 重新生成**（助手侧「撤回这条回复」已移除）', () => {
     const AssistantActions = findComponent('conversation.chat.assistant-actions')
     const snap = chatSnapshot([assistantStep('a1', 'msg-1', 42)])
     const element = AssistantActions({ messageId: 'msg-1', sessionId: 's1', useChat: useChatFor(snap), t })
@@ -607,7 +607,7 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     const styles = collect(element).filter((element) => element.type === 'style')
     expect(styles).toHaveLength(1)
     const css = styles[0].props.dangerouslySetInnerHTML.__html
-    // 2026-09-29: 规则改为**四形态**（整 key / flow-key / 复合键前缀 / 分组头部）——
+    // 规则改为**四形态**（整 key / flow-key / 复合键前缀 / 分组头部）——
     //   分组内行的 data-chat-anchor-key 是复合键 ["u1","reasoning"]，单一整 key 选择器匹配不上。
     expect(css).toContain('[data-chat-anchor-key="u1"]')
     expect(css).toContain('[data-chat-flow-key="u1"]')
@@ -626,7 +626,7 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
   })
 
   it('回档 marker 显示回档文案(此前落到兜底 edit ⇒ 界面误报「已编辑此消息并重新发送」)', () => {
-    // 2026-09-30 真机:rollback execute 写的是 `retrace-restore-*`,客户端 markerOpFromId
+    // 真机:rollback execute 写的是 `retrace-restore-*`,客户端 markerOpFromId
     // 只认 recall/edit/regenerate/fold ⇒ op='edit' ⇒ RecallMarkerRow 走 marker.edit 分支。
     const RecallMarkerRow = findComponent('conversation.chat.node', 'recall-marker')
     const statusOf = (op) => {
@@ -690,7 +690,7 @@ describe('回档 marker 的识别与文案', () => {
 })
 
 // ---------------------------------------------------------------------------
-// HIGH-1 regression (2026-09-14 independent review B1): jumpToAnchor read
+// HIGH-1 regression (independent review B1): jumpToAnchor read
 // `store.getSnapshot()?.chat?.nodes` — a field the client Session controller's
 // snapshot does not have ⇒ keyOfSeq was always null ⇒ every 版本/Fork 视图
 // 「跳转」 silently did nothing. The node source is now the `useChat` standard
@@ -721,7 +721,7 @@ describe('resolveAnchorKey — jump lookup rides the chat source, never the sess
           return Reflect.get(target, prop, receiver)
         },
       },
-)
+    )
     const result = await hooks.resolveAnchorKey({ anchorSeq: 5, store, readNodes: () => nodes })
     expect(result).toEqual({ key: 'u1', reason: 'already-loaded', pages: 0 })
   })
@@ -820,7 +820,7 @@ describe('useChatNodes — the useChat prop is read through one unconditional ho
 })
 
 // ---------------------------------------------------------------------------
-// HIGH-A regression (2026-09-14 second review): the node source is the CALLING
+// HIGH-A regression (second review): the node source is the CALLING
 // view's ref, and the host renders one conversation view at a time — so
 // switching tabs UNMOUNTS the view and freezes the ref. Resolving after the
 // switch therefore always failed whenever paging was needed. The tests below
@@ -885,7 +885,7 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
       await hooks.jumpToAnchor(store, 5, () => refNodes)
       expect(dom.state.switched, 'the tab must switch once the key is known').toBe(true)
       expect(dom.state.scrolls, 'the resolved row must be scrolled into view').toBe(1)
-      // 旧断言按"一条 querySelector 参数 = 单个选择器"写；实现 2026-09-29 起把选择器扩成
+      // 旧断言按"一条 querySelector 参数 = 单个选择器"写；实现起把选择器扩成
       // **三形态**（整 key / flow-key / 复合键前缀，lib/client.js）:分组内行的
       // data-chat-anchor-key 是复合键 ["u5",…]，单一整 key 选择器匹配不上。断言改为
       // "三形态里含锚点整 key 那一支"，语义不变（仍证明是按键找行）。
@@ -945,7 +945,7 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
       await hooks.jumpToAnchor({ hasMore: true, loadOlder: async () => {} }, 5, () => nodes)
       expect(dom.state.switched, 'the tab switches as soon as the key is known').toBe(true)
       expect(dom.state.scrolls).toBe(0)
-      // 旧断言按"一条 querySelector 参数 = 单个选择器"写；实现 2026-09-29 起把选择器扩成
+      // 旧断言按"一条 querySelector 参数 = 单个选择器"写；实现起把选择器扩成
       // **三形态**（整 key / flow-key / 复合键前缀，lib/client.js）:分组内行的
       // data-chat-anchor-key 是复合键 ["u5",…]，单一整 key 选择器匹配不上。断言改为
       // "三形态里含锚点整 key 那一支"，语义不变（仍证明是按键找行）。
@@ -961,7 +961,7 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
 })
 
 // ---------------------------------------------------------------------------
-// Performance (2026-09-14): `useSeqHidden` must reuse the per-snapshot hide
+// Performance: `useSeqHidden` must reuse the per-snapshot hide
 // plan instead of rescanning the node map for every row × marker. The old path
 // was O(K·N²) and only became live once the action rows actually rendered (the
 // visible cost of the HIGH-1 fix): 2000 rows/20 markers ≈ 346 ms, 3000/30 ≈
@@ -1036,7 +1036,7 @@ describe('hide plan is computed once per snapshot (performance guard)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// UX (2026-09-14): both views must say what they are, and every row must state
+// UX: both views must say what they are, and every row must state
 // what happened / what it affected. Assertions run on the REAL render output
 // with the Chinese dictionary — i.e. the strings the user actually sees.
 // ---------------------------------------------------------------------------
@@ -1101,7 +1101,7 @@ describe('the single checkpoint view explains itself (UX)', () => {
     expect(allText(out)).toContain(tZh('timeline.orderHint'))
   })
 
-  it('注册处真的把视图包在面板级错误边界里（白屏事故的结构防线）', () => {
+  it('注册处真的把视图包在面板级错误边界里（空白视图的结构防线）', () => {
     const wrapped = viewComponent('retrace')({ t: tZh })
     expect(isBoundary(wrapped.type), 'the registered component must be the error boundary').toBe(true)
     const child = (wrapped.children ?? [])[0]
@@ -1200,7 +1200,7 @@ describe('the single checkpoint view explains itself (UX)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 「读档点」完备性锁 (2026-09-15) — R20/R21/R22/R24/R30/R31/R33/R34/R35.
+// 「读档点」完备性锁  — R20/R21/R22/R24/R30/R31/R33/R34/R35.
 //
 // Every requirement below carries a lock test: deliberately breaking the
 // behaviour makes the named test fail (the mutation table for each requirement
@@ -1273,16 +1273,16 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     // 显式收起：安静节点自己没有行，但子树仍然可达（骨架在）
     const closed = hooks.buildDisplayRows({ versions, digests, tree, expanded: new Map([[1, false]]) })
     expect(closed.map((row) => [row.kind, row.count])).toEqual([['collapsed', 1]])
-    // 2026-09-15：安静分支的 chip 层级与普通分支统一（都落在"子行那一级"，
+    // 安静分支的 chip 层级与普通分支统一（都落在"子行那一级"，
     // 而不是安静节点自己的 level）——否则安静节点的收起入口缩进浅一级。
     expect(closed[0].level).toBe(1)
-    // 默认收起（用户口径 2026-09-15）：安静节点不留行，子行也不出现
+    // 默认收起（用户口径）：安静节点不留行，子行也不出现
     const byDefault = hooks.buildDisplayRows({ versions, digests, tree, expanded: null })
     expect(byDefault.map((row) => row.kind)).toEqual(['collapsed'])
     expect(byDefault[0].level).toBe(1)
     const opened = hooks.buildDisplayRows({ versions, digests, tree, expanded: new Map([[1, true]]) })
     // 展开态多一枚「收起」chip（安静父节点同样有，否则点开就回不去），且它落在
-    // **子行之后**——"收起"明确属于这次展开（用户口径 2026-09-15）。
+    // **子行之后**——"收起"明确属于这次展开（用户口径）。
     expect(opened.map((row) => row.kind)).toEqual(['expanded', 'row', 'expanded'])
     expect(opened[0].seq).toBe(1)
     expect(opened[0].position).toBe('head')
@@ -1476,7 +1476,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     replaced: [
       { seq: 8692, role: 'user', excerpt: '我和外部AI的思路一致' },
       { seq: 8693, role: 'assistant', excerpt: '好的' },
-      { seq: 9177, role: 'user', excerpt: '任务记录' },
+      { seq: 9177, role: 'user', excerpt: '示例短语' },
     ],
     replacedMore: 7,
   })
@@ -1499,7 +1499,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(text).toContain('我和外部AI的思路一致')
     // 其余明细（引文 2/3、另有 M 条、【摘要】、延续）默认都不渲染
     expect(text).not.toContain('好的')
-    expect(text).not.toContain('任务记录')
+    expect(text).not.toContain('示例短语')
     expect(text).not.toContain(tZh('what.more', { count: 7 }))
     expect(text).not.toContain(tZh('what.summaryTag'))
     expect(text).not.toContain('这一段被丢掉了')
@@ -1516,7 +1516,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(quoteCount(element)).toBe(4)                 // 3 条引文 + 延续
     expect(text).toContain('我和外部AI的思路一致')
     expect(text).toContain('好的')
-    expect(text).toContain('任务记录')
+    expect(text).toContain('示例短语')
     expect(text).toContain(tZh('what.more', { count: 7 }))
     expect(text).toContain(tZh('what.summaryTag'))
     expect(text).toContain('这一段被丢掉了')
@@ -1560,7 +1560,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     const text = textOf(element)
     // 计数在首行(短文案)
     expect(text).toContain(tZh('what.countShort', { count: 7 }))
-    // 真机发现(2026-09-15):一条**没有可读原文**的档只显示"另有 N 条"读起来像坏行。
+    // 真机发现:一条**没有可读原文**的档只显示"另有 N 条"读起来像坏行。
     // 现在必须**说清原因**(原文已被压缩),而且仍然不许编造摘录。
     expect(text).toContain(tZh('what.compacted', { count: 7 }))
     expect(text).not.toContain(tZh('what.more', { count: 7 }))
@@ -1737,7 +1737,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
   })
 
   it('展开后能收起：展开态插一枚「收起」chip,点它回到 collapsed(往返都能走)', () => {
-    // 普通分支 + 安静分支都要有(真机病根:展开后原入口被 children 取代 ⇒ 点开回不去)
+    // 普通分支 + 安静分支都要有
     const cases = [
       { label: '普通节点', digests: digestMap([[1, fullDigest()], [2, fullDigest()]]), opened: ['row', 'expanded', 'row', 'expanded'], closed: ['row', 'collapsed'] },
       // 安静父节点自己没有内容行(R20) ⇒ 收起态只有折叠提示。
@@ -1857,7 +1857,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(hooks.visibleTo([], [], 100)).toBe(0)
   })
 
-  // ---- 深层档不再点不开 (2026-09-15 final UX fix) ---------------------------
+  // ---- 深层档不再点不开 (final UX fix) ---------------------------
 
   it('默认收起：默认输出里没有任何 level ≥ 1 的内容行（点击才展开）', () => {
     const versions = [1, 2, 3, 4].map((seq) => rec(seq))
@@ -2101,7 +2101,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(reopened.map((row) => row.record?.boundarySeq).filter((seq) => seq !== undefined)).toContain(5)
   })
 
-  // ---- 「给人读」改版：文案锁 (2026-09-15) --------------------------------
+  // ---- 「给人读」改版：文案锁  --------------------------------
 
   it('给人读·首行不再说"丢弃"：计数用「换掉了 N 条」', () => {
     const element = richRow()
@@ -2211,7 +2211,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(zh['timeline.openEntry']).toBe('查看这一档')
   })
 
-  // ---- R40/R41/R43: 「这一条是什么」+ 纯文本分级（真机反馈 2026-09-15） ------
+  // ---- R40/R41/R43: 「这一条是什么」+ 纯文本分级 ------
   //
   // 用户原话：①「这个条目，现在是什么我并不知道——这一轮的输入」②「（压缩 814
   // → 1002 → 1265 三行）这一块不应该是三级的缩进区别吗」。两条都要求**不点开
@@ -2245,7 +2245,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     // 顺序：动作 → 轮次 → 计数（读起来是"编辑重发 · 第 159 轮 · … · 换掉了 N 条"）
     expect(line1.indexOf(tZh('timeline.kind.edit'))).toBeLessThan(line1.indexOf('第 159 轮'))
     expect(line1.indexOf('第 159 轮')).toBeLessThan(line1.indexOf(tZh('what.countShort', { count: 10 })))
-    // 行模型 → 渲染 全链：轮次从摘要记录流到行，再流进首行
+    // 行模型 → 渲染全链：轮次从摘要记录流到行，再流进首行
     const versions = [rec(9300)]
     const digests = digestMap([[9300, { ...fullDigest(richWhat()), turn: 159 }]])
     const [row] = hooks.buildDisplayRows({ versions, digests, tree: null, expanded: null })
@@ -2258,12 +2258,12 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
   })
 
   it('R40 · 取不到轮次就整段省略（不出现"第 ? 轮"、不留空标签）', () => {
-    // 摘要记录里没有 turn（旧档 / 日志里没有 turn）⇒ 首行只剩 动作 · 时间
+    // 摘要记录里没有 turn（旧档 / 日志里没有 turn）⇒ 首行只剩动作 · 时间
     const noTurn = line1Of(richRow())
     expect(noTurn).not.toContain('第 ')
     expect(noTurn).not.toContain('轮')
     expect(noTurn).toContain(tZh('timeline.kind.edit'))
-    // turn = 0 / 负数 / 非整数同样当作取不到（真机 turn 从 1 起）
+    // turn = 0 / 负数 / 非整数同样当作取不到
     for (const bad of [0, -3, 1.5, Number.NaN, null, undefined, '159']) {
       expect(line1Of(richRow({ turn: bad }))).not.toContain('第 ')
     }
@@ -2283,11 +2283,11 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(new Set(words).size).toBe(4)
     const rowOf = (role) => hooks.VersionRow({
       record: rec(9310), t: tZh, top: 0, turn: 12,
-      what: { op: 'edit', at: 0, new: { excerpt: '' }, replaced: [{ seq: 1, role, excerpt: '任务记录' }] },
+      what: { op: 'edit', at: 0, new: { excerpt: '' }, replaced: [{ seq: 1, role, excerpt: '示例短语' }] },
       discardedCount: 1, onPreview() {}, onJump() {},
     })
-    // 完整读法：原来的内容：这一轮的输入「任务记录」（同一行首尾相接，逗号分隔符不打断）
-    expect(allText(rowOf('user')).join('')).toContain(`${tZh('what.oldLabel')}${tZh('what.role2.user')}「任务记录」`)
+    // 完整读法：原来的内容：这一轮的输入「示例短语」（同一行首尾相接，逗号分隔符不打断）
+    expect(allText(rowOf('user')).join('')).toContain(`${tZh('what.oldLabel')}${tZh('what.role2.user')}「示例短语」`)
     expect(textOf(rowOf('assistant'))).toContain(tZh('what.role2.assistant'))
     expect(textOf(rowOf('tool'))).toContain(tZh('what.role2.tool'))
     expect(textOf(rowOf('unknown'))).toContain(tZh('what.role2.unknown'))
@@ -2347,7 +2347,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(collect(discarded).some((el) => el.type === 'button')).toBe(false)
   })
 
-  // ---- R44–R48: 「现在这条」读序 + 收起位置 + 逐级色条（用户口径 2026-09-15） --
+  // ---- R44–R48: 「现在这条」读序 + 收起位置 + 逐级色条（用户口径） --
 
   const nowOf = (seq, excerpt, role = 'user') => ({ seq, role, excerpt })
   const nowRow = (extra = {}) => hooks.VersionRow({
@@ -2657,7 +2657,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 2026-09-30 · 撤回二次确认 + 回档失败不再静默
+// · 撤回二次确认 + 回档失败不再静默
 //
 // Both behaviours are INTERACTIVE (a click opens a dialog; a rejected op flips
 // state), so they need a real render phase. The extraction at the top of this
@@ -2693,7 +2693,7 @@ describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
     // eslint-disable-next-line no-new-func
     new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(
       (id) => (id === 'react' ? mini.react : nodeRequire(id)), mod, mod.exports,
-)
+    )
     return { mini, client: mod.exports }
   }
 
@@ -2767,7 +2767,7 @@ describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
       const dialog = textOf(scrim)
       expect(dialog).toContain(tZh('action.recallConfirm'))
       expect(dialog).toContain(tZh('action.recallConfirmDesc'))
-      // 2026-10-08(既定口径·文案):不再说"归档"——就事论事说「撤回」,并给出**真实可用**
+      // (既定口径·文案):不再说"归档"——就事论事说「撤回」,并给出**真实可用**
       // 的替代操作(该 marker 上的「恢复显示」按钮;host 侧 unhide 已落地,见 test/unhide.test.js)。
       expect(zh['action.recallConfirmDesc']).toContain('撤回')
       expect(zh['action.recallConfirmDesc']).toContain('恢复显示')
@@ -2839,7 +2839,7 @@ describe('撤回二次确认 + 回档失败面（真渲染循环）', () => {
   })
 
   // -------------------------------------------------------------------------
-  // 2026-09-30 用户需求「撤回应该先暂停运行，然后处理」：
+  // 「撤回应该先暂停运行，然后处理」：
   // 运行中撤回 ⇒ 先调**官方停止入口**、等它停下（有限超时），**再**发 recall；
   // 不在运行 ⇒ 不调中断；中断 reject/超时 ⇒ recall 照发 + 可见提示 + 宿主日志。
   // 顺序用"事件数组"断言（中断事件必须排在 recall 事件之前）。

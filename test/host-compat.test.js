@@ -1,6 +1,6 @@
 /**
  * Host event-view compatibility — regression guard for the DSH Desktop 2.0.9
- * incident.
+ * regression.
  *
  * `@deepseek-ai/dsh-session@0.1.5-rc.1` removed the public `events` member from
  * Session (no instance field, no getter): the append-only log is reachable only
@@ -162,7 +162,7 @@ describe('message-id lookup (findMessageSeq) on both host generations', () => {
 
 /**
  * MEDIUM-1/2 (independent review): returning [] WITHOUT a diagnostic turns the
- * next host-API drift into an empty log — the exact shape of the incident.
+ * next host-API drift into an empty log — the exact shape of the regression.
  * These tests assert the *diagnostics*, not just the return values, and that
  * distinct broken shapes produce distinct, shape-fingerprinted lines.
  */

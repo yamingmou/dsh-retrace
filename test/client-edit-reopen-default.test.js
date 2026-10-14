@@ -1,8 +1,8 @@
 /**
- * 2026-09-30(成员裁决)「编辑的主语义 = 从这条重开（重新编辑发送），后边是新的时间线分支」。
+ * 编辑的主语义 = 从这条重开（重新编辑发送），后边是新的时间线分支。
  *
- * 裁决原文：「现在编辑的时候有两个选项【只改这一条】【从这条重开】……我们只需要有重新
- * 开始这个概念（重新编辑发送）就可以啊——编辑肯定是重新开始——后边是新的时间线分支呀」。
+ * 界面原先给两个选项（只改这一条 / 从这条重开）;保留下来的语义是:重新编辑发送 =
+ * 新的时间线分支从此开始,后边的内容属于新分支。
  *
  * 因此本文件把三件事钉死（都是**行为面**断言，不是文案断言）：
  *  ① 编辑器里只有一个发送按钮，点击后发出的请求是 `fromScratch: true`（重开=新分支）；
@@ -58,7 +58,7 @@ const buildInteractive = async (names) => {
   // eslint-disable-next-line no-new-func
   new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(
     (id) => (id === 'react' ? mini.react : nodeRequire(id)), mod, mod.exports,
-)
+  )
   return { mini, client: mod.exports }
 }
 
@@ -164,7 +164,7 @@ describe('重开被拒 ⇒ 错误提示里的兜底动作「仅改文本（保�
       if (payload.fromScratch === true && guardFires) {
         guardFires = false
         // host 侧真实形状（lib/host-core.js 的 op 信封 + lib/prewrite-guard.js）。
-        return Promise.resolve({ ok: false, error: { code: 'rollback-guide', message: '本次改写范围属于极端回档（极端遮蔽 个对话节点）' } })
+        return Promise.resolve({ ok: false, error: { code: 'rollback-guide', message: '本次改写范围属于极端回档（遮蔽节点数超出极端线）' } })
       }
       return Promise.resolve({ ok: true, value: { resendMessageId: 'r2', originalText: 'text 5' } })
     })
@@ -284,7 +284,7 @@ describe('设置面板撤除 editFromScratch 开关（字段留 / UI 撤 / 判�
     expect(src).not.toContain('config.editFromScratch')
   })
 
-  it('生成物与源码同步撤除（守住"改源码忘重建 bundle"的历史事故）', () => {
+  it('生成物与源码同步撤除（守住"改源码忘重建 bundle"的历史问题）', () => {
     const src = readFileSync(CLIENT_SOURCE_PATH, 'utf8')
     expect(src).not.toContain("'options.editFromScratch'")
     expect(src).not.toContain("toggle('editFromScratch')")

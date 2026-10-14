@@ -283,52 +283,52 @@ const CHECKS = [
   { kind: 'present', id: 'session.isOwnSeq', file: SESSION, re: /^\s+isOwnSeq\(seq\)\s*\{/m, what: 'Session.isOwnSeq(seq)', usedBy: '备查' },
   { kind: 'present', id: 'session.id', file: SESSION, re: /get id\(\)\s*\{/, what: 'Session.id getter', usedBy: 'lib/index.js, lib/watchdog.js, lib/versioning.js, lib/prewrite-guard.js' },
   { kind: 'present', id: 'session.seq', file: SESSION, re: /get seq\(\)\s*\{/, what: 'Session.seq getter', usedBy: 'lib/host-compat.js 语义基准(seq 索引)' },
-  { kind: 'present', id: 'session.header', file: SESSION, re: /^\s+header;/m, what: 'Session.header field', usedBy: 'lib/rollback.js (header.cwd), lib/index.js, lib/versioning.js' },
-  { kind: 'present', id: 'session.header.cwd', file: SESSION, re: /cwd: meta\.cwd/, what: 'session.header.cwd written into the header at construction', usedBy: 'lib/rollback.js, lib/index.js,405, lib/versioning.js,124,372,397' },
+  { kind: 'present', id: 'session.header', file: SESSION, re: /^\s+header;/m, what: 'Session.header field', usedBy: 'lib/rollback.js#L80 (header.cwd), lib/index.js, lib/versioning.js' },
+  { kind: 'present', id: 'session.header.cwd', file: SESSION, re: /cwd: meta\.cwd/, what: 'session.header.cwd written into the header at construction', usedBy: 'lib/rollback.js#L81, lib/index.js#L311,405, lib/versioning.js#L81,124,372,397' },
   // runtime read of the same member (host fork path) — same shape the plugin uses
   // (`session.header?.cwd`). Kept separate so the header-construction assertion
   // cannot be satisfied by the input validator alone (review-independent-2 (c)).
-  { kind: 'present', id: 'session.header.cwd.read', file: SESSION, re: /liveSource\.header\.cwd/, what: 'runtime read of session.header.cwd', usedBy: 'lib/rollback.js, lib/index.js,405, lib/versioning.js,124,372,397' },
-  { kind: 'present', id: 'session.append', file: SESSION, re: /^\s+append\(type, data/m, what: 'Session.append(type, data, ...)', usedBy: 'lib/adapter/dsh-writer.js, lib/index.js' },
+  { kind: 'present', id: 'session.header.cwd.read', file: SESSION, re: /liveSource\.header\.cwd/, what: 'runtime read of session.header.cwd', usedBy: 'lib/rollback.js#L81, lib/index.js#L311,405, lib/versioning.js#L81,124,372,397' },
+  { kind: 'present', id: 'session.append', file: SESSION, re: /^\s+append\(type, data/m, what: 'Session.append(type, data, ...)', usedBy: 'lib/adapter/dsh-writer.js, lib/index.js#L327' },
   // reverse: Session has no `sessionId` — the plugin's `?? session.sessionId` fallback
   // (lib/index.js) is a dead branch for a measured host.
-  { kind: 'absent', id: 'session.sessionId (never existed)', file: SESSION, scope: SESSION_CLASS, member: 'sessionId', what: 'Session.sessionId must NOT exist', usedBy: 'lib/index.js dead fallback (id is the only id)', hint: '若宿主新增 sessionId,核实语义再迁移;不要把它当 id 的别名' },
+  { kind: 'absent', id: 'session.sessionId (never existed)', file: SESSION, scope: SESSION_CLASS, member: 'sessionId', what: 'Session.sessionId must NOT exist', usedBy: 'lib/index.js#L387 dead fallback (id is the only id)', hint: '若宿主新增 sessionId,核实语义再迁移;不要把它当 id 的别名' },
   // ── session.surface (was the "silent degradation" suspect; confirmed present) ──
-  { kind: 'present', id: 'session.surface', file: SESSION, re: /get surface\(\)\s*\{/, what: 'Session.surface getter', usedBy: 'lib/host-core.js, lib/rollback.js' },
-  { kind: 'present', id: 'session.surface.nodes', file: SESSION, re: /get nodes\(\)\s*\{/, what: 'SurfaceManager.nodes getter (number[])', usedBy: 'lib/host-core.js,331,545,674; lib/prewrite-guard.js' },
+  { kind: 'present', id: 'session.surface', file: SESSION, re: /get surface\(\)\s*\{/, what: 'Session.surface getter', usedBy: 'lib/host-core.js, lib/rollback.js#L92' },
+  { kind: 'present', id: 'session.surface.nodes', file: SESSION, re: /get nodes\(\)\s*\{/, what: 'SurfaceManager.nodes getter (number[])', usedBy: 'lib/host-core.js#L249,331,545,674; lib/prewrite-guard.js#L106' },
 
   // ── sessions service (SessionStore) ────────────────────────────────────────
-  { kind: 'present', id: 'sessions.get', file: SESSION, re: /^\s+get\(id\)\s*\{/m, what: 'SessionStore.get(id)', usedBy: 'lib/host-core.js, lib/rollback.js, lib/versioning.js, lib/watchdog.js' },
+  { kind: 'present', id: 'sessions.get', file: SESSION, re: /^\s+get\(id\)\s*\{/m, what: 'SessionStore.get(id)', usedBy: 'lib/host-core.js#L180, lib/rollback.js#L61, lib/versioning.js, lib/watchdog.js' },
   { kind: 'present', id: 'sessions.list', file: SESSION, re: /^\s+list\(\)\s*\{/m, what: 'SessionStore.list() → Session[]', usedBy: 'lib/host-compat.js:sessionIds (close-guard / interrupt-guard 枚举)' },
-  { kind: 'present', id: 'sessions.flush', file: SESSION, re: /async flush\(session\)\s*\{/, what: 'SessionStore.flush(session)', usedBy: 'lib/host-core.js, lib/rollback.js' },
+  { kind: 'present', id: 'sessions.flush', file: SESSION, re: /async flush\(session\)\s*\{/, what: 'SessionStore.flush(session)', usedBy: 'lib/host-core.js#L412, lib/rollback.js#L283' },
   // reverse: measured hosts (0.1.0-rc.7 and 0.1.5-rc.1) have no values()/keys().
   // The plugin keeps them as DEFENSIVE old-host fallbacks; these assertions record
   // that neither is the contract of a measured host (review A3/A4/LOW-2/LOW-3).
-  { kind: 'absent', id: 'sessions.values (never existed)', file: SESSION, scope: SESSION_STORE_CLASS, member: 'values', what: 'SessionStore.values() must NOT exist', usedBy: 'lib/index.js dead fallback (list() is the enumerator)', hint: 'keep the fallback for unmeasured hosts, but do not treat it as a live API' },
+  { kind: 'absent', id: 'sessions.values (never existed)', file: SESSION, scope: SESSION_STORE_CLASS, member: 'values', what: 'SessionStore.values() must NOT exist', usedBy: 'lib/index.js#L387 dead fallback (list() is the enumerator)', hint: 'keep the fallback for unmeasured hosts, but do not treat it as a live API' },
   { kind: 'absent', id: 'sessions.keys (never existed)', file: SESSION, scope: SESSION_STORE_CLASS, member: 'keys', what: 'SessionStore.keys() must NOT exist', usedBy: 'lib/host-compat.js:sessionIds defensive keys() fallback', hint: 'list() is the measured enumeration API; keys() is a defensive shape only' },
 
   // ── agents service + Agent object ─────────────────────────────────────────
-  { kind: 'present', id: 'agents.get', file: DSH_AGENT, re: /^\s+get\(id\)\s*\{/m, what: 'AgentRegistry.get(id)', usedBy: 'lib/host-core.js,484,533; lib/close-guard.js,119' },
+  { kind: 'present', id: 'agents.get', file: DSH_AGENT, re: /^\s+get\(id\)\s*\{/m, what: 'AgentRegistry.get(id)', usedBy: 'lib/host-core.js#L451,484,533; lib/close-guard.js#L100,119' },
   { kind: 'present', id: 'agents.list', file: DSH_AGENT, re: /^\s+list\(\)\s*\{/m, what: 'AgentRegistry.list()', usedBy: '备查' },
-  { kind: 'present', id: 'agent.status', file: AGENT_LOOP, re: /get status\(\)\s*\{/, what: "Agent.status getter ('idle'|'running')", usedBy: 'lib/host-core.js, lib/close-guard.js' },
-  { kind: 'present', id: 'agent.followup', file: AGENT_LOOP, re: /^\s+followup\(/m, what: 'Agent.followup(message)', usedBy: 'lib/host-core.js,603' },
-  { kind: 'present', id: 'agent.cancel', file: AGENT_LOOP, re: /^\s+cancel\(cause/m, what: 'Agent.cancel(cause)', usedBy: 'lib/host-core.js' },
-  { kind: 'present', id: 'agent.whenIdle', file: AGENT_LOOP, re: /^\s+async whenIdle\(\)/m, what: 'Agent.whenIdle()', usedBy: 'lib/host-core.js' },
-  { kind: 'present', id: 'agent.inbox', file: AGENT_LOOP, re: /^\s+inbox;/m, what: 'Agent.inbox field', usedBy: 'lib/close-guard.js-47 (hasPending/nextTurn/nextStep)' },
+  { kind: 'present', id: 'agent.status', file: AGENT_LOOP, re: /get status\(\)\s*\{/, what: "Agent.status getter ('idle'|'running')", usedBy: 'lib/host-core.js#L197, lib/close-guard.js#L34' },
+  { kind: 'present', id: 'agent.followup', file: AGENT_LOOP, re: /^\s+followup\(/m, what: 'Agent.followup(message)', usedBy: 'lib/host-core.js#L515,603' },
+  { kind: 'present', id: 'agent.cancel', file: AGENT_LOOP, re: /^\s+cancel\(cause/m, what: 'Agent.cancel(cause)', usedBy: 'lib/host-core.js#L203' },
+  { kind: 'present', id: 'agent.whenIdle', file: AGENT_LOOP, re: /^\s+async whenIdle\(\)/m, what: 'Agent.whenIdle()', usedBy: 'lib/host-core.js#L204' },
+  { kind: 'present', id: 'agent.inbox', file: AGENT_LOOP, re: /^\s+inbox;/m, what: 'Agent.inbox field', usedBy: 'lib/close-guard.js#L39-47 (hasPending/nextTurn/nextStep)' },
   // Inbox is asserted in BOTH locations on purpose (review INFO-1): the types file
   // is the parallel declaration, while the RUNTIME object is ReactLoopInbox in
   // dsh-agent-loop (this.inbox = new ReactLoopInbox(...)). They agree today; pin
   // both so a rename in either place fails loudly.
-  { kind: 'present', id: 'inbox.hasPending', file: INBOX, re: /get hasPending\(\)/, what: 'Inbox.hasPending (declared type)', usedBy: 'lib/close-guard.js' },
-  { kind: 'present', id: 'inbox.nextTurn', file: INBOX, re: /get nextTurn\(\)/, what: 'Inbox.nextTurn (declared type)', usedBy: 'lib/close-guard.js' },
-  { kind: 'present', id: 'inbox.nextStep', file: INBOX, re: /get nextStep\(\)/, what: 'Inbox.nextStep (declared type)', usedBy: 'lib/close-guard.js' },
-  { kind: 'present', id: 'agentLoopInbox.hasPending', file: AGENT_LOOP, re: /get hasPending\(\)/, what: 'ReactLoopInbox.hasPending (runtime object)', usedBy: 'lib/close-guard.js' },
-  { kind: 'present', id: 'agentLoopInbox.nextTurn', file: AGENT_LOOP, re: /get nextTurn\(\)/, what: 'ReactLoopInbox.nextTurn (runtime object)', usedBy: 'lib/close-guard.js' },
-  { kind: 'present', id: 'agentLoopInbox.nextStep', file: AGENT_LOOP, re: /get nextStep\(\)/, what: 'ReactLoopInbox.nextStep (runtime object)', usedBy: 'lib/close-guard.js' },
+  { kind: 'present', id: 'inbox.hasPending', file: INBOX, re: /get hasPending\(\)/, what: 'Inbox.hasPending (declared type)', usedBy: 'lib/close-guard.js#L42' },
+  { kind: 'present', id: 'inbox.nextTurn', file: INBOX, re: /get nextTurn\(\)/, what: 'Inbox.nextTurn (declared type)', usedBy: 'lib/close-guard.js#L44' },
+  { kind: 'present', id: 'inbox.nextStep', file: INBOX, re: /get nextStep\(\)/, what: 'Inbox.nextStep (declared type)', usedBy: 'lib/close-guard.js#L45' },
+  { kind: 'present', id: 'agentLoopInbox.hasPending', file: AGENT_LOOP, re: /get hasPending\(\)/, what: 'ReactLoopInbox.hasPending (runtime object)', usedBy: 'lib/close-guard.js#L42' },
+  { kind: 'present', id: 'agentLoopInbox.nextTurn', file: AGENT_LOOP, re: /get nextTurn\(\)/, what: 'ReactLoopInbox.nextTurn (runtime object)', usedBy: 'lib/close-guard.js#L44' },
+  { kind: 'present', id: 'agentLoopInbox.nextStep', file: AGENT_LOOP, re: /get nextStep\(\)/, what: 'ReactLoopInbox.nextStep (runtime object)', usedBy: 'lib/close-guard.js#L45' },
 
   // ── service NAMES the plugin injects / resolves (review A5) ───────────────
   // A wrong service name makes the plugin fiber permanently pending (client boot
-  // failure) or ctx.get() return undefined — this class of incident already
+  // failure) or ctx.get() return undefined — this class of regression already
   // happened in this repo (conversationEvents / dsh-client-runtime).
   //
   // ⚠️ 防重踩（review-independent  假警报）:服务名一律取自 `super(ctx,"X")`
@@ -336,46 +336,46 @@ const CHECKS = [
   // 例:宿主 bundle 有 `id: sandbox` 的行,而真正的服务名是 sandboxPolicy
   // （`dsh-sandbox-policy` 的 `super(ctx, "sandboxPolicy")`）。曾据 bundle 行 id
   // 误判 `inject: ['sandboxPolicy']` 不成立。改 inject 前先在本闸门查 `super(ctx,"X")`。
-  { kind: 'present', id: 'service.sessions', file: SESSION, re: /super\(ctx, "sessions"\)/, what: 'service "sessions"', usedBy: 'lib/index.js inject' },
-  { kind: 'present', id: 'service.agents', file: DSH_AGENT, re: /super\(ctx, "agents"\)/, what: 'service "agents"', usedBy: 'lib/index.js inject' },
-  { kind: 'present', id: 'service.webServer', file: WEB_SERVER, re: /super\(ctx, "webServer"\)/, what: 'service "webServer"', usedBy: 'lib/index.js inject; ctx.get("webServer")' },
-  { kind: 'present', id: 'service.fs', file: DSH_FS, re: /super\(ctx, "fs"\)/, what: 'service "fs"', usedBy: 'lib/index.js inject' },
-  { kind: 'present', id: 'service.subprocess', file: DSH_SUBPROCESS, re: /super\(ctx, "subprocess"\)/, what: 'service "subprocess"', usedBy: 'lib/index.js inject' },
-  { kind: 'present', id: 'service.sandboxPolicy', file: SANDBOX_POLICY, re: /super\(ctx, "sandboxPolicy"\)/, what: 'service "sandboxPolicy"', usedBy: 'lib/index.js inject' },
-  { kind: 'present', id: 'service.jobs', file: DSH_JOBS, re: /super\(ctx, "jobs"\)/, what: 'service "jobs"', usedBy: 'lib/index.js inject' },
-  { kind: 'present', id: 'service.tokenMeter', file: TOKEN_METER, re: /super\(ctx, "tokenMeter"\)/, what: 'service "tokenMeter"', usedBy: 'lib/index.js ctx.get("tokenMeter")' },
-  { kind: 'present', id: 'service.sessionTitle', file: SESSION_TITLE, re: /super\(ctx, "sessionTitle"\)/, what: 'service "sessionTitle"', usedBy: 'lib/index.js ctx.get("sessionTitle")' },
+  { kind: 'present', id: 'service.sessions', file: SESSION, re: /super\(ctx, "sessions"\)/, what: 'service "sessions"', usedBy: 'lib/index.js#L126 inject' },
+  { kind: 'present', id: 'service.agents', file: DSH_AGENT, re: /super\(ctx, "agents"\)/, what: 'service "agents"', usedBy: 'lib/index.js#L126 inject' },
+  { kind: 'present', id: 'service.webServer', file: WEB_SERVER, re: /super\(ctx, "webServer"\)/, what: 'service "webServer"', usedBy: 'lib/index.js#L126 inject; ctx.get("webServer")' },
+  { kind: 'present', id: 'service.fs', file: DSH_FS, re: /super\(ctx, "fs"\)/, what: 'service "fs"', usedBy: 'lib/index.js#L126 inject' },
+  { kind: 'present', id: 'service.subprocess', file: DSH_SUBPROCESS, re: /super\(ctx, "subprocess"\)/, what: 'service "subprocess"', usedBy: 'lib/index.js#L126 inject' },
+  { kind: 'present', id: 'service.sandboxPolicy', file: SANDBOX_POLICY, re: /super\(ctx, "sandboxPolicy"\)/, what: 'service "sandboxPolicy"', usedBy: 'lib/index.js#L126 inject' },
+  { kind: 'present', id: 'service.jobs', file: DSH_JOBS, re: /super\(ctx, "jobs"\)/, what: 'service "jobs"', usedBy: 'lib/index.js#L126 inject' },
+  { kind: 'present', id: 'service.tokenMeter', file: TOKEN_METER, re: /super\(ctx, "tokenMeter"\)/, what: 'service "tokenMeter"', usedBy: 'lib/index.js#L151 ctx.get("tokenMeter")' },
+  { kind: 'present', id: 'service.sessionTitle', file: SESSION_TITLE, re: /super\(ctx, "sessionTitle"\)/, what: 'service "sessionTitle"', usedBy: 'lib/index.js#L323 ctx.get("sessionTitle")' },
   { kind: 'present', id: 'package.clientLocale', file: CLIENT_LOCALE_PKG, re: /"name": "@deepseek-ai\/dsh-client-locale"/, what: 'client inject package @deepseek-ai/dsh-client-locale', usedBy: 'package.json dsh.client.inject' },
   { kind: 'present', id: 'package.clientUiConversation', file: CLIENT_UI_CONVERSATION_PKG, re: /"name": "@deepseek-ai\/dsh-client-ui-conversation"/, what: 'client inject package @deepseek-ai/dsh-client-ui-conversation', usedBy: 'package.json dsh.client.inject' },
 
   // ── services resolved via ctx.get(...) / ctx.<service> ────────────────────
   { kind: 'present', id: 'tokenMeter.measure', file: TOKEN_METER, re: /^\s+measure\(session/m, what: 'tokenMeter.measure(session, header)', usedBy: 'lib/adapter/dsh-writer.js:priceBySurface' },
   { kind: 'present', id: 'tokenMeter.estimateMessage', file: TOKEN_METER, re: /^\s+estimateMessage\(message\)/m, what: 'tokenMeter.estimateMessage(message)', usedBy: 'lib/adapter/dsh-writer.js:priceByNode' },
-  { kind: 'present', id: 'sessionTitle.rename', file: SESSION_TITLE, re: /^\s+rename\(session, title\)/m, what: 'sessionTitle.rename(session, title)', usedBy: 'lib/index.js' },
-  { kind: 'present', id: 'webServer.register', file: WEB_SERVER, re: /^\s+register\(route\)/m, what: 'webServer.register(route)', usedBy: 'lib/index.js' },
+  { kind: 'present', id: 'sessionTitle.rename', file: SESSION_TITLE, re: /^\s+rename\(session, title\)/m, what: 'sessionTitle.rename(session, title)', usedBy: 'lib/index.js#L325' },
+  { kind: 'present', id: 'webServer.register', file: WEB_SERVER, re: /^\s+register\(route\)/m, what: 'webServer.register(route)', usedBy: 'lib/index.js#L269' },
   { kind: 'present', id: 'fs.resolve', file: FS_LOCAL, re: /^\s+async resolve\(path/m, what: 'fs.resolve(path, opts)', usedBy: 'lib/rollback.js, lib/versioning.js, lib/git-adapter.js' },
-  { kind: 'present', id: 'fs.contains', file: FS_LOCAL, re: /^\s+contains\(parent, child\)/m, what: 'fs.contains(parent, child)', usedBy: 'lib/rollback.js, lib/versioning.js' },
-  { kind: 'present', id: 'fs.stat', file: FS_LOCAL, re: /^\s+async stat\(target/m, what: 'fs.stat(target, signal)', usedBy: 'lib/rollback.js' },
-  { kind: 'present', id: 'fs.readBytes', file: FS_LOCAL, re: /^\s+async readBytes\(target/m, what: 'fs.readBytes(target, signal, maxBytes)', usedBy: 'lib/versioning.js' },
+  { kind: 'present', id: 'fs.contains', file: FS_LOCAL, re: /^\s+contains\(parent, child\)/m, what: 'fs.contains(parent, child)', usedBy: 'lib/rollback.js#L109, lib/versioning.js#L86' },
+  { kind: 'present', id: 'fs.stat', file: FS_LOCAL, re: /^\s+async stat\(target/m, what: 'fs.stat(target, signal)', usedBy: 'lib/rollback.js#L192' },
+  { kind: 'present', id: 'fs.readBytes', file: FS_LOCAL, re: /^\s+async readBytes\(target/m, what: 'fs.readBytes(target, signal, maxBytes)', usedBy: 'lib/versioning.js#L87' },
   // 5-arg form the plugin calls: (target, content, expected, signal, sandboxPolicy)
-  { kind: 'present', id: 'fs.writeText', file: FS_SANDBOX, re: /async writeText\(target, content, expected, signal, sandboxPolicy\)/, what: 'fs-sandbox writeText(..., sandboxPolicy)', usedBy: 'lib/rollback.js, lib/git-adapter.js' },
-  { kind: 'present', id: 'subprocess.spawn', file: SUBPROCESS_LOCAL, re: /^\s+spawn\(spec\)/m, what: 'subprocess.spawn(spec)', usedBy: 'lib/rollback.js, lib/git-adapter.js' },
-  { kind: 'present', id: 'subprocess.resolveExecutable', file: SUBPROCESS_LOCAL, re: /^\s+async resolveExecutable\(command/m, what: 'subprocess.resolveExecutable(command)', usedBy: 'lib/git-adapter.js' },
-  { kind: 'present', id: 'sandboxPolicy.resolve', file: SANDBOX_POLICY, re: /^\s+resolve\(request/m, what: 'sandboxPolicy.resolve(request)', usedBy: 'lib/rollback.js' },
-  { kind: 'present', id: 'jobs.list', file: JOBS_LOCAL, re: /^\s+list\(caller\)/m, what: 'jobs.list(caller)', usedBy: 'lib/close-guard.js-79' },
-  { kind: 'present', id: 'sessionProjections.register', file: SESSION_PROJECTION, re: /^\s+register\(definition\)/m, what: 'sessionProjections.register(definition)', usedBy: 'lib/versioning.js,231' },
-  { kind: 'present', id: 'sessionProjections.onChanged', file: SESSION_PROJECTION, re: /^\s+onChanged\(listener\)/m, what: 'sessionProjections.onChanged(listener)', usedBy: 'lib/versioning.js' },
-  { kind: 'present', id: 'sessionProjections.snapshot', file: SESSION_PROJECTION, re: /^\s+snapshot\(session, keys\)/m, what: 'sessionProjections.snapshot(session, keys)', usedBy: 'lib/versioning.js' },
-  { kind: 'present', id: 'sessionQuery.readEvent', file: SESSION_QUERY, re: /^\s+async readEvent\(request/m, what: 'sessionQuery.readEvent(request)', usedBy: 'lib/versioning.js' },
-  { kind: 'present', id: 'sessionQuery.readSurface', file: SESSION_QUERY, re: /^\s+async readSurface\(sessionId\)/m, what: 'sessionQuery.readSurface(sessionId)', usedBy: 'lib/versioning.js' },
-  { kind: 'present', id: 'storageDomain.open', file: STORAGE_DOMAIN, re: /^\s+async open\(spec\)/m, what: 'storageDomain.open(spec)', usedBy: 'lib/versioning.js' },
-  { kind: 'present', id: 'storageDomain.table', file: STORAGE_DOMAIN, re: /^\s+table\(name\)/m, what: 'storageDomain.table(name)', usedBy: 'lib/versioning.js,128,196,344,364' },
-  { kind: 'present', id: 'storageDomain.close', file: STORAGE_DOMAIN, re: /^\s+close\(\)/m, what: 'storageDomain.close()', usedBy: 'lib/versioning.js' },
+  { kind: 'present', id: 'fs.writeText', file: FS_SANDBOX, re: /async writeText\(target, content, expected, signal, sandboxPolicy\)/, what: 'fs-sandbox writeText(..., sandboxPolicy)', usedBy: 'lib/rollback.js#L196, lib/git-adapter.js#L61' },
+  { kind: 'present', id: 'subprocess.spawn', file: SUBPROCESS_LOCAL, re: /^\s+spawn\(spec\)/m, what: 'subprocess.spawn(spec)', usedBy: 'lib/rollback.js#L171, lib/git-adapter.js#L35' },
+  { kind: 'present', id: 'subprocess.resolveExecutable', file: SUBPROCESS_LOCAL, re: /^\s+async resolveExecutable\(command/m, what: 'subprocess.resolveExecutable(command)', usedBy: 'lib/git-adapter.js#L34' },
+  { kind: 'present', id: 'sandboxPolicy.resolve', file: SANDBOX_POLICY, re: /^\s+resolve\(request/m, what: 'sandboxPolicy.resolve(request)', usedBy: 'lib/rollback.js#L195' },
+  { kind: 'present', id: 'jobs.list', file: JOBS_LOCAL, re: /^\s+list\(caller\)/m, what: 'jobs.list(caller)', usedBy: 'lib/close-guard.js#L77-79' },
+  { kind: 'present', id: 'sessionProjections.register', file: SESSION_PROJECTION, re: /^\s+register\(definition\)/m, what: 'sessionProjections.register(definition)', usedBy: 'lib/versioning.js#L229,231' },
+  { kind: 'present', id: 'sessionProjections.onChanged', file: SESSION_PROJECTION, re: /^\s+onChanged\(listener\)/m, what: 'sessionProjections.onChanged(listener)', usedBy: 'lib/versioning.js#L233' },
+  { kind: 'present', id: 'sessionProjections.snapshot', file: SESSION_PROJECTION, re: /^\s+snapshot\(session, keys\)/m, what: 'sessionProjections.snapshot(session, keys)', usedBy: 'lib/versioning.js#L286' },
+  { kind: 'present', id: 'sessionQuery.readEvent', file: SESSION_QUERY, re: /^\s+async readEvent\(request/m, what: 'sessionQuery.readEvent(request)', usedBy: 'lib/versioning.js#L299' },
+  { kind: 'present', id: 'sessionQuery.readSurface', file: SESSION_QUERY, re: /^\s+async readSurface\(sessionId\)/m, what: 'sessionQuery.readSurface(sessionId)', usedBy: 'lib/versioning.js#L309' },
+  { kind: 'present', id: 'storageDomain.open', file: STORAGE_DOMAIN, re: /^\s+async open\(spec\)/m, what: 'storageDomain.open(spec)', usedBy: 'lib/versioning.js#L244' },
+  { kind: 'present', id: 'storageDomain.table', file: STORAGE_DOMAIN, re: /^\s+table\(name\)/m, what: 'storageDomain.table(name)', usedBy: 'lib/versioning.js#L90,128,196,344,364' },
+  { kind: 'present', id: 'storageDomain.close', file: STORAGE_DOMAIN, re: /^\s+close\(\)/m, what: 'storageDomain.close()', usedBy: 'lib/versioning.js#L250' },
 
   // ── cordis event + client-side services ───────────────────────────────────
-  { kind: 'present', id: 'event.session/event', file: SESSION, re: /invokeContainedSessionObservers\(entry\.emitCtx, "session\/event"/, what: 'session/event emission', usedBy: 'lib/watchdog.js (ctx.on)' },
-  { kind: 'present', id: 'client.slots', file: UI_RENDERER, re: /super\(ctx, "slots"\)/, what: 'client service "slots"', usedBy: 'lib/client.js inject' },
-  { kind: 'present', id: 'client.locale', file: CLIENT_LOCALE, re: /ctx\.provide\("locale"/, what: 'client service "locale"', usedBy: 'lib/client.js inject' },
+  { kind: 'present', id: 'event.session/event', file: SESSION, re: /invokeContainedSessionObservers\(entry\.emitCtx, "session\/event"/, what: 'session/event emission', usedBy: 'lib/watchdog.js#L113 (ctx.on)' },
+  { kind: 'present', id: 'client.slots', file: UI_RENDERER, re: /super\(ctx, "slots"\)/, what: 'client service "slots"', usedBy: 'lib/client.js#L35 inject' },
+  { kind: 'present', id: 'client.locale', file: CLIENT_LOCALE, re: /ctx\.provide\("locale"/, what: 'client service "locale"', usedBy: 'lib/client.js#L35 inject' },
   { kind: 'present', id: 'client.uiConversation', file: UI_CONVERSATION, re: /super\(ctx, "uiConversation"\)/, what: 'client service "uiConversation"', usedBy: 'lib/client.js:conversationRegistrar' },
   { kind: 'present', id: 'client.uiConversation.events.register', file: UI_CONVERSATION, re: /ConversationEventRegistry[\s\S]{0,500}?register\(definition\)/, what: 'uiConversation.events.register (official entry)', usedBy: 'lib/client.js:conversationRegistrar (.events.register first)' },
   { kind: 'present', id: 'client.useChat.nodes', file: UI_CHAT, re: /useChat\(\(s\) => s\.nodes\)/, what: 'useChat(s => s.nodes) official shape', usedBy: 'lib/client.js (node lookup; previous snapshot.chat.nodes drift)' },
@@ -385,11 +385,11 @@ const CHECKS = [
   // getSnapshot()/loadOlder/hasMore/rename. That whole object class was missing
   // from the first audit table AND the first gate — the HIGH-1 break
   // (`getSnapshot()?.chat?.nodes`, always undefined) lived in exactly this gap.
-  { kind: 'present', id: 'client.sessions.binding', file: API_SESSIONS_SERVICE, re: /^\s+binding\(id\)\s*\{/m, what: 'client sessions service binding(id)', usedBy: 'lib/client.js,2495' },
-  { kind: 'present', id: 'clientSession.getSnapshot', file: API_SESSION, re: /getSnapshot\(\)\s*\{/, what: 'client Session.getSnapshot()', usedBy: 'lib/client.js,1405,1407' },
+  { kind: 'present', id: 'client.sessions.binding', file: API_SESSIONS_SERVICE, re: /^\s+binding\(id\)\s*\{/m, what: 'client sessions service binding(id)', usedBy: 'lib/client.js#L2482,2495' },
+  { kind: 'present', id: 'clientSession.getSnapshot', file: API_SESSION, re: /getSnapshot\(\)\s*\{/, what: 'client Session.getSnapshot()', usedBy: 'lib/client.js#L1391,1405,1407' },
   { kind: 'present', id: 'clientSession.loadOlder', file: API_SESSION, re: /async loadOlder\(\)\s*\{/, what: 'client Session.loadOlder()', usedBy: 'lib/client.js pagination' },
   { kind: 'present', id: 'clientSession.loadThrough', file: API_SESSION, re: /loadThrough\(seq\)\s*\{/, what: 'client Session.loadThrough(seq) (official jump loader)', usedBy: 'recommended replacement for the HIGH-1 jump path' },
-  { kind: 'present', id: 'clientSession.hasMore', file: API_SESSION, re: /^\s+hasMore = false;/m, what: 'client Session.hasMore field', usedBy: 'lib/client.js' },
+  { kind: 'present', id: 'clientSession.hasMore', file: API_SESSION, re: /^\s+hasMore = false;/m, what: 'client Session.hasMore field', usedBy: 'lib/client.js#L1400' },
   { kind: 'present', id: 'clientSession.rename', file: API_SESSION, re: /async rename\(title\)\s*\{/, what: 'client Session.rename(title)', usedBy: 'lib/client.js session rename' },
   { kind: 'present', id: 'clientSession.sessionId', file: API_SESSION, re: /^\s+sessionId;/m, what: 'client Session.sessionId field', usedBy: 'client session identity' },
   // Anchored to the host slot CONTRACT CATALOG (review-independent-2 (b)):
@@ -403,7 +403,7 @@ const CHECKS = [
   // reverse: the controller has no getTitle/chat/nodes member — so
   // `store.getTitle(...)` is a dead branch and `getSnapshot()?.chat?` can never
   // resolve on this host (HIGH-1). Recorded so a future rename is visible.
-  { kind: 'absent', id: 'clientSession.getTitle (never existed)', file: API_SESSION, member: 'getTitle', what: 'client Session.getTitle must NOT exist', usedBy: 'lib/client.js,1924 dead branch (typeof-guarded)', hint: 'title comes from rename()/projection, not from the controller' },
+  { kind: 'absent', id: 'clientSession.getTitle (never existed)', file: API_SESSION, member: 'getTitle', what: 'client Session.getTitle must NOT exist', usedBy: 'lib/client.js#L1852,1924 dead branch (typeof-guarded)', hint: 'title comes from rename()/projection, not from the controller' },
   { kind: 'absent', id: 'clientSession.chat (never existed)', file: API_SESSION, member: 'chat', what: 'client Session.chat must NOT exist', usedBy: 'HIGH-1 was getSnapshot()?.chat?.nodes — undefined on this host', hint: '取节点用 store.loadThrough(seq) 或 slot 的 useChat(s=>s.nodes)' },
   { kind: 'absent', id: 'clientSession.nodes (never existed)', file: API_SESSION, member: 'nodes', what: 'client Session.nodes must NOT exist', usedBy: 'same as above', hint: '同 clientSession.chat' },
 

@@ -175,7 +175,7 @@ describe('runSummary — gate, call, cache, degrade', () => {
         discardedSeqs: [2],
         discardedCount: 9,
       }),
-)
+    )
     expect(record.persisted).toBe(true)
     expect(calls.count).toBe(0)
     const { records } = await readSummaries(root, 'session-abc')
@@ -195,7 +195,7 @@ describe('runSummary — gate, call, cache, degrade', () => {
     const what = { op: 'edit', new: { excerpt: '' }, replaced: [], artifacts: { created: 2, modified: 0, deleted: 0 } }
     const record = await runSummary(
       args({ llm, spanEvents: [user(1, '12'), assistant(2, '好')], what, artifactCounts: { created: 2, modified: 0, deleted: 0 } }),
-)
+    )
     expect(record.quiet).toBeUndefined()
     expect(record.persisted).toBe(true)
     expect(record.rule).toBe('R4')
@@ -265,7 +265,7 @@ describe('runSummary — gate, call, cache, degrade', () => {
         artifactCounts: null,
         log: (m) => logs.push(m),
       }),
-)
+    )
     expect(record.quiet).toBeUndefined()
     expect(record.persisted).toBe(true)
     expect(record.what).toBeDefined()

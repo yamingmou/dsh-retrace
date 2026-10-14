@@ -136,7 +136,6 @@ const restoreArgs = (extra = {}) => ({
   auditSeq: 4,
   shadowedSeqs: [2, 3],
   sessionId: 's1',
-  currentSessionId: 'other-session',
   ...extra,
 })
 
@@ -232,7 +231,7 @@ describe('真正恢复 · 帧级最小改写', () => {
     expect(Buffer.compare(
       before.subarray(scanBefore.frames[0].start, scanBefore.frames[0].end),
       after.subarray(scanAfter.frames[0].start, scanAfter.frames[0].end),
-)).toBe(0)
+    )).toBe(0)
   })
 
   it('写后:目标两行中和、seq/行数不变、其余行逐字节不动(verify 自证)', async () => {
@@ -273,16 +272,45 @@ describe('真正恢复 · 安全闸(缺一不可)', () => {
       .rejects.toMatchObject({ code: 'lsof-unavailable' })
   })
 
-  it('当前会话闸:currentSessionId === sessionId ⇒ session-active(可读原因交给客户端文案)', async () => {
+  it('★0.4.131 任务1:「正在看这个会话」不再是闸——currentSessionId === sessionId 照常恢复并写后自证', async () => {
+    writeLog(standardEvents())
+    const result = await engine().restore(restoreArgs({ currentSessionId: 's1' }))
+    expect(result.ok).toBe(true)
+    expect(result.alreadyRestored).toBe(false)
+    expect(result.zeroWrite).toBe(false)
+    expect(result.verify.ok).toBe(true)
+    expect(result.verify.targetLinesNeutralized).toBe(2)
+    expect(result.verify.surfaceAfter).toEqual({ nodes: 4, first: 0, last: 3, strict: true })
+    const { events } = readEventsFromDisk(file)
+    expect(isNeutralizedEvent(events[4])).toBe(true)
+    expect(isNeutralizedEvent(events[5])).toBe(true)
+  })
+
+  it('★在途轮次闸:running ⇒ session-running,理由给到可操作动作且零写入', async () => {
     writeLog(standardEvents())
     const original = readFileSync(file)
-    const error = await engine().restore(restoreArgs({ currentSessionId: 's1' })).catch((e) => e)
-    expect(error.code).toBe('session-active')
-    expect(error.message).toContain('切走')
+    const error = await engine().restore(restoreArgs({ running: true, runningReason: 'running-reply' })).catch((e) => e)
+    expect(error.code).toBe('session-running')
+    expect(error.message).toContain('先停止当前回复')
+    expect(error.details.reason).toBe('running-reply')
     expect(Buffer.compare(readFileSync(file), original)).toBe(0)
   })
 
-  it('运行闸:会话正在跑 ⇒ session-running', async () => {
+  it('★在途轮次闸:stopping 与排队各给专属可操作理由,同样零写入', async () => {
+    writeLog(standardEvents())
+    const original = readFileSync(file)
+    const stopping = await engine().restore(restoreArgs({ running: true, runningReason: 'stopping-reply' })).catch((e) => e)
+    expect(stopping.code).toBe('session-running')
+    expect(stopping.details.reason).toBe('stopping-reply')
+    expect(stopping.message).toContain('收尾')
+    const queued = await engine().restore(restoreArgs({ running: true, runningReason: 'queued-turn' })).catch((e) => e)
+    expect(queued.code).toBe('session-running')
+    expect(queued.details.reason).toBe('queued-turn')
+    expect(queued.message).toContain('排队')
+    expect(Buffer.compare(readFileSync(file), original)).toBe(0)
+  })
+
+  it('运行闸:会话正在跑 ⇒ session-running(默认理由文案)', async () => {
     writeLog(standardEvents())
     await expect(engine().restore(restoreArgs({ running: true }))).rejects.toMatchObject({ code: 'session-running' })
   })
@@ -442,7 +470,7 @@ function twoSegmentSession() {
 }
 
 describe('真正恢复 · 宿主 op 层(unshadow)', () => {
-  it('注入面接线:载体 seq / 审计 seq / 被遮蔽集合 / currentSessionId 交给 trueRestore,结果映射成 op 信封', async () => {
+  it('注入面接线:载体 seq / 审计 seq / 被遮蔽集合 / 在途理由交给 trueRestore,结果映射成 op 信封 + reread 信号', async () => {
     const session = twoSegmentSession()
     expect(session.events.length).toBe(7)
     expect(session.events[6].seq).toBe(6)
@@ -459,7 +487,7 @@ describe('真正恢复 · 宿主 op 层(unshadow)', () => {
         }
       },
     })
-    const envelope = await api.unshadow({ sessionId: 's1', markerSeq: 6, currentSessionId: 'viewer' })
+    const envelope = await api.unshadow({ sessionId: 's1', markerSeq: 6 })
     expect(envelope.ok).toBe(true)
     const result = envelope.value // op 信封:成功载荷在 value 下(与 unhide 既有用例同一读法)
     expect(seen.length).toBe(1)
@@ -467,30 +495,42 @@ describe('真正恢复 · 宿主 op 层(unshadow)', () => {
     expect(seen[0].carrierSeq).toBe(6)
     expect(seen[0].auditSeq).toBe(5)
     expect(seen[0].shadowedSeqs).toEqual([3, 4])
-    expect(seen[0].currentSessionId).toBe('viewer')
+    // 0.4.131:「正在看哪个会话」不再是注入面参数(规则已删),取而代之的是在途理由。
+    expect(seen[0].currentSessionId).toBeUndefined()
     expect(seen[0].running).toBe(false)
+    expect(seen[0].runningReason).toBe('')
     expect(result.op).toBe(UNSHADOW_OP)
     expect(result.markerSeq).toBe(6)
     expect(result.markerOp).toBe('recall')
     expect(result.alreadyRestored).toBe(false)
-    expect(result.reloadRequired).toBe(true) // 磁盘已改、内存视图未重读 ⇒ 必须重开会话
+    expect(result.reloadRequired).toBe(true) // 磁盘已改、内存视图未重读 ⇒ 下发 reread 信号
+    // 「需重读」信号(客户端当场可见的通道):载荷形状钉死,客户端据此落本地账本 + 尽力 resync。
+    expect(result.reread).toMatchObject({ required: true, sessionId: 's1', reason: 'log-rewritten', alreadyRestored: false, markerId: 'retrace-recall-mrk001' })
+    expect(result.reread.neutralizedSeqs).toEqual([6, 5])
+    expect(result.neutralizedSeqs).toEqual([6, 5])
     expect(result.restored).toBe(2)
     expect(result.surface.after.nodes).toBe(4)
   })
 
-  it('运行中的会话 ⇒ running:true 原样交给引擎(闸在引擎侧,不在 op 侧静默放过)', async () => {
+  it('0.4.131:在途轮次 ⇒ **op 侧**直接拒绝(引擎零调用);引擎侧同名闸是最后防线', async () => {
     const session = makeSimpleSession([
       userMessage('u1', 'q1'),
       { type: CARRIER_EVENT_TYPE, surfaceOp: { op: 'replace', start: 0, end: 0 }, sourceEventSeqs: [0], data: { id: 'retrace-edit-mrk', role: 'user', content: [{ type: 'text', text: 'x' }] } },
     ], { isRunning: true })
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
-    const seen = []
+    const spy = vi.fn(async (args) => ({ ok: true, file: args.file, alreadyRestored: false, auditSeq: args.auditSeq }))
     const api = createEditorApi({}, sessions, agents, () => {}, {
       sessionFileFor: async () => '/tmp/s1.zstd',
-      trueRestore: async (args) => { seen.push(args); return { ok: true } },
+      trueRestore: spy,
     })
-    await api.unshadow({ sessionId: 's1', markerSeq: 2, currentSessionId: 'viewer' })
-    expect(seen[0].running).toBe(true)
+    const envelope = await api.unshadow({ sessionId: 's1', markerSeq: 2 })
+    expect(envelope.ok).toBe(false)
+    expect(envelope.error.code).toBe('session-running')
+    expect(envelope.error.message).toContain('先停止当前回复')
+    expect(envelope.error.reason).toBe('running-reply')
+    // 引擎一次都没被调用(连读盘都不做)⇒ 零副作用。
+    expect(spy).not.toHaveBeenCalled()
+    // 引擎侧同名闸仍由 createTrueRestore 的用例覆盖(直调引擎时 fail-closed)。
   })
 
   it('已中和态幂等:目标已是 log-only ⇒ 仍交给引擎(磁盘才是权威),结果为 alreadyRestored + 零写入', async () => {
@@ -506,7 +546,7 @@ describe('真正恢复 · 宿主 op 层(unshadow)', () => {
       sessionFileFor: async () => '/tmp/s1.zstd',
       trueRestore: spy,
     })
-    const envelope = await api.unshadow({ sessionId: 's1', markerSeq: 2, currentSessionId: 'viewer' })
+    const envelope = await api.unshadow({ sessionId: 's1', markerSeq: 2 })
     expect(envelope.ok).toBe(true)
     const result = envelope.value
     expect(spy).toHaveBeenCalledTimes(1)
@@ -585,14 +625,17 @@ describe('真正恢复 · HTTP 通道(api[op] 通用分发)', () => {
         },
       },
     })
-    const res = await postJson(handler, `${ROUTE_PREFIX}/unshadow`, { sessionId: 's1', markerSeq: 2, currentSessionId: 'viewer' })
+    const res = await postJson(handler, `${ROUTE_PREFIX}/unshadow`, { sessionId: 's1', markerSeq: 2 })
     expect(res.status).toBe(200)
     const parsed = JSON.parse(res.body)
     expect(parsed.ok).toBe(true)
     expect(parsed.value.op).toBe(UNSHADOW_OP)
     expect(parsed.value.markerSeq).toBe(2)
     expect(seen).toHaveLength(1)
-    expect(seen[0].currentSessionId).toBe('viewer')
+    // HTTP 通道与 harness 同形:注入面不再有 currentSessionId,取而代之的是在途规则。
+    expect(seen[0].currentSessionId).toBeUndefined()
+    expect(seen[0].running).toBe(false)
+    expect(parsed.value.reread).toMatchObject({ required: true, sessionId: 's1', reason: 'log-rewritten' })
   })
 
   it('失败时信封带可操作 code(HTTP 与 harness 同形,不 500、不吞)', async () => {
@@ -610,14 +653,14 @@ describe('真正恢复 · HTTP 通道(api[op] 通用分发)', () => {
       log: () => {},
       hooks: {
         sessionFileFor: async () => '/tmp/s1.zstd',
-        trueRestore: async () => { const error = new Error('请先切走'); error.code = 'session-active'; throw error },
+        trueRestore: async () => { const error = new Error('该会话有在途轮次'); error.code = 'session-running'; throw error },
       },
     })
-    const res = await postJson(handler, `${ROUTE_PREFIX}/unshadow`, { sessionId: 's1', markerSeq: 2, currentSessionId: 's1' })
+    const res = await postJson(handler, `${ROUTE_PREFIX}/unshadow`, { sessionId: 's1', markerSeq: 2 })
     const parsed = JSON.parse(res.body)
     expect(parsed.ok).toBe(false)
-    expect(parsed.error.code).toBe('session-active')
-    expect(parsed.error.message).toContain('切走')
+    expect(parsed.error.code).toBe('session-running')
+    expect(parsed.error.message).toContain('在途轮次')
   })
 })
 

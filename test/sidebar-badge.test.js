@@ -183,7 +183,7 @@ describe('sidebar-badge 注入层', () => {
     const inst = createSidebarBadge({ doc, codeOf: () => 'zz999zz999' })
     inst.scan()
     expect(row.querySelectorAll('.dsh-rt-badge')).toHaveLength(1)
-    // 先把我们的徽标抹掉，再造"重复插入"：直接塞两个（复刻真机重复渲染的后果）
+    // 先把我们的徽标抹掉，再造"重复插入"：直接塞两个
     row.querySelectorAll('.dsh-rt-badge')[0].remove()
     inst.scan()                                      // 正常补回 1 个
     expect(row.querySelectorAll('.dsh-rt-badge')).toHaveLength(1)

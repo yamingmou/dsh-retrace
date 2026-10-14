@@ -16,14 +16,20 @@ import path from 'node:path'
 
 /** 可能被 badgeTableCandidates 命中的表落点（与 lib/platform/session-paths.js 同源）。 */
 export function tableCandidates(env = process.env, home = os.homedir()) {
+  const expand = (p) => path.resolve(p === '~' ? home : p.replace(/^~(?=$|[/\\])/, home))
   const bases = []
   const dsh = env.DSH_HOME
-  if (dsh && dsh.trim() !== '') bases.push(path.resolve(dsh === '~' ? home : dsh.replace(/^~(?=$|[/\\])/, home)))
-  bases.push(path.join(home, 'dsh-home'))
+  if (dsh && dsh.trim() !== '') bases.push(expand(dsh))
+  // 额外基座来自配置（`DSH_SESSION_BASES`,逗号分隔）；源码里不出现具体本机目录名。
+  for (const item of String(env.DSH_SESSION_BASES ?? '').split(',')) {
+    const s = item.trim()
+    if (s !== '') bases.push(expand(s))
+  }
   bases.push(path.join(home, '.dsh'))
-  const out = [...new Set(bases)].map((b) => path.join(b, 'dsh-retrace', 'codes.json'))
+  const uniq = [...new Set(bases)]
+  const out = uniq.map((b) => path.join(b, 'dsh-retrace', 'codes.json'))
   out.push(path.join(home, '.dsh', '会话短码表.json'))
-  out.push(path.join(home, 'dsh-home', '会话短码表.json'))
+  for (const b of uniq) out.push(path.join(b, '会话短码表.json'))
   return [...new Set(out)]
 }
 
@@ -65,9 +71,9 @@ export async function teardown() {
     process.stderr.write(
       `\n[test-guard] 活家谱系标识表在本轮测试中被改写（fail-closed）：\n${lines.join('\n')}\n`
       + `  ⇒ 某个测试/工具写了活家数据目录。请改到临时目录（显式 { dshHome: null } 或 tmpRoot()）。\n`,
-)
+    )
     // vitest 的 globalSetup.teardown 抛错只会打一句 "error during close"，
-    // **不会**让退出码非 0（实测）⇒ 金丝雀就成了摆设。这里显式把退出码置非 0，
+    // **不会**让退出码非 0⇒ 金丝雀就成了摆设。这里显式把退出码置非 0，
     // 并用 process.exit(1) 兜底（安全跳闸优先于完整报告）。
     process.exitCode = 1
     process.exit(1)

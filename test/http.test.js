@@ -555,7 +555,7 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
         userMessage('u1', 'OLDER ROUND PROMPT'),
         assistantMessage('a1', 'older answer'),
         userMessage('u2', 'SAME ROUND PROMPT'),
-)
+      )
       // 内存 surface 滞后:目标 a2 已进 events 但未进 nodes
       session.appendRaw(assistantMessage('a2', 'current answer'))
       session.surface.nodes.pop()
@@ -652,7 +652,7 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
     expect(JSON.parse(res.body).value.running).toHaveLength(1)
   })
 
-  // ── 宿主承载面(2026-09-18 外部 issue #1:桌面端托盘退出死锁)──────────────
+  // ── 宿主承载面(外部 issue #1:桌面端托盘退出死锁)──────────────
   // 宿主是唯一能判定"本页宿主是否承载 quit-veto"的一方:Desktop 主进程给 Electron
   // renderer 的每个请求挂 `x-dsh-desktop-renderer`,普通浏览器页面没有这个头。
   it('GET:无能力头且宿主不是桌面 → surface=browser / quitVeto=true(网页端照常武装)', async () => {
@@ -700,7 +700,7 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
       handler,
       `${ROUTE_PREFIX}/runningState`,
       { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) dsh-desktop/0.9.0 Chrome/126.0.6478.234 Electron/31.3.1 Safari/537.36' },
-))).body)
+    ))).body)
     expect(parsed.value.surface).toBe('desktop-renderer')
     expect(parsed.value.quitVeto).toBe(false)
   })
@@ -714,7 +714,7 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
       handler,
       `${ROUTE_PREFIX}/runningState?token=abc&dsh-desktop-mode=advanced&dsh-desktop-platform=win32`,
       { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' },
-))).body)
+    ))).body)
     expect(parsed.value.surface).toBe('desktop-renderer')
     expect(parsed.value.quitVeto).toBe(false)
   })
@@ -897,7 +897,7 @@ describe('GET /summaries — outline forest', () => {
         expect(parsed.value.tree['24104']).toEqual({ parent: null, children: [22216], discardedCount: 3 })
         expect(parsed.value.tree['22216']).toEqual({ parent: 24104, children: [], discardedCount: 2 })
       },
-)
+    )
   })
 
   it('omits tree entirely when no record carries a discarded set (client falls back to flat)', async () => {
@@ -923,6 +923,6 @@ describe('GET /summaries — outline forest', () => {
         expect(Object.keys(parsed.value.tree).sort()).toEqual(['10', '5', '9'])
         expect(parsed.value.tree['9'].parent).toBe(10)
       },
-)
+    )
   })
 })

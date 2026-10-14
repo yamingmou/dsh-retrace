@@ -1,4 +1,4 @@
-// 相对路径(从脚本自身位置解析;2026-10-08 改为相对 —— 原实现写死本机绝对落点,
+// 相对路径(从脚本自身位置解析;改为相对 —— 原实现写死本机绝对落点,
 // 既是内部痕迹,也换台机器/公开仓就跑不了)。
 const { createEditorApi } = await import(new URL('../lib/host-core.js', import.meta.url).href)
 const { createMarkerGuard } = await import(new URL('../lib/prewrite-guard.js', import.meta.url).href)

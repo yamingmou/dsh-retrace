@@ -1,5 +1,5 @@
 /**
- * Adapter layer unit tests (2026-09-01).
+ * Adapter layer unit tests.
  *
  * 适配器层:业务层(message-list/守卫)与平台解耦——换架构时实现新的
  * EventReader/ReplaceWriter 即可,业务逻辑零改动。
@@ -12,7 +12,7 @@ import { SPAN_STATUS, spanMissArgsOf, spanAt, spanForSeq } from '../lib/span-sem
 import { foldSurface } from '@deepseek-ai/dsh-session'
 
 // 通用事件测试数据(3 轮对话)——surface 候选须带 surfaceOp:'append'(官方 foldSurface 语义,
-// computeSpan 现在重放 foldSurface 得真实 nodes,2026-09-07 修复后必需)
+// computeSpan 现在重放 foldSurface 得真实 nodes,修复后必需)
 const events = [
   { seq: 0, type: 'user/message', surfaceOp: 'append', data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } },
   { seq: 1, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, message: { id: 'a1', content: [{ type: 'text', text: 'yo' }] } } },

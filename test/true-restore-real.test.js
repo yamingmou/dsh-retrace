@@ -20,18 +20,27 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { createHash } from 'node:crypto'
 import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 import { createTrueRestore, scanZstdFrames, isNeutralizedEvent } from '../lib/rollback.js'
+import { extraSessionBases } from '../lib/platform/session-paths.js'
+import { __REAL_DSH_HOME } from './setup/forbid-live-data-writes.mjs'
 import { loadSessionLog } from 'dsh-log-contract'
 
 /** 现役内核(App 内 0.1.7-rc.2 = v3 语义)。路径不存在 ⇒ 整文件 skip。 */
 const APP_KERNEL = '/Applications/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/dsh-session/lib/index.js'
-/** 真实会话根(只读;**测试永不写它**)。 */
+/**
+ * 真实会话根(只读;**测试永不写它**)。
+ * 基座一律来自环境,源码里不出现具体本机目录名:`$DSH_RETRACE_REAL_SESSIONS` 覆写 →
+ * 真 `$DSH_HOME`(测试进程里已被沙箱化,故取 setup 记下的原值)→ `$DSH_SESSION_BASES`
+ * 各配置基座 → `~/.dsh`。都不存在 ⇒ 整文件 skip 并说明(不假装通过)。
+ */
 const REAL_ROOTS = [
   process.env.DSH_RETRACE_REAL_SESSIONS,
-  join(process.env.HOME ?? '', 'dsh-home', 'sessions'),
+  __REAL_DSH_HOME ? join(__REAL_DSH_HOME, 'sessions') : null,
+  ...extraSessionBases({ home: homedir() }).map((base) => join(base, 'sessions')),
+  join(homedir(), '.dsh', 'sessions'),
 ].filter(Boolean)
 
 let v3 = null

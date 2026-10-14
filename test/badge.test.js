@@ -1,5 +1,5 @@
 /**
- * Session identity badge unit tests (2026-08-31).
+ * Session identity badge unit tests.
  *
  * 谱系标识 = 从 session id（唯一值）确定性导出：uuid → FNV-1a 64 → base36 → 10 位。
  * 铁律：同一 id 永远同码；不同 id 不同码；无状态纯函数；`session-` 前缀不影响。

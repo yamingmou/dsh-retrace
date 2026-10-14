@@ -36,7 +36,7 @@ function officialModule(relative) {
       'official-token-meter: 解析不到官方包 @deepseek-ai/dsh-token-meter'
       + '(它在 package.json 的 peerDependencies 里,先跑 pnpm install)。原始错误: '
       + String(error?.message ?? error),
-)
+    )
   }
   return import(new URL(relative, pathToFileURL(entry)).href)
 }

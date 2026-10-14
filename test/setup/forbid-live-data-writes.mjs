@@ -2,12 +2,12 @@
  * 测试进程的**结构性护栏**：测试期间永不使用真 `$DSH_HOME`，且把活家插件数据目录
  * 标为禁止写。
  *
- * 事故（2026-09-19，谱系标识表被覆盖成空表 **三次**）：根因形态不是"某个测试忘了传参"，
+ * 问题（谱系标识表被覆盖成空表 **三次**）：根因形态不是"某个测试忘了传参"，
  * 而是**整族**——`pluginDataHome()` 的契约是 `$DSH_HOME` 优先于显式 `home`
  * （与官方 resolveDshHome 逐字一致，有契约用例钉着），所以任何
- * `pluginDataHome({ home: tmp })`（不带 `dshHome: null`）在 `DSH_HOME=$DSH_SESSION_BASES` 下
+ * `pluginDataHome({ home: tmp })`（不带 `dshHome: null`）在 `DSH_HOME` 指向活家基座时
  * 都解析到**活家**，随后的 `writeFileSync` 就覆盖了用户真数据。
- * 逐个测试补参数治不了根：同一个坑在不同文件、不同 checkout（公开仓/公开树各一份）
+ * 逐个测试补参数治不了根：同一个坑在不同文件、不同 checkout（公开仓/已投影的公开树各一份）
  * 反复出现（实测第三次来自公开仓 `/tmp/another-checkout` 未修的副本）。
  *
  * 两道防线：
@@ -31,14 +31,16 @@ const fs = require_('node:fs')
 
 const REAL_DSH_HOME = process.env.DSH_HOME ?? null
 
-/** 活家插件数据目录候选：$DSH_HOME 与两代基座（与 lib/platform/session-paths.js 同源）。 */
+/** 活家插件数据目录候选：$DSH_HOME、$DSH_SESSION_BASES 各配置基座、旧 home（与 lib/platform/session-paths.js 同源）。 */
 const LIVE_DIRS = (() => {
   const home = os.homedir()
+  const expand = (p) => path.resolve(p === '~' ? home : p.replace(/^~(?=$|[/\\])/, home))
   const bases = []
-  if (REAL_DSH_HOME && REAL_DSH_HOME.trim() !== '') {
-    bases.push(path.resolve(REAL_DSH_HOME === '~' ? home : REAL_DSH_HOME.replace(/^~(?=$|[/\\])/, home)))
+  if (REAL_DSH_HOME && REAL_DSH_HOME.trim() !== '') bases.push(expand(REAL_DSH_HOME))
+  for (const item of String(process.env.DSH_SESSION_BASES ?? '').split(',')) {
+    const s = item.trim()
+    if (s !== '') bases.push(expand(s))
   }
-  bases.push(path.join(home, 'dsh-home'))
   bases.push(path.join(home, '.dsh'))
   return [...new Set(bases)].map((base) => path.join(base, 'dsh-retrace'))
 })()
@@ -63,7 +65,7 @@ const boom = (api, target) => {
     `[test-guard] 拒绝写活家插件数据目录：${api}(${target})\n`
     + `  活家目录：${LIVE_DIRS.join(' , ')}\n`
     + `  测试必须写临时目录：显式传 { dshHome: null }，或把目标建在 tmpRoot()/mkdtempSync() 下。`,
-)
+  )
 }
 for (const api of ['writeFileSync', 'appendFileSync', 'truncateSync', 'mkdirSync', 'rmdirSync',
   'rmSync', 'unlinkSync', 'copyFileSync', 'cpSync', 'chmodSync', 'chownSync', 'utimesSync',

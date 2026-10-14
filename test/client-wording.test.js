@@ -1,5 +1,5 @@
 /**
- * 2026-10-08(既定口径·文案)——
+ * (既定口径·文案)——
  *   「按钮文案需要修改，编辑就应该是"重发"。撤回不需要展示归档就用"撤回"」
  *
  * 三件都钉**行为面/字面**两处:
@@ -51,7 +51,7 @@ const buildInteractive = async (names) => {
   // eslint-disable-next-line no-new-func
   new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(
     (id) => (id === 'react' ? mini.react : nodeRequire(id)), mod, mod.exports,
-)
+  )
   return { mini, client: mod.exports }
 }
 
@@ -165,7 +165,7 @@ describe('③ 旧文案的读端识别不回归', () => {
     expect(isPlaceholderText(HISTORICAL_TRACE_TEXT)).toBe(true)
   })
 
-  it('派生件与源码同源(源码改了、产物没重生成 = 历史事故形态)', () => {
+  it('派生件与源码同源(源码改了、产物没重生成 = 条目对应不上形态)', () => {
     const source = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
     for (const key of ["'action.edit': '重发'", "'action.recallConfirmYes': '撤回'", "'action.edit': 'Resend'", "'action.recallConfirmYes': 'Recall'"]) {
       expect(source).toContain(key)
