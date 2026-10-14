@@ -109,11 +109,19 @@ ${indent(inlineWriter, 4)}
     platform: 'browser',
     target: ['es2020'],
     external: ['react'],
+    // Shipped artifact + store per-file byte limit (256 KiB):
+    // `minifyWhitespace` only strips whitespace/comments (semantics-preserving,
+    // no identifier mangling, template literals untouched) and saves ~45 KB.
+    minifyWhitespace: true,
     write: false,
     logLevel: 'silent',
   })
   const bundle = result.outputFiles[0].text.trim()
 
+  // NOTE: the bundle is inserted UNINDENTED (no `indent(bundle, 6)`). Re-indenting
+  // every line added ~6 bytes x line-count to this published file, and the store
+  // enforces a per-file byte limit. Indentation is not semantic, and the bundle
+  // starts with `var …`, so ASI at the junction stays unambiguous.
   const dynamicClient = `/**
  * GENERATED FILE — do not edit by hand.
  * Source of truth: lib/client.js + the wire wrapper below (scripts/generate-dynamic.mjs).
@@ -126,7 +134,7 @@ return {
       var exports = module.exports
       const require = (name) =>
         name === 'react' ? React : (() => { throw new Error('dsh-retrace: unknown module "' + name + '" in dynamic client') })()
-${indent(bundle, 6)}
+${bundle}
       return module.exports
     })()
     if (typeof mod.__setMessageEditorWire === 'function') {

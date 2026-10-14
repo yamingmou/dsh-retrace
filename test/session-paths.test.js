@@ -163,7 +163,7 @@ describe('pickSessionFile', () => {
     writeFileSync(b, '{}\n'); utimesSync(b, new Date(T0), new Date(T0))
     writeFileSync(a, '{}\n'); utimesSync(a, new Date(T0), new Date(T0))
     // 旧断言 `SESSION_FILE_NAMES[0] === V3` 已不成立:实现补了 **v4 世代**
-    // （lib/platform/session-paths.js-45，依据
+    // （lib/platform/session-paths.js，依据
     // ⇒ 平局时数组序里**世代最高者**优先,首位是 v4 而不是 v3。
     const c = join(dir, V4)
     writeFileSync(c, '{}\n'); utimesSync(c, new Date(T0), new Date(T0))

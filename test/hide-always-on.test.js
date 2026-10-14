@@ -21,6 +21,11 @@ const read = (relative) => readFileSync(path.join(root, relative), 'utf8')
 const SOURCE = 'lib/client.js'
 const ARTIFACTS = ['lib/client.bundle.js', 'lib/dynamic-client.js']
 const NEW_GATE = 'const hiddenKeys = legacy ? null'
+/**
+ * 生成物以 `minifyWhitespace` 落盘（单文件字节上限）⇒ 空格不再逐字保留；
+ * 断言改为**等价形态**（空白不敏感），语义完全相同:仍是同一条新规则。
+ */
+const NEW_GATE_BUILT = /const hiddenKeys\s*=\s*legacy\s*\?\s*null/
 
 describe('撤回/编辑的隐藏是恒定行为，不受配置控制', () => {
   it('隐藏规则不再读取 hideShadowed 配置', () => {
@@ -39,7 +44,7 @@ describe('撤回/编辑的隐藏是恒定行为，不受配置控制', () => {
   it('生成物与源码规则一致（守住"bundle 陈旧"这类历史问题）', () => {
     for (const artifact of ARTIFACTS) {
       const built = read(artifact)
-      expect(built, `${artifact} 未重新生成: 缺少新规则`).toContain(NEW_GATE)
+      expect(built, `${artifact} 未重新生成: 缺少新规则`).toMatch(NEW_GATE_BUILT)
       expect(built, `${artifact} 未重新生成: 仍带旧规则`).not.toContain('getConfig().hideShadowed')
       expect(built, `${artifact} 未重新生成: 仍带旧开关 UI`).not.toContain('optionRow("hideShadowed"')
     }

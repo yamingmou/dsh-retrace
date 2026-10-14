@@ -12,7 +12,7 @@
  *    官方读法 `dsh-client-ui-subagent/lib/client.js/930`);
  *  · 两个 slot(`conversation.chat.node` / `conversation.chat.assistant-actions`)都是
  *    `scope: "session"` 且 `standardProps` 含 `sessionId`/`useSessions`/`useSession`
- *    (`dsh-cordis-client-runner/lib/client.js-2520` 与 `:2397-2440` 的 slot 目录)。
+ *    (`dsh-cordis-client-runner/lib/client.js` 与 `:2397-2440` 的 slot 目录)。
  *
  * 本文件钉住:① 子代理会话 ⇒ 核心套件不显示;② 主会话 ⇒ 照常显示(行为逐字不变);
  * ③ 规则函数的正/反例(含"无 parentSession 的普通会话不得被误判为子代理")。

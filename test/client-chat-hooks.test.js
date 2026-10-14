@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { build } from 'esbuild'
 import { createMiniReact, collectElements, textOf } from './mini-react.js'
+import { readClientSource } from './client-source.js'
 
 // Mocked so the registered slot components can be invoked as plain functions
 // (they call useState/useEffect; no React renderer is needed for this contract).
@@ -1235,7 +1236,7 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
   const textOf = (node) => allText(node).join(' | ')
   const classesOf = (node) => collect(node).map((element) => String(element.props.className ?? ''))
   const hasClass = (node, needle) => classesOf(node).some((name) => name.includes(needle))
-  const sourceOf = () => readFileSync(CLIENT_SOURCE_PATH, 'utf8')
+  const sourceOf = () => readClientSource()
   /** The source text of one top-level function (up to the next one). */
   const functionSlice = (name, nextName) => {
     const source = sourceOf()

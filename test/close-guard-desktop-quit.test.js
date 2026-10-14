@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { apply, __setMessageEditorWire } from '../lib/client.js'
+import { readClientSource } from './client-source.js'
 
 // 关闭守卫自 0.4.128 起**默认关闭**（CHANGELOG 0.4.128 修复项：「关闭守卫的说明此前写作
 // “开（默认）”，实际默认关闭」；`CONFIG_DEFAULTS.closeGuard = false`，lib/client.js）。
@@ -472,7 +473,15 @@ const VERSION_CONDITIONAL_FACTS = [
   { file: 'lib/http.js', requires: [/0\.9\.0/, /2\.0\.9/, /版本\/[\s*]{0,12}平台[\s*]{0,12}而变/] },
 ]
 
-const readRepoFile = (rel) => readFileSync(path.join(ROOT, rel), 'utf8')
+/**
+ * `lib/client.js` 已按公开发布面单文件字节上限拆出 `lib/client-css.js` /
+ * `lib/client-i18n.js`（对外导出面不变）。对外文本里属于 client 的那些行（中英设置项、
+ * 横幅文案）搬到了 client-i18n.js ⇒ 读 `lib/client.js` 时一律给**拆分前的等价全文**
+ * （见 test/client-source.js），否则这些文案锁会假红。
+ */
+const readRepoFile = (rel) => (rel === 'lib/client.js'
+  ? readClientSource()
+  : readFileSync(path.join(ROOT, rel), 'utf8'))
 /** 折叠空白 + 去 markdown 引用前缀（折行/引用位置变化不该让内容断言假红）。 */
 const readFlat = (rel) => readRepoFile(rel).replace(/`/g, '').replace(/\s+/g, ' ').replace(/>\s?/g, '')
 

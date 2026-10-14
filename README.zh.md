@@ -516,3 +516,16 @@ retrace lineage <session>                      # 会话 parent 链谱系
 **会话谱系**：`GET /api/plugins/retrace/lineage?sessionId=` 沿当前会话的
 `parentSession` 接续链遍历（只读、带环保护），与 CLI `retrace lineage` 同一语义 ——
 任何客户端都能查到「这个会话是从哪个会话接着干/分叉出来的」，也是分叉拓扑的元数据源。
+
+## 兼容性与运行契约（Compatibility & runtime contract）
+
+| 项 | 声明 |
+|---|---|
+| **Node.js** | `>=20.0.0`（见 `package.json#engines`） |
+| **DSH** | `>=0.1.5 <0.2.0`（见 `package.json#dsh.compatibility`；桌面与 Web 两种模式均支持） |
+| **构建产物** | 运行所需构建产物**随包提交**（`lib/client.bundle.js`、`lib/dynamic-client.js`、`lib/dynamic-host.js`）；仓库内可复现：`pnpm i && pnpm build`（生成器 `scripts/generate-dynamic.mjs`、`scripts/build-client.mjs`） |
+| **运行时依赖** | `dsh-log-contract`（日志契约校验）、`zod`（参数校验）；**不联网、不下载额外代码** |
+| **宿主依赖（peer）** | `@deepseek-ai/cordis` 与若干 `@deepseek-ai/dsh-*` 客户端包（由 DSH 提供，不由本插件分发） |
+| **权限 / 外部服务** | 只读写本机会话数据目录与会话日志；**不访问外部服务、不上报数据**；不改动 DSH 安装目录之外的系统路径 |
+| **失败边界** | 所有写入（撤回/编辑/恢复/回档）均在**目标文件之外先备份**、写后做帧级校验与折叠重放；失败即中止并保留原文件；不可判定时按"拒绝 + 可操作提示"处理，不静默降级 |
+| **可回退** | 每个操作都有可逆路径；本地管理脚本可一键回退到上一快照 |
