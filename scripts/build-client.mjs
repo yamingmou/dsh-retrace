@@ -43,6 +43,12 @@ const result = await build({
   platform: 'browser',
   target: ['es2020'],
   external: ['react'],
+  // Whitespace/comments are stripped: this is a shipped artifact and the store
+  // enforces a per-file byte limit (256 KiB). `minifyWhitespace` is
+  // semantics-preserving (no identifier mangling, template literals untouched),
+  // so the bundle's behaviour is byte-for-byte identical in effect while being
+  // ~45 KB smaller. The banner/footer above are inserted verbatim.
+  minifyWhitespace: true,
   banner: { js: banner },
   footer: { js: footer },
   write: false,

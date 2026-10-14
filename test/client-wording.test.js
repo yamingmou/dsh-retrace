@@ -166,18 +166,21 @@ describe('③ 旧文案的读端识别不回归', () => {
   })
 
   it('派生件与源码同源(源码改了、产物没重生成 = 条目对应不上形态)', () => {
-    const source = readFileSync(path.join(ROOT, 'lib', 'client.js'), 'utf8')
+    // 字典已拆到 lib/client-i18n.js(公开发布面单文件字节上限;client.js 只 import+再导出)。
+    const source = readFileSync(path.join(ROOT, 'lib', 'client-i18n.js'), 'utf8')
     for (const key of ["'action.edit': '重发'", "'action.recallConfirmYes': '撤回'", "'action.edit': 'Resend'", "'action.recallConfirmYes': 'Recall'"]) {
       expect(source).toContain(key)
     }
     for (const artifact of ['lib/client.bundle.js', 'lib/dynamic-client.js']) {
       const built = readFileSync(path.join(ROOT, artifact), 'utf8')
-      // esbuild 把非 ASCII 转义成 \uXXXX ⇒ 断言转义后的字面与英文原文两种形态。
-      expect(built, `${artifact} 未重新生成:缺少新文案`).toContain('"action.edit": "Resend"')
-      expect(built, `${artifact} 未重新生成:缺少新文案(zh)`).toContain('"action.edit": "\\u91CD\\u53D1"')
+      // 生成物以 minifyWhitespace 落盘(公开发布面单文件字节上限)⇒ 冒号后的空格不再
+      // 逐字保留,断言写成**空白不敏感**的等价形态;esbuild 把非 ASCII 转义成 \uXXXX
+      // ⇒ 断言转义后的字面与英文原文两种形态。
+      expect(built, `${artifact} 未重新生成:缺少新文案`).toMatch(/"action\.edit"\s*:\s*"Resend"/)
+      expect(built, `${artifact} 未重新生成:缺少新文案(zh)`).toMatch(/"action\.edit"\s*:\s*"\\u91CD\\u53D1"/)
       // 旧文案「撤回并归档」(\u64A4\u56DE\u5E76\u5F52\u6863)不得残留
       expect(built, `${artifact} 仍带旧文案`).not.toContain('\\u64A4\\u56DE\\u5E76\\u5F52\\u6863')
-      expect(built, `${artifact} 仍带旧文案`).not.toContain('"action.edit": "Edit"')
+      expect(built, `${artifact} 仍带旧文案`).not.toMatch(/"action\.edit"\s*:\s*"Edit"/)
     }
     const host = readFileSync(path.join(ROOT, 'lib', 'dynamic-host.js'), 'utf8')
     expect(host).toContain('（此处内容已被撤回，可在恢复视图中查看）')

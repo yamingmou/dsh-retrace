@@ -3,7 +3,7 @@
  *
  * 平台调研结论(逐字依据写在 lib/client.js 的「真正恢复:需重读信号」块):
  * 平台**没有**官方「会话日志重读/缓存失效」接口(宿主 history 路由 live-preferred:
- * dsh-session-query/lib/index.js-347;SessionService 无 reload;客户端 sessions 服务
+ * dsh-session-query/lib/index.js;SessionService 无 reload;客户端 sessions 服务
  * 只有 refreshProjections/refreshList)。因此本插件用两级机制:
  *   ① 本地视图账本(主路径):宿主写成功后客户端把该 marker 记下 ⇒ marker 行当帧不再注入
  *      隐藏 CSS、动作行不再被抑制(HIDE 消失 = 被撤回内容当帧重新可见);
@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { build } from 'esbuild'
 import { createMiniReact, collectElements, textOf } from './mini-react.js'
+import { readClientSource } from './client-source.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const CLIENT_SOURCE_PATH = path.join(ROOT, 'lib', 'client.js')
@@ -38,9 +39,12 @@ let client
 
 beforeAll(async () => {
   const source = readFileSync(CLIENT_SOURCE_PATH, 'utf8')
+  // 声明存在性按**文本面**查(拆分后的等价全文,见 test/client-source.js);
+  // 下面喂给 esbuild 的仍是 lib/client.js 入口。
+  const allSource = readClientSource()
   for (const name of REQUIRED_NAMES) {
-    const declared = source.includes(`function ${name}(`) || source.includes(`const ${name} =`)
-      || source.includes(`export const ${name} =`)
+    const declared = allSource.includes(`function ${name}(`) || allSource.includes(`const ${name} =`)
+      || allSource.includes(`export const ${name} =`)
     expect(declared, `lib/client.js must declare ${name}`).toBe(true)
   }
   mini = createMiniReact()

@@ -18,7 +18,7 @@
  *     ⇒ 合成锚点 `ceil(16899.9) = 16900`(turn/start)**不在**遮蔽集合里;
  *   · 该行是 `data-chat-flow-key = "12:turn-process252"` 的 flow 条目(`:1760-1765`;
  *     键 = `conversationContextKey('turn-process', '252')` =
- *     `@deepseek-ai/dsh-client-ui-conversation/lib/client.js-1124`)⇒ 我们的隐藏
+ *     `@deepseek-ai/dsh-client-ui-conversation/lib/client.js`)⇒ 我们的隐藏
  *     选择器按 `node.key` 命中它,但旧版本产不出这个键。
  *
  * 本文件钉四件事:
@@ -250,7 +250,7 @@ describe('turn-process 表头 —— 整轮被遮蔽时一并隐藏', () => {
   })
 
   it('① 键形状与官方一致:conversationContextKey(kind,id) = `<len>:<kind><id>`', () => {
-    // 官方 @deepseek-ai/dsh-client-ui-conversation/lib/client.js-1124
+    // 官方 @deepseek-ai/dsh-client-ui-conversation/lib/client.js
     //   conversationContextKey(kind, id) => `${kind.length}:${kind}${id}`
     // 而 turn-process 定义给的是 `id = String(event.data.turn)`(chat:10026-10044)
     // ⇒ 该行的节点键 / `data-chat-flow-key` 就是下面这个字面量;测试数据用的必须是它,

@@ -72,6 +72,14 @@
         "@deepseek-ai/dsh-client-ui-conversation"
       ],
       "platform": "web"
+    },
+    "compatibility": {
+      "dsh": ">=0.1.5 <0.2.0",
+      "node": ">=20.0.0",
+      "modes": [
+        "desktop",
+        "web"
+      ]
     }
   },
   "peerDependencies": {
@@ -102,5 +110,8 @@
   },
   "bin": {
     "retrace": "bin/retrace.mjs"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

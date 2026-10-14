@@ -455,6 +455,21 @@ the **host surface**, not by semver alone.
 
 ---
 
+### Compatibility & runtime contract (for marketplace review)
+
+| Item | Declaration |
+|---|---|
+| **Node.js** | `>=20.0.0` (see `package.json#engines`) |
+| **DSH** | `>=0.1.5 <0.2.0` (see `package.json#dsh.compatibility`); desktop and web modes supported |
+| **Runtime files** | All files needed at runtime are **committed** in this repository and declared in `package.json#files` (`lib/**`, `cordis.patch.yml`, `README*.md`, `HUMANS.txt`, `LICENSE`) |
+| **Build output** | Build output is committed (`lib/client.bundle.js`, `lib/dynamic-client.js`, `lib/dynamic-host.js`) and reproducible in-repo: `pnpm i && pnpm build` (`scripts/generate-dynamic.mjs`, `scripts/build-client.mjs`) |
+| **Single-file size** | Every distributed file is **below 256 KiB** (largest ≈ 249 KB) |
+| **Runtime dependencies** | `dsh-log-contract` (log-contract validation), `zod` (argument validation). No post-install scripts, no network access, no additional code download |
+| **Peer dependencies** | `@deepseek-ai/cordis` and DSH client packages (provided by DSH itself, not bundled or redistributed here) |
+| **Permissions / external services** | Reads and writes only the local DSH session data directory and session logs. No external services, no telemetry, no data upload |
+| **Failure bounds** | Every write (recall / edit / restore / rollback) backs up outside the target file first, then performs frame-level verification and resurfacing checks. On any failure it aborts and leaves the original untouched; ambiguous cases are refused with an actionable message instead of degrading silently |
+| **Reversibility** | Each operation has a documented reversible path; local management scripts can roll back to the previous snapshot |
+
 ## ⚠️ Requirements & limitations
 
 - Only **user messages** can be re-sent from; recall works on user and assistant
