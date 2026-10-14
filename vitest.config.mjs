@@ -1,6 +1,6 @@
 /**
  * vitest 配置：唯一的职责是挂上"禁止写活家插件数据目录"的硬护栏
- * （见 test/setup/forbid-live-data-writes.mjs 的事故说明）。
+ * （见 test/setup/forbid-live-data-writes.mjs 的护栏说明）。
  */
 import { defineConfig } from 'vitest/config'
 

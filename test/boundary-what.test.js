@@ -1,5 +1,5 @@
 /**
- * dsh-retrace — `what` digest contract tests (frozen 2026-09-14).
+ * dsh-retrace — `what` digest contract tests (frozen).
  *
  * The projection wire used to be the candidate carrier for `what`; the measured
  * cost (+70.8% versions / +93.7% forkmap per frame, and 188 KB/180 KB in the
@@ -210,7 +210,7 @@ describe('projection wire and fold state carry no what / digest ring', () => {
     expect(Object.hasOwn(view.versions[0], 'what')).toBe(false)
     expect(Object.keys(view.versions[0]).sort()).toEqual(
       ['boundarySeq', 'createdAt', 'fileCounts', 'git', 'kind', 'markerText', 'messageCount', 'touchedFiles', 'versionId'].sort(),
-)
+    )
   })
 
   it('forkmap view carries only seq/kind/replacedSeqs', () => {

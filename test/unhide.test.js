@@ -1,9 +1,8 @@
 /**
  * 撤销撤回(unhide,0.4.124)—— 宿主侧写路径。
  *
- * 事故/诉求(独立审计): 全仓 `unhide|撤销撤回|恢复显示` 0 命中 ⇒ 误撤回之后唯一替代操作
- * 是手工从会话日志里删掉两段 marker(已做过两次外科手术)。本文件钉住新的
- * append-only 替代操作:
+ * 需求:误撤回之后要把界面恢复到撤回前,必须有一条 append-only 的取消写入
+ * (而界面当时没有该入口)。本文件钉住这条写入的形状:
  *   · 写侧形状:`user/message` + `surfaceOp:'append'` + 独立前缀
  *     `retrace-unhide-` + `data.cancels = <被取消 marker 载体 seq>`,**绝不写第 2 段
  *     `compaction/prune` 审计**(那等于又隐藏一遍);
@@ -40,7 +39,7 @@ function standardSession() {
     assistantMessage('a1', 'first answer'),
     userMessage('u2', 'second question'),
     assistantMessage('a2', 'second answer'),
-)
+  )
 }
 
 /** 日志里的审计段数(第 1 段 `compaction/prune`)。 */
@@ -197,7 +196,7 @@ describe('unhide — 真实 dsh-log-contract 写前校验(带 op/cancels 业务�
       'user/message',
       { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } },
       { surfaceOp: 'append' },
-)
+    )
     session.append(
       'assistant/message',
       {
@@ -206,7 +205,7 @@ describe('unhide — 真实 dsh-log-contract 写前校验(带 op/cancels 业务�
         message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'yo' }], source: { kind: 'model', provider: 'p', model: 'm' } },
       },
       { surfaceOp: 'append' },
-)
+    )
     return session
   }
 
@@ -263,7 +262,7 @@ describe('unhide — 真实 dsh-log-contract 写前校验(带 op/cancels 业务�
 })
 
 // ---------------------------------------------------------------------------
-// (B) 取消撤回之后的**可操作性**判定(2026-10-08)
+// (B) 取消撤回之后的**可操作性**判定
 //
 //
 //   (i) 让客户端 `useShadowed` 忽略被取消的 marker,把编辑/撤回入口放回来 ——

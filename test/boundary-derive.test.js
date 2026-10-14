@@ -1,7 +1,7 @@
 /**
  * dsh-retrace · test/boundary-derive.test.js
  *
- * READ-SIDE digest derivation (real-machine finding 2026-09-15). The boundary
+ * READ-SIDE digest derivation (host finding). The boundary
  * artifact is written at OPERATION time and only exists for boundaries that
  * happened after the summary feature shipped; older boundaries rendered as one
  * bare line with no content at all. Their discarded originals are still in the

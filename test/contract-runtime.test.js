@@ -157,7 +157,7 @@ describe('ReplaceWriter.marker(两段结构第 2 段契约)', () => {
     // 官方 user/message 词表精确四成员:多一个成员即被官方拒(editor 无处容身)
     expect(() => assertMarkerShape({ ...good, data: { ...good.data, editor: { targetSeq: 0 } } }))
       .toThrow(/marker\.data 键集恰为 \{role,id,content,source\}/)
-    // 空 content 会投影成一条空 user 消息(实测)⇒ 写侧拦下
+    // 空 content 会投影成一条空 user 消息⇒ 写侧拦下
     expect(() => assertMarkerShape({ ...good, data: { ...good.data, content: [] } }))
       .toThrow(/marker\.data\.content 为非空数组/)
     // source.kind 非 'model' → 轮边界污染(官方不拦,写侧拦)
@@ -324,7 +324,7 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
     const posSession = makeSession().seed(
       headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'),
       userMessage('u2', 'q2'), assistantMessage('a2', 'r2'), userMessage('u3', 'q3'),
-)
+    )
     const positional = await writer.writeMarker(posSession, { start: 4, end: 1, shadowedSeqs: [4, 3, 2, 1] }, { op: 'recall', targetSeq: 1, originalText: '' })
     expect(positional.surfaceOp).toEqual({ op: 'replace', startSeq: 4, endSeq: 1 })
   })

@@ -35,7 +35,7 @@ function standardSession() {
     toolRow('t1'),
     userMessage('u2', 'second question'),
     assistantMessage('a2', 'second answer'),
-)
+  )
 }
 
 function surfaceSeqs(session) {
@@ -168,7 +168,7 @@ describe('recall', () => {
     expect(surfaceSeqs(session)).toEqual([1, 2, 3, 4, 5]) // untouched
   })
 
-  it('running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (2026-08-30 事故修复)', async () => {
+  it('running agent WITH cancel API: auto-stops (cancel + whenIdle) then edits (问题修复)', async () => {
     const session = standardSession()
     const cancel = vi.fn()
     const whenIdle = vi.fn(async () => {})
@@ -184,7 +184,7 @@ describe('recall', () => {
   })
 
   // ---------------------------------------------------------------------------
-  // ensureIdle 加固（2026-09-30）：①排队窗口 = pending 也算未停；②whenIdle 等待有上限。
+  // ensureIdle 加固：①排队窗口 = pending 也算未停；②whenIdle 等待有上限。
   // 官方形状逐字来源（两版内核）：
   //   现役 0.1.7-rc.2 @deepseek-ai/dsh-agent-loop/lib/index.js :752/:80/84/88/:790/:815/:870
   //   旧版 0.1.1-rc.2 @deepseek-ai/dsh-agent/lib/index.js :34/38/40-41；agent-loop :357/:380-382/:405-409/:460-464
@@ -412,7 +412,7 @@ describe('recall', () => {
         contextMessage('ctx1', 'injected context'),
         userMessage('u1', 'real question'),
         assistantMessage('a1', 'answer'),
-)
+      )
       const api = makeApi(session, makeAgent())
 
       const result = await api.recall({ sessionId: 's1', messageId: 'a1' })
@@ -429,7 +429,7 @@ describe('recall', () => {
         userMessage('u1', 'run something'),
         toolRow('t1'),
         assistantMessage('a1', 'done'),
-)
+      )
       const api = makeApi(session, makeAgent())
 
       const result = await api.recall({ sessionId: 's1', messageId: 'u1' })
@@ -578,7 +578,7 @@ describe('regenerate', () => {
         data: { id: 'u1', content: [{ type: 'image', url: 'https://x/y.png' }], source: { kind: 'user' } },
       },
       assistantMessage('a1', 'about the image'),
-)
+    )
     const api = makeApi(session, makeAgent())
     const result = await api.regenerate({ sessionId: 's1', messageId: 'a1' })
     expect(result.ok).toBe(false)
@@ -652,7 +652,7 @@ describe('两段结构:不再写 turn/step,载体 source.kind=\'model\'(改造�
       headerEvent(), userMessage('u1', 'hi'), assistantMessage('a1', 'yo'),
       { type: 'turn/start', data: { turn: 3 } },
       { type: 'step/start', data: { turn: 3, step: 1 } },
-)
+    )
     const { sessions, agents } = makeEnv(session, { agent: makeAgent() })
     const api = createEditorApi({}, sessions, agents, () => {}, makeHooks(agents))
     const before = sessionEvents(session).length
@@ -703,7 +703,7 @@ describe('两段结构:不再写 turn/step,载体 source.kind=\'model\'(改造�
     const session = makeSession().seed(
       headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'),
       userMessage('u2', 'q2'), assistantMessage('a2', 'r2'),
-)
+    )
     // ① 区间之外(targetSeq 4 ∉ [1..3]):旧守卫也拦;
     const outside = await writer.writeMarker(session, { start: 1, end: 3, shadowedSeqs: [1, 2, 3] }, { op: 'recall', targetSeq: 4, originalText: '' })
     expect(carrierTargetSeq(outside)).toBe(1)
@@ -713,7 +713,7 @@ describe('两段结构:不再写 turn/step,载体 source.kind=\'model\'(改造�
     const session2 = makeSession().seed(
       headerEvent(), userMessage('u1', 'q1'), assistantMessage('a1', 'r1'),
       userMessage('u2', 'q2'), assistantMessage('a2', 'r2'),
-)
+    )
     const inRange = await writer.writeMarker(session2, { start: 1, end: 3, shadowedSeqs: [1, 2, 3] }, { op: 'recall', targetSeq: 2, originalText: '' })
     expect(carrierTargetSeq(inRange)).toBe(1) // 读端派生 = 区间起点,与业务目标 2 不同
     const diagnostics = logged.filter((line) => line.includes('≠ 被遮蔽区间起点'))
@@ -737,7 +737,7 @@ describe('「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」�
       userMessage('u1', 'first'),
       assistantMessage('a1', 'answer one'),
       userMessage('u2', 'second'),
-)
+    )
     session.appendRaw(lastType === 'assistant' ? assistantMessage('a2', 'answer two') : userMessage('u3', 'third'))
     session.surface.nodes.pop() // 模拟:本次 span 快照尚未纳入最后 append
     return session
@@ -934,7 +934,7 @@ describe('「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」�
       userMessage('u1', 'first'),
       assistantMessage('a1', 'answer one'),
       userMessage('u2', 'second'),
-)
+    )
     // 内存 surface 滞后:a2 已在文件(文件算好 span 注入),但内存 nodes 还没有它
     session.appendRaw(assistantMessage('a2', 'answer two'))
     session.surface.nodes.pop()
@@ -970,7 +970,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
       assistantMessage('a1', 'older answer'), // seq 2
       userMessage('u2', 'SAME ROUND PROMPT'), // seq 3(该轮 user → 洞)
       assistantMessage('a2', 'current answer'), // seq 4(目标,内存 events 有)
-)
+    )
     session.dropAt(3) // 洞:该轮 user 未被 materialize(窗口化视图)
     session.surface.nodes.pop() // 内存 surface 滞后:目标 seq 4 未纳入 → idx === -1
     return session
@@ -1020,7 +1020,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
       assistantMessage('a1', 'older answer'),
       userMessage('u2', 'SAME ROUND PROMPT'),
       assistantMessage('a2', 'current answer'),
-)
+    )
     session.surface.nodes.pop() // 内存 surface 滞后(events 齐全)
     const agent = makeAgent()
     const api = makeApi(session, agent)
@@ -1039,7 +1039,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
       assistantMessage('a1', 'old answer'), // seq 2
       userMessage('u2', 'CURRENT PROMPT'), // seq 3(当前轮 user → 洞)
       assistantMessage('a2', 'current answer'), // seq 4(regenerate 目标)
-)
+    )
     const agent = makeAgent()
     const api = makeApi(session, agent)
     // 轮1 被 marker 遮蔽(replace 区间 1..2,与 index.js 注入 span 后的落盘同形)——

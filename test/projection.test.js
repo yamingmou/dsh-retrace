@@ -128,7 +128,7 @@ describe('versionsProjectionDefinition', () => {
     ])
     const parsed = versionsProjectionDefinition.wire.viewSchema.parse(
       versionsProjectionDefinition.wire.view(state),
-)
+    )
     expect(parsed.versions).toHaveLength(1)
     expect(parsed.versions[0].versionId).toBe('v2')
     // The raw fold state must parse through the stateSchema (durable rows).
@@ -258,7 +258,7 @@ describe('cold-restore replay', () => {
     expect(versionsProjectionDefinition.view(acc)).toEqual(versionsProjectionDefinition.view(seen.at(-1)))
     expect(versionsProjectionDefinition.view(acc)).toEqual(
       versionsProjectionDefinition.view(run(versionsProjectionDefinition, events)),
-)
+    )
   })
 
   it('the schema accepts a re-validated view of a JSON-revived state (checkpoint round-trip)', () => {

@@ -125,7 +125,7 @@ describe('close-guard-client buildRunningCopy(A 文案,规格草案可微调)', 
     const stale = buildRunningCopy(
       { running: snapshot.running, at: Date.now() - 60000 },
       { locale: 'zh', ttlMs: 5000 },
-)
+    )
     expect(stale.stale).toBe(true)
     expect(stale.hint).toContain('可能已变化')
     const fresh = buildRunningCopy(snapshot, { locale: 'zh', ttlMs: 5000 })
@@ -162,7 +162,7 @@ describe('close-guard-client 轮询常量(与装配一致)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 客户端一票否决(2026-09-18 第二轮,issue #1 复测仍卡死)
+// 客户端一票否决(第二轮,issue #1 复测仍卡死)
 //
 // 现场:报告人那台壳三条宿主规则全不成立 ⇒ 宿主错回 `surface=browser, quitVeto=true`
 // ⇒ 客户端照旧武装 ⇒ 仍然退不掉。⇒ 页面**自己**的两条属性(UA / URL)成为最后一道。

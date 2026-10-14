@@ -61,7 +61,7 @@ function markerEvent(id, span, sourceEventSeqs) {
 
 /**
  * A MALFORMED replacement as found in the user's real large session
- * (2026-09-30, seq 33662/33682/…): a third-party `互操作标记-v1-*`
+ * (seq 33662/33682/…): a third-party `互操作标记-v1-*`
  * marker whose `sourceEventSeqs` embeds a NESTED array pair (`[28324,28334]`).
  * The kernel's provenance validator rejects it
  * (`… sourceEventSeqs must densely contain non-negative safe integers`), which
@@ -86,7 +86,7 @@ function malformedSession() {
     assistantMessage('a1', 'yo'),
     malformedMarkerEvent('interop-marker-v1-b5-1790150438469', [0, 1], [0, [1, 2]]),
     userMessage('u2', 'again'),
-)
+  )
 }
 
 /** The version at the malformed boundary (seq 2): its folded surface is [2]. */
@@ -206,7 +206,7 @@ describe('rollback preview', () => {
       userMessage('u1', 'hi'),
       assistantMessage('a1', 'yo'),
       userMessage('u2', 'again'),
-)
+    )
     const { rollback } = makeRollback(session)
     await expect(rollback.preview({ sessionId: 's1', versionId: 'v4', scope: 'nope' })).rejects.toMatchObject({ code: 'bad-scope' })
   })
@@ -219,7 +219,7 @@ describe('rollback preview', () => {
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
       userMessage('u3', 'more'),
-)
+    )
     const { rollback } = makeRollback(session)
     const result = await rollback.preview({ sessionId: 's1', versionId: 'v3', scope: 'both' })
     expect(result.context.messages).toBe(1)
@@ -234,7 +234,7 @@ describe('rollback preview', () => {
       assistantMessage('a1', 'yo'),
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
-)
+    )
     const { rollback } = makeRollback(session)
     const result = await rollback.preview({ sessionId: 's1', versionId: 'v3', scope: 'both' })
     expect(result.context.messages).toBe(0)
@@ -250,7 +250,7 @@ describe('rollback execute', () => {
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
       userMessage('u3', 'more'),
-)
+    )
     const { rollback, sessions } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'context' })
     // 两段结构：第 1 段（审计）@5、第 2 段（载体）@6（不再有 turn/step 信封）
@@ -276,7 +276,7 @@ describe('rollback execute', () => {
       assistantMessage('a1', 'yo'),
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
-)
+    )
     const { rollback, writes, seam } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'artifacts' })
     expect(seam.resolveSnapshot).toHaveBeenCalledWith('v3', 'src/a.ts')
@@ -294,7 +294,7 @@ describe('rollback execute', () => {
       assistantMessage('a1', 'yo'),
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
-)
+    )
     const { rollback, spawns } = makeRollback(session, {
       snapshot: () => ({ enabled: true, versions: [versionRecord({ touchedFiles: [{ path: 'gone.txt', mode: 'deleted' }] })] }),
     })
@@ -311,7 +311,7 @@ describe('rollback execute', () => {
       assistantMessage('a1', 'yo'),
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
-)
+    )
     const seam = makeSeam({
       configFor: () => ({ versioning: true, git: true, retentionLimit: 50 }),
       gitStatus: async () => ({ root: '/work', headHash: 'abc123', dirty: true, paths: [] }),
@@ -329,7 +329,7 @@ describe('rollback execute', () => {
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
       userMessage('u3', 'more'),
-)
+    )
     const { rollback, writes } = makeRollback(session)
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'both' })
     expect(result.markerSeq).toBe(6)
@@ -338,7 +338,7 @@ describe('rollback execute', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 退化路径(2026-09-30 真机「读档点无法回档」):
+// 退化路径:
 // 用户大会话里 7 条第三方 fold marker 的 `sourceEventSeqs` 嵌了数组(如
 // [28324,28334]),内核严格折叠整体抛错 ⇒ preview() 在写任何东西之前就抛,
 // 客户端拿到 {ok:false,error:{code:'internal'}}。修法 = 严格折叠失败 → 镜像折叠
@@ -384,7 +384,7 @@ describe('rollback replay degradation (malformed sourceEventSeqs)', () => {
   })
 
   it('退化 diff 只遮蔽镜像也认得的节点:镜像表看不见的 developer/message 不误伤(安全侧)', async () => {
-    // 真机读数(2026-09-30):内核把 `developer/message` 当表面事件,而镜像表
+    // 真机读数:内核把 `developer/message` 当表面事件,而镜像表
     // (lib/version-index.js)不含它 ⇒ 直接相减会多遮蔽 2 个节点(18 vs 真值 16)。
     // 修法 = 与"镜像自己的当前面"求交:看不见的节点保持可见,绝不误藏。
     const session = malformedSession()
@@ -445,7 +445,7 @@ describe('rollback preview idle gate (parity with execute)', () => {
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
       userMessage('u3', 'more'),
-)
+    )
   }
 
   it('运行中 preview 被拒为 agent-busy(与 execute 同 code/同文案),且零副作用', async () => {

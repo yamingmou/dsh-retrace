@@ -102,13 +102,13 @@ const LOG_ONLY_TYPES = new Set(['request/header', 'compaction/prune', 'compactio
  * by dropping the shadowed span from the surface (the replacement carrier
  * becomes the new tail node).
  *
- * HOST GENERATION (2026-09-14, independent-review MEDIUM-3/4): the DEFAULT is
+ * HOST GENERATION (independent-review MEDIUM-3/4): the DEFAULT is
  * the real production shape — DSH Desktop 2.0.9's `Session` exposes
  * `snapshotEvents()` / `eventAt(seq)` and has **no `events` member at all**.
  * The legacy array is an EXPLICIT override (`makeSession({ host: 'legacy' })`).
  * Rationale: while the fake carried only `events`, the whole suite silently
  * exercised the legacy branch, and a "guarded" regression such as
- * `Array.isArray(session?.events) ? session.events : []` passed 38/38 — i.e.
+ * `Array.isArray(session?.events) ? session.events: []` passed 38/38 — i.e.
  * it could ship "recall/edit is dead" with a fully green suite.
  *
  * Members mirrored from the measured host class (audit table report.md ):
@@ -243,7 +243,7 @@ export function lastCarrierMarker(session) {
 }
 
 /**
- * 默认 hooks(2026-09-02 抽象设计落地):真实 DSH 遮蔽写入器 + 默认校验通过。
+ * 默认 hooks:真实 DSH 遮蔽写入器 + 默认校验通过。
  * 测试可覆盖 validateMarker(断言 writer→校验链路)或整体覆盖。
  * meter 注入官方口径的测量桩(写作器拿不到 meter 会拒写——见 official-meter.js)。
  */

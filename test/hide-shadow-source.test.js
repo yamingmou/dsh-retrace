@@ -1,7 +1,7 @@
 /**
  * 0.4.124-fix —— 遮蔽序列的**解析优先级**与「已撤回 N 条消息」的同源 count。
  *
- * 事故现场(真机 2026-10-08 18:07:12,宿主日志 3 条 `hide-miss:no-hidden-keys`):
+ * 问题现场:
  *   · 某个会话的 marker 229/231/233 报"零隐藏键";
  *   · 但同一快照里另外 12 条 marker(markerCount=15)都产出了键 —— 差别只有一个:
  *     这 3 条的遮蔽表里**窗口内**的 seq 全是 marker 载体自身(172/174/226/229/231),
@@ -74,7 +74,7 @@ beforeAll(async () => {
   // eslint-disable-next-line no-new-func
   new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(
     (id) => (id === 'react' ? statelessReact : nodeRequire(id)), mod, mod.exports,
-)
+  )
   hooks = mod.exports
   for (const name of EXTRACTED) expect(typeof hooks[name]).toBe('function')
 })
@@ -119,7 +119,7 @@ async function realCarrier() {
     headerEvent(),
     hostUserMessage('u1', 'q1'), hostAssistantMessage('a1', 'r1'),
     hostUserMessage('u2', 'q2'), hostAssistantMessage('a2', 'r2'), hostAssistantMessage('a3', 'r3'),
-)
+  )
   const writer = createDshMarkerWriter({ meter: officialSurfaceMeter(), deriveMessage })
   const carrier = await writer.writeMarker(session, { start: 3, end: 5, shadowedSeqs: [3, 4, 5] }, { op: 'recall', targetSeq: 3, originalText: '' })
   const audit = sessionEvents(session).find((e) => e?.type === 'compaction/prune')
@@ -257,7 +257,7 @@ describe('③ 优先级 ② paired-audit 与 ③ surface-op 兜底', () => {
 // ---------------------------------------------------------------------------
 // ④ 真机现场复刻(窗口化)+ 拿不到集合时如实上报
 // ---------------------------------------------------------------------------
-describe('④ 真机 2026-10-08 18:07:12 现场复刻(窗口起点落在 (141,148])', () => {
+describe('④ 真机现场复刻(窗口化;窗口起点落在 (141,148])', () => {
   // marker 229 的真值:审计 seq 228、遮蔽 [138,139,140,141,174,172,226]、区间 138..226。
   // 客户端窗口里有 148/151(它们由更早的 marker 负责),但 marker 229 自己的 138-141 在窗口外,
   // 窗口内的 172/174/226 是**载体**(被 hiddenKeysFor 跳过)⇒ 零键。

@@ -1,7 +1,7 @@
 /**
  * 第 1 段 `shadowedTokenCount` = **官方令牌价**(shadow-price claim) —— 口径钉死。
  *
- * 被修正的事故形态:写入端曾写「被遮蔽节点个数」。官方 `dsh-token-meter`
+ * 被修正的问题形态:写入端曾写「被遮蔽节点个数」。官方 `dsh-token-meter`
  * `lib/types/surface-projection.js` 的 `foldSurfaceProjection` 把
  * `compaction/prune` 当 claim 武装(`{start,end,tokens:shadowedTokenCount}`),
  * 下一个 surface replace 按 `deltaTokens = 本事件估价 − claim.tokens` 折叠 ⇒
@@ -30,7 +30,7 @@ function priceSession() {
     userMessage('u1', 'q'.repeat(3000)),
     assistantMessage('a1', 'r'.repeat(3000)),
     assistantMessage('a2', 's'.repeat(2012)),
-)
+  )
 }
 
 const SPAN = { start: 1, end: 3, shadowedSeqs: [1, 2, 3] }

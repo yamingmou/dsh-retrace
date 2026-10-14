@@ -2,7 +2,7 @@
  * 0.4.127 —— 撤回后**轮级提示条**(turn-process)的残留:官方渲染「已停止」+ 底边。
  *
  * 用户报的现场(展示层残留;真实会话 id 与本机落点**不入库**,见发布前硬闸门):
- *   该会话是一条research team;下面这些 seq / 键都是真机读数,消息 id 用合成占位值。
+ *   该会话来自一次技术调研;下面这些 seq / 键都是真机读数,消息 id 用合成占位值。
  *   轮 252 = 被中止的轮 —— 日志里只有
  *     `16900 turn/start` / `16903 user/message` / `16904 assistant/attempt` /
  *     `16905 step/end` / `16906 turn/end {kind:'aborted',reason:{kind:'user'}}`,
@@ -13,7 +13,7 @@
  *   · 「已停止」= `t("message.stopped")`,由 `turn.end.data.reason.kind === 'aborted'` 驱动
  *     (`@deepseek-ai/dsh-client-ui-chat/lib/client.js` 文案 / `:6169` 规则);
  *   · 承载它的 `turn-process` 行锚在 `controlAnchorSeq - 0.1`(`:10086` + :7119-7125),
- *     而 `controlAnchorSeq` 取自 `processEvidence()`(:9918-9931:assistant/attempt ·
+ *     而 `controlAnchorSeq` 取自 `processEvidence()`(9918-9931:assistant/attempt ·
  *     tool/call · llm/retry)或回落到 `turn.start.seq`(`processSpec`,`:9959`)
  *     ⇒ 合成锚点 `ceil(16899.9) = 16900`(turn/start)**不在**遮蔽集合里;
  *   · 该行是 `data-chat-flow-key = "12:turn-process252"` 的 flow 条目(`:1760-1765`;
@@ -74,7 +74,7 @@ async function bundleClient(react) {
   // eslint-disable-next-line no-new-func
   new Function('require', 'module', 'exports', bundled.outputFiles[0].text)(
     (id) => (id === 'react' ? react : nodeRequire(id)), mod, mod.exports,
-)
+  )
   return mod.exports
 }
 
@@ -117,7 +117,7 @@ const PROCESS_CONTROL = -0.1
 /**
  * 官方 location 索引的形状(`locationCoordinates`,chat:8116-8123):
  * `{kind:'turn', turn:{turn, start, end, status, steps, data}}`。
- * `reason` 是 `turn/end.data.reason`(**对象**,真机。
+ * `reason` 是 `turn/end.data.reason`。
  */
 const turnLocation = (turn, { startSeq, endSeq, reason }) => ({
   kind: 'turn',
@@ -131,7 +131,7 @@ const turnLocation = (turn, { startSeq, endSeq, reason }) => ({
   },
 })
 
-/** 用户消息行(节点 kind 真机 = 'user',见 chat:9232 `context.state.kind`)。 */
+/** 用户消息行。 */
 const inputMessage = (turn, seq, id, location) => ({
   key: `13:input-message${id}`,
   kind: 'user',

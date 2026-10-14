@@ -17,7 +17,7 @@
  *   retrace lineage <session> [--json]
  *       会话 parent 链谱系（A4，分叉图数据源）
  *
- * <session> 为完整文件路径或 sessionId（按 sessions 基座候选查找：$DSH_HOME/~/.dsh/$DSH_SESSION_BASES）。
+ * <session> 为完整文件路径或 sessionId（按 sessions 基座候选查找：$DSH_HOME/$DSH_SESSION_BASES/~/.dsh）。
  */
 import fs from 'node:fs';
 import { loadSessionLog, extractToolOutputs, auditToolCalls } from 'dsh-log-contract';

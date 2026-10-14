@@ -1,7 +1,7 @@
 /**
  * Regression: the marker producer must NOT fabricate the append seq.
  *
- * Real-machine incident (DSH Desktop 2.0.9, 2026-09-14): clicking edit or recall
+ * Regression (DSH Desktop 2.0.9): clicking edit or recall
  * failed with
  *   Marker write rejected by contract guard: [E2/error] seq 0 不连续：倒退（backward），
  *   期望 26033 —— 只能追加到日志尾部（append-only，N6）
@@ -29,7 +29,7 @@ import { createDshMarkerWriter } from '../lib/adapter/dsh-writer.js'
 import { createMarkerGuard } from '../lib/prewrite-guard.js'
 import { officialSurfaceProjection, officialNodePrice, officialSurfaceMeter, deriveMessage } from './official-meter.js'
 
-/** Mirrors the real machine's log tail (26033 = last seq 26032). */
+/** Mirrors the host's log tail (26033 = last seq 26032). */
 const REAL_TAIL = 26033
 const MODEL = { provider: 'test-provider', model: 'test-model' }
 const SPAN = { start: 1, end: 2, shadowedSeqs: [1, 2] }
@@ -48,12 +48,12 @@ function buildSession(tail, { host = 'new' } = {}) {
     'user/message',
     { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } },
     { surfaceOp: 'append' },
-)
+  )
   session.append(
     'assistant/message',
     { turn: 0, step: 0, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'yo' }], source: { kind: 'model', ...MODEL } } },
     { surfaceOp: 'append' },
-)
+  )
   for (let i = session.seq; i < tail; i++) session.append('assistant/chunk', { turn: 0, step: 0, text: 'x' })
   return session
 }
@@ -134,7 +134,7 @@ describe('marker append seq — real-machine E2 regression (期望 26033, candid
 
 /**
  * 本轮整改 §四.3: the guard used to reject the carrier **after** the audit was
- * already appended, leaving an orphan `compaction/prune` (the real machine left
+ * already appended, leaving an orphan `compaction/prune` (the host left
  * seq 26032/26033). Now the whole two-segment sequence is validated BEFORE any
  * append, so a rejection writes nothing.
  */

@@ -26,8 +26,8 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 > ⚠️ **Honest scope (matches the companion contract's own note)**: sessions that
 > already contain **legacy single-segment markers** — written by older versions —
 > are **known design debt**. Before `/compact`, run the companion `check` and
-> clean them up (`fix --remove-markers`); otherwise the host's own T1 self-check
-> blocks compaction. New rewinds do not add to that debt.
+> clean them up (`fix --remove-markers`); otherwise the host's own pre-compaction
+> self-check blocks compaction. New rewinds do not add to that debt.
 
 > 🛡️ **Write safety** · 🔍 **Deep offline checks** · 🔄 **Detect → repair → guard** — see below.
 
@@ -138,14 +138,15 @@ The same result with plain file edits and `pnpm` — exactly the steps
 1. Open the profile manifest (defaults: `<plugin data home>/profiles/desktop`
    on DSH Desktop, `<plugin data home>/profiles/web` for standalone Web — where
    `<plugin data home>` is `$DSH_HOME` when set, otherwise the **active session
-   base**, e.g. a newer `DSH_HOME` directory; `~/.dsh/profiles` is only the
-   pre-migration fallback) and add **both** the
+   base** (`$DSH_HOME` and any base configured through `$DSH_SESSION_BASES`,
+   falling back to `~/.dsh`); `~/.dsh/profiles` is only the pre-migration fallback)
+   and add **both** the
    dependency and the bundle-layer entry:
 
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.130"
+       "dsh-retrace": "^0.4.131"
      },
      "dsh": {
        "profile": {
@@ -234,38 +235,19 @@ Before you exit or reload, know what is still running:
 | 🔒 | **Page-close interception** | The desktop never arms the host's native confirm dialog; it uses a **page-drawn confirm gate** instead: it draws the box and **verifies visibility synchronously** before blocking (`preventDefault`); if it cannot draw, is not visible, or the page is hidden ⇒ **lets the close through immediately**; the dialog waits for your choice (**Esc = cancel**); a **Web-Worker watchdog** (immune to background throttling) is only the *last* resort. Turning off "Exit confirmation (close guard)" recovers immediately (**no restart**) |
 | 🔎 | **Query surface** | `retrace.runningState` (host RPC) + `GET\|POST /api/plugins/retrace/runningState` (HTTP) — same shape on both transports; the all-sessions shape also carries the host-reported page surface (`surface` / `quitVeto`) |
 
-> **Desktop wording (accurate as of the versions below)**: **quit entries differ
-> by version/platform**, and the host's native confirm dialog either does not
-> exist on a desktop shell or is swallowed. The **2.0.9**-class shell we inspected
-> has no `will-prevent-unload` handler (0 hits across the packaged `app.asar`) and
-> routes the tray item through `requestQuit(0) → window.destroy() → app.exit(0)`,
-> so a page-level `beforeunload` veto never reaches it. The external report's
-> **0.9.0** / Windows shell does reach the page `beforeunload`, but the veto is
-> **swallowed silently** (no dialog, no feedback — the exit just looks stuck).
-> What actually protects on desktop is therefore the **page-drawn confirm gate**:
-> it does call `preventDefault`, but only after it has drawn the box and verified
-> it is visible synchronously; a `visibilityState` pre-check lets the close through
-> immediately when the box cannot be drawn, is not visible, or the page is hidden.
->
-> Arming the host's **native** gate follows a two-part rule: **Both criteria must hold** —
-> the host side is only a *non-objection* (`quitVeto: true`), and the client keeps a
-> **veto** — if this page's `navigator.userAgent` contains `Electron`, or the page
-> URL contains `dsh-desktop-`, the native gate is **never armed**.
-> The host-side criteria cover four request-level facts: the
-> `x-dsh-desktop-renderer` capability header, a request `User-Agent` containing
-> `Electron`, or a request URL **or `Referer`** containing `dsh-desktop-` — **any
-> one** of them classifies the page as a desktop page. That also covers host
-> shells that report **no evidence at all** (a pure-Node harness plus an Electron
-> renderer, where all three older criteria were false, so the old code filed it as
-> a browser page and armed the gate). Our own polling URL carries no query string,
-> so the page marker is in practice read from `Referer`, which a same-origin
-> `fetch` sends by default.
+> **How the close confirm behaves (user-visible)**: whether the host pops its own
+> **native** quit confirmation is decided **jointly by the host and the page**. On a
+> desktop shell the plugin does **not** use the host's native dialog — it draws its
+> **own in-page confirmation** (Esc cancels). If the page cannot draw that box, the
+> box is not visible, or the page itself is hidden, the close is let through
+> immediately. Turning off "Exit confirmation (close guard)" reverts to the host's
+> default behaviour (no restart needed).
 >
 > **Known limitation (stated plainly)**: some desktop shells route quit **around
-> the page entirely** (e.g. `requestQuit → destroy → app.exit`, or the X button
-> merely hides the window) ⇒ on those shells a plugin **cannot** show a confirm
-> dialog at quit time; it **needs a shell seam** (a `will-prevent-unload` handler,
-> or a pre-quit prompt hook). If Desktop cannot quit, turning off "Exit
+> the page entirely** (e.g. the tray item destroys the window directly, or the X
+> button merely hides the window) ⇒ on those shells a plugin **cannot** show a
+> confirm dialog at quit time; it **needs a shell seam** (a `will-prevent-unload`
+> handler, or a pre-quit prompt hook). If the app cannot quit, turning off "Exit
 > confirmation (close guard)" recovers immediately (no restart).
 
 ### Session badge & display name (**planned / off by default**)
@@ -276,11 +258,11 @@ on both HTTP and harness), the resolver and the write guards are **in place**, b
 the **automatic startup path that writes titles is off by default** (the client
 gate is `globalThis.__DSH_RETRACE_BADGE_BOOTSTRAP = true`):
 
-- A session title renders as `[badge] original title` (shape placeholder: `[opxxxopxxx] original title`).
+- A session title renders as `[badge] original title` — the **stable identifier is
+  derived deterministically from the session id**, so a title change never changes it.
 - Sessions with **no `session/title` event are left blank on purpose** (the title shows just
   `[badge]`) — **no project-name fallback, no fabricated name**.
-- If the resolver is unavailable it falls back to the **raw session id as a placeholder**,
-  and **never** to a hashed name.
+- If the resolver is unavailable it falls back to the **raw session id as a placeholder**.
 - The sidebar row, the running banner and the checkpoint view share **one source**: the same badge
   map the host hands down (host op `badgeMap`).
 
@@ -408,8 +390,9 @@ Read it before filing an issue.
 
 - **Data home and session base are now one source.** The plugin previously resolved its
   own data directory through the host's home resolver (`$DSH_HOME` → `~/.dsh`), which
-  does not know about a migrated base. With `$DSH_HOME` unset, sessions were read from
-  one base while snapshots and the artifact store were written to another. Snapshots,
+  does not know about extra bases configured through `$DSH_SESSION_BASES`. With
+  `$DSH_HOME` unset, sessions were read from one base while snapshots and the artifact
+  store were written to another. Snapshots,
   version stores and `verify-install` now follow the **active session base**. When
   `$DSH_HOME` is set, behaviour is unchanged.
 - **No user-visible string hard-codes `~/.dsh` any more** (the settings hint used to say
@@ -442,7 +425,7 @@ Read it before filing an issue.
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.130
+dsh plugin --profile desktop add dsh-retrace@0.4.131
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -466,7 +449,7 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.130`) and let `dsh-log-contract` resolve to
+Pin an exact plugin version (`dsh-retrace@0.4.131`) and let `dsh-log-contract` resolve to
 `>=0.3.12`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 
@@ -621,7 +604,8 @@ retrace lineage <session>                      # parent-chain lineage
 ```
 
 `<session>` is a full log path or a sessionId (auto-looked-up under the active
-session base — `$DSH_HOME/sessions`, else a newer base, else `~/.dsh/sessions`).
+session base — `$DSH_HOME/sessions`, else each `$DSH_SESSION_BASES` base, else
+`~/.dsh/sessions`).
 All read-only.
 
 **Session lineage**: `GET /api/plugins/retrace/lineage?sessionId=` walks the
