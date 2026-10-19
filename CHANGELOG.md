@@ -6,6 +6,25 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.133] — 2026-10-15 · 支持 DSH 0.2.x（issue #2）
+
+- 六个 `@deepseek-ai/dsh-*` peer：`^0.1.7-rc.2` → **`>=0.1.7-rc.2 <0.3.0`**；`dsh.compatibility.dsh` → `>=0.1.5 <0.3.0`
+  ⇒ 修复 DSH Desktop 2.0（dsh 0.2.0-rc.1）下整包被兼容闸跳过的问题
+- 依赖 `dsh-log-contract ^0.3.18`（其 v4 规则适配修复 E6/E9 误报，写前校验在 v4 上不再误拒）
+- 实现侧无改动（报告者亦实测确认实现本身在 0.2.0-rc.1 上正常）
+
+---
+
+## [0.4.132] — 2026-10-15 · 上架契约整改版（打包修正）
+
+- `package.json` 声明 `engines.node >=20.0.0` 与 `dsh.compatibility`（DSH/Node/模式）
+- 拆分 `lib/client-i18n.js` / `lib/client-css.js`；两生成器去装饰缩进 + `minifyWhitespace`
+  ⇒ **全部发布文件均低于 256 KiB**（此前 `client.js` 310 KB、`dynamic-client.js` 277 KB 超限）
+- README（中/英）新增「兼容性与运行契约」：构建产物可复现、依赖、权限与外部服务、失败边界
+- 无行为变更
+
+---
+
 ## [0.4.131] — 2026-10-09 · 撤回连带终止派生任务 · 真正恢复可在当前会话内执行 · 子代理不再显示操作项
 
 ### 变更

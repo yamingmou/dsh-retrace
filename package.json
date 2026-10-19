@@ -1,7 +1,7 @@
 {
   "name": "dsh-retrace",
   "description": "Retrace · 回溯 — Recall, edit-and-resend, regenerate, and conversation/artifact versioning (timeline, rollback, fork graph) for DeepSeek Harness — Web and Desktop",
-  "version": "0.4.131",
+  "version": "0.4.133",
   "packageManager": "pnpm@11.7.0",
   "type": "module",
   "main": "lib/index.js",
@@ -74,7 +74,7 @@
       "platform": "web"
     },
     "compatibility": {
-      "dsh": ">=0.1.5 <0.2.0",
+      "dsh": ">=0.1.5 <0.3.0",
       "node": ">=20.0.0",
       "modes": [
         "desktop",
@@ -83,17 +83,17 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.7-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.7-rc.2",
-    "@deepseek-ai/dsh-session": "^0.1.7-rc.2",
-    "@deepseek-ai/dsh-storage-domain": "^0.1.7-rc.2",
-    "@deepseek-ai/dsh-token-meter": "^0.1.7-rc.2",
+    "@deepseek-ai/cordis": ">=0.1.7-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.7-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-conversation": ">=0.1.7-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-session": ">=0.1.7-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-storage-domain": ">=0.1.7-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-token-meter": ">=0.1.7-rc.2 <0.3.0",
     "react": "^18.2.0"
   },
   "dependencies": {
-    "dsh-log-contract": "^0.3.12",
+    "dsh-log-contract": "^0.3.18",
     "zod": "^4.4.3"
   },
   "repository": {
