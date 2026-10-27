@@ -1,3 +1,12 @@
 node_modules/
 *.log
 .DS_Store
+internal/release-reports/
+internal/.projection-check/
+internal/
+
+# 独立审核记录：不入树（review-record 闸按 treeSha 绑定代码树）
+reviews/*.json
+
+# 推送闸例外：本地文件，不入库
+.git-surface-exceptions.json
