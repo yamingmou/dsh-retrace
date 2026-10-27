@@ -33,6 +33,10 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 
 ---
 
+> Versions: [VERSIONS.md](./VERSIONS.md)
+
+> Until 0.4.135 is published, install/pin `0.4.134` (the current npm latest).
+
 ## ⚡ One-minute install
 
 > Requires DeepSeek Harness with the `dsh` CLI. **Restart DSH after install** (a running app does not hot-reload).
@@ -87,11 +91,12 @@ Full steps in [📦 Installation](#-installation).
 |---|---|---|
 | 🕘 | **Checkpoints** | a **Checkpoints** tab in the conversation view: every change (type, time, message count, file-change badges), pushed live via `session/projection` (no polling), windowed for long histories; nested history is browsable outline-style |
 | ↩️ | **Artifact rollback** | **context-only / artifacts-only / both** with dry-run preview; git-first + content-addressed snapshot fallback; a rollback is itself a new checkpoint (`restore`). Preview refuses while the agent is running (so "preview says yes, confirm says no" cannot happen), and preview/rollback failures are shown in the UI instead of failing silently |
+| 🧬 | **Lineage identity** | every new session gets a stable lineage id automatically; the sidebar shows one badge per conversation (no duplicates on refresh) |
 | 🧭 | **Jump-to-conversation** | one click from a checkpoint to that point in the conversation (auto-loads history, anchor highlight); when the point is out of the auto-load budget the reason is reported instead of nothing happening |
 | 🧹 | **Bounded storage** | snapshots keep the most recent N checkpoints (default 50); throttled background sweep prunes truncated ones |
 
 > **Rollback on a damaged log** is not silent: the host's strict replay is the
-> authority, but a single malformed event (for example a `sourceEventSeqs` row
+> authority, but a single malformed event (for example a malformed replace row
 > written by a third party with range encoding) can poison the whole replay. In
 > that case the rollback degrades to a mirror replay, logs both the degradation
 > and the original error, and flags the result as `degraded` on the wire; if even
@@ -146,7 +151,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.131"
+       "dsh-retrace": "^0.4.135"
      },
      "dsh": {
        "profile": {
@@ -215,7 +220,7 @@ The dynamic host registers the same operations behind the package-private
 - DeepSeek Harness providing the peer packages listed in `package.json`
   (`@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-client-*`, `cordis`, `react` — the
   current build targets the `0.1.7-rc.2` generation).
-- `dsh-log-contract >= 0.3.12` (installed automatically as a dependency).
+- `dsh-log-contract >= 0.3.18` (installed automatically as a dependency).
 - The plugin declares the host capabilities it needs via `inject`
   (`sessions`, `agents`, `webServer`, `fs`, `subprocess`, `sandboxPolicy`, `jobs`).
   A missing capability degrades the corresponding feature (for example, no
@@ -250,27 +255,12 @@ Before you exit or reload, know what is still running:
 > handler, or a pre-quit prompt hook). If the app cannot quit, turning off "Exit
 > confirmation (close guard)" recovers immediately (no restart).
 
-### Session badge & display name (**planned / off by default**)
+### Session badge & display name
 
-Badges are for human collaboration; **identity is still decided by the session id**.
-The transports (`sessionBadge` / `setBadgeTitle` / `initBadgeTitles` / `badgeMap`,
-on both HTTP and harness), the resolver and the write guards are **in place**, but
-the **automatic startup path that writes titles is off by default** (the client
-gate is `globalThis.__DSH_RETRACE_BADGE_BOOTSTRAP = true`):
-
-- A session title renders as `[badge] original title` — the **stable identifier is
-  derived deterministically from the session id**, so a title change never changes it.
-- Sessions with **no `session/title` event are left blank on purpose** (the title shows just
-  `[badge]`) — **no project-name fallback, no fabricated name**.
-- If the resolver is unavailable it falls back to the **raw session id as a placeholder**.
-- The sidebar row, the running banner and the checkpoint view share **one source**: the same badge
-  map the host hands down (host op `badgeMap`).
-
-> **Planned (not shipped)**: the agent business-layer plan (runtime guard,
-> interruption governance, ecosystem-facing interfaces) is a **plan**, not a
-> shipped capability.
-
----
+- The sidebar shows **one badge per conversation**; the conversation title keeps the plain name. The stable identifier is **derived deterministically from the session id** (no random suffix).
+- **There is no setting for this yet.** Two runtime switches exist:
+  - `DSH_RETRACE_SHOW_CODES=0` — hide lineage codes (host-side, takes effect on restart);
+- Custom display names and a settings-page toggle are **planned** — see [docs/PLAN.md](./docs/PLAN.md) and [docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## ⚙️ Settings → General
 
@@ -347,85 +337,21 @@ the symptom is usually a failed boot, not a wrong-looking feature.
 This section exists so you can tell **host-side breakage** from **plugin-side bugs**.
 Read it before filing an issue.
 
-### Host-side breaking changes this plugin adapts to — *not caused by this plugin*
+### Host-side changes to be aware of
 
-1. **`@deepseek-ai/dsh-session` removed the `Session.events` member** (in `0.1.5-rc.1`).
-   The supported readers are `snapshotEvents(fromSeq, toSeqExclusive)` (frozen,
-   sequence-indexed), `eventAt(seq)`, `ownEvents()` and `isOwnSeq(seq)`. Before the
-   fix, recall and edit did nothing and surfaced
-   `TypeError: Cannot read properties of undefined (reading 'length')`. The plugin
-   now reaches the log through a compatibility accessor that prefers the new API and
-   falls back to the old array, so both host generations work.
-2. **`@deepseek-ai/dsh-session` dropped `decodeStorageRecord` from its public export
-   surface** (in `0.1.5-rc.1`; the function still exists internally but is no longer
-   exported from the package root and is unreachable via the exports map).
-   `dsh-retrace` itself never imported it, but its dependency `dsh-log-contract` did.
-   With no such export the loader aborts with
-   `plugin tree failed to load … does not provide an export named 'decodeStorageRecord'`
-   and **the whole plugin tree fails to load — not just this plugin**, so the app does
-   not start.
-   → **Dependency note:** needs `dsh-log-contract >= 0.3.12`.
-3. **A client **service** disappeared: `conversationEvents`** — it used to be provided by
-   the legacy client runtime `@deepseek-ai/dsh-client-runtime`, which has been removed.
-   A plugin whose client half still declares that service in `export const inject` never
-   becomes ready: its fiber stays **pending**, which the host reports as
-   `renderer boot failed (plugins: …): The client Loader did not provide an error message.`
-   — no error text at all, the window does not finish starting, and the only way in is to
-   disable the plugin. The plugin drops the service from `inject` and resolves it
-   **defensively** in `apply` (`uiConversation`, falling back to the legacy name).
-   > Note: declaring a **package** that no longer exists in `dsh.client.inject` is *not*
-   > what breaks the boot — the client loader skips unknown entries silently. The
-   > breakage comes from the **service name** the plugin waits for.
-4. **The client-side session store has no `keys()`** (`ctx.sessions`). A plugin that
-   enumerates sessions with `keys()` silently sees **zero** of them: no crash, no error,
-   just safety warnings that never fire. The plugin prefers the official `list()` and
-   falls back to `keys()`; it deliberately does **not** fall back to enumerating service
-   fields, because guessing produces a silent empty result as well.
+The host occasionally removes APIs this plugin relied on. These are **host-side changes, not plugin defects** — symptoms and one-line fixes:
 
-> All four items are **host-side removals**, documented here on purpose: if you hit
-> one of these symptoms right after a host upgrade, the first question is "does this
-> plugin build predate the removal?", not "what did the plugin break?".
+- Boot loop / recovery screen after a host upgrade → switch to a clean session and restart DSH; the plugin falls back to degraded mode instead of blocking.
+- Version/checkpoint panels empty after an upgrade → run `dsh plugin --profile <p> add dsh-retrace` to refresh the bundle.
+- Title/rename behaves differently → automatic title bootstrap is guarded by the host; manual rename keeps working.
+- Dependency floor: `dsh-log-contract >= 0.3.18`.
 
-### Plugin-side fixes (0.4.26 – 0.4.28)
-
-- **Data home and session base are now one source.** The plugin previously resolved its
-  own data directory through the host's home resolver (`$DSH_HOME` → `~/.dsh`), which
-  does not know about extra bases configured through `$DSH_SESSION_BASES`. With
-  `$DSH_HOME` unset, sessions were read from one base while snapshots and the artifact
-  store were written to another. Snapshots,
-  version stores and `verify-install` now follow the **active session base**. When
-  `$DSH_HOME` is set, behaviour is unchanged.
-- **No user-visible string hard-codes `~/.dsh` any more** (the settings hint used to say
-  snapshots live under `~/.dsh`).
-- **The edit / recall affordances never appeared at all.** The client half read chat
-  nodes from `snapshot.chat.nodes`, a path this host build does not have — nodes live in
-  the `useChat` store (`snapshot.nodes`). Every message-level component threw while
-  rendering and was swallowed by the error boundary, so the buttons were missing, while
-  the settings entry (which reads no nodes) rendered fine.
-- **"Jump to message" in the checkpoint view did nothing.** It resolved the target
-  anchor through `store.getSnapshot()?.chat?.nodes`, which is permanently `undefined`
-  here. It now resolves through the `useChat` snapshot injected by the view and pages
-  with the official `store.loadThrough(seq)`; when the jump cannot complete it reports a
-  **diagnosable reason** (renderer warning + host-log line) instead of failing silently.
-- **Assigning a lineage ID could overwrite your session title.** Title tagging now goes
-  through the host route only (`setBadgeTitle`), which reads the current title from the
-  session log. Manual renames are unaffected.
-- **Host-side operation failures are logged again** (code + message + stack). They used
-  to return the message to the UI without a log line, which made this class of bug hard
-  to diagnose from outside.
-- **The checkpoint view now explains itself.** It used to show a title plus a row of
-  actions with **no sentence anywhere saying what a "checkpoint" is**, and rows printed
-  raw node types. It now carries an always-visible concept sentence, a type legend, and
-  a plain-language "why" line on every row.
-- **Client hide-lookup no longer rescans per row.** `useSeqHidden` re-scanned the node map
-  for every row (measured **346 ms** at 2000 rows / 20 markers, **1568 ms** at 3000/30).
-  It now reuses one per-snapshot hide plan: **8.3 ms** and **18.3 ms** respectively, with
-  the predicate verified equivalent against the old one.
+Historical details and exact error strings live in [CHANGELOG.md](./CHANGELOG.md); compatibility matrix in [docs/COMPAT.md](./docs/COMPAT.md).
 
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.131
+dsh plugin --profile desktop add dsh-retrace@0.4.135
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -449,8 +375,8 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.131`) and let `dsh-log-contract` resolve to
-`>=0.3.12`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
+Pin an exact plugin version (`dsh-retrace@0.4.135`) and let `dsh-log-contract` resolve to
+`>=0.3.18`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 
 ---
@@ -460,7 +386,7 @@ the **host surface**, not by semver alone.
 | Item | Declaration |
 |---|---|
 | **Node.js** | `>=20.0.0` (see `package.json#engines`) |
-| **DSH** | `>=0.1.5 <0.2.0` (see `package.json#dsh.compatibility`); desktop and web modes supported |
+| **DSH** | `>=0.1.5 <0.3.0` (see `package.json#dsh.compatibility`); desktop and web modes supported |
 | **Runtime files** | All files needed at runtime are **committed** in this repository and declared in `package.json#files` (`lib/**`, `cordis.patch.yml`, `README*.md`, `HUMANS.txt`, `LICENSE`) |
 | **Build output** | Build output is committed (`lib/client.bundle.js`, `lib/dynamic-client.js`, `lib/dynamic-host.js`) and reproducible in-repo: `pnpm i && pnpm build` (`scripts/generate-dynamic.mjs`, `scripts/build-client.mjs`) |
 | **Single-file size** | Every distributed file is **below 256 KiB** (largest ≈ 249 KB) |
@@ -513,10 +439,9 @@ the **host surface**, not by semver alone.
   ops (`sessionBadge` / `setBadgeTitle` / `initBadgeTitles` / `badgeMap`) and the
   `retrace` CLI (see below).
 
-**What's next** — the agent business-layer plan (runtime guard, interruption
-governance, ecosystem-facing interfaces) is **not published yet**: it is a plan,
-not a shipped capability. This README describes the **development line (main)**,
-which may run ahead of the latest npm release.
+**What's next** — see [docs/PLAN.md](./docs/PLAN.md) (next steps) and
+[docs/ROADMAP.md](./docs/ROADMAP.md) (capability roadmap). This README describes the
+**development line**, which may run ahead of the latest npm release.
 
 ---
 
@@ -555,7 +480,7 @@ npm pack --dry-run    # verify the published file list
 > one and only swaps the transport (`host.call` vs the HTTP route) via
 > `__setMessageEditorWire`.
 
-PRs and issues are welcome — a `CONTRIBUTING.md` is coming soon; use the issue
+PRs and issues are welcome — use the issue
 tracker linked from this package's `repository`/`bugs` metadata.
 
 ---

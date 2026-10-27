@@ -28,6 +28,10 @@
 
 ---
 
+> 版本索引：[VERSIONS.md](./VERSIONS.md)
+
+> 0.4.135 发布前，安装/固定版本请用 `0.4.134`（当前 npm latest）。
+
 ## ⚡ 一分钟安装
 
 > 需要带 `dsh` CLI 的 DeepSeek Harness；装完**重启 DSH** 生效（运行中的应用不会热加载）。
@@ -82,11 +86,12 @@ dsh plugin --profile desktop add dshmarket    # 只需一次
 |---|---|---|
 | 🕘 | **读档点** | 对话视图里的「读档点」Tab：每个改动（类型/时间/消息数/文件变更徽标），经 `session/projection` 推送帧实时更新（零轮询），大列表窗口化；嵌套历史按大纲逐层展开 |
 | ↩️ | **产物回退** | 仅对话 / 仅产物 / 两者，先干跑预览再执行；git 优先 + 内容寻址快照兜底；回退本身是新读档点（`restore`）。预览在会话运行中直接拒绝（不会出现「预览说可以、确认时才被拒」），预览/回档失败都会在界面上显示，不静默 |
+| 🧬 | **谱系标识** | 新建会话自动分配稳定谱系标识；侧栏每个会话只显示一个标识（刷新不重复） |
 | 🧭 | **跳转对话** | 从读档点一键跳转到对应位置（自动翻页加载更早历史 + 锚点高亮）；该点超出自动加载预算时，给出可诊断原因，而不是点了没反应 |
 | 🧹 | **存储有界** | 快照只保留最近 N 个读档点（默认 50）；节流后台扫掠回收被截断的旧档 |
 
 > **损坏日志上的回档不静默**：宿主的严格重放是权威，但一条畸形事件（例如第三方写入的
-> `sourceEventSeqs` 区间编码行）就能毒化整次重放。这种情况会退到镜像重放，日志同时记录
+> 畸形替换行）就能毒化整次重放。这种情况会退到镜像重放，日志同时记录
 > 「已降级」与原始错误，并在 wire 上把结果标为 `degraded`；连镜像都跑不了时返回结构化的
 > `replay-failed` 错误，而不是笼统的 `internal`。
 
@@ -130,7 +135,7 @@ dsh plugin --profile <name> add dsh-retrace
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.131"
+       "dsh-retrace": "^0.4.135"
      },
      "dsh": {
        "profile": {
@@ -193,7 +198,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 - DeepSeek Harness 需提供 `package.json` 里声明的 peer 包
   （`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-client-*`、`cordis`、`react` ——
   当前构建面向 `0.1.7-rc.2` 这一代内核）。
-- `dsh-log-contract >= 0.3.12`（作为依赖自动安装）。
+- `dsh-log-contract >= 0.3.18`（作为依赖自动安装）。
 - 插件通过 `inject` 声明所需宿主能力
   （`sessions`、`agents`、`webServer`、`fs`、`subprocess`、`sandboxPolicy`、`jobs`）。
   缺某个能力只会让对应功能降级（例如没有 `subprocess` ⇒ 回档只用内置快照），
@@ -222,23 +227,6 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 > 或点 X 只是隐藏窗口）⇒ 那类壳上「退出时弹确认」**插件侧做不到**，需要**壳提供 seam**
 > （`will-prevent-unload` 处理，或退出前的询问钩子）。**桌面端退不掉时**，把设置里的
 > 「退出确认（关闭守卫）」关掉即退回官方形态（**不用重启**）。
-
-### 会话谱系标识与显示名（**计划 / 默认关闭**）
-
-谱系标识用于人机协作识别，**身份判定仍以 session id 为准**。通道
-（`sessionBadge` / `setBadgeTitle` / `initBadgeTitles` / `badgeMap`，HTTP + harness 两入口）、
-解析器与写护栏**均已就位**；但**启动自动写标题那条路默认关闭**
-（客户端开关是 `globalThis.__DSH_RETRACE_BADGE_BOOTSTRAP = true`）：
-
-- 会话标题显示为 `[谱系标识] 原标题`——**稳定标识由会话 id 确定性导出**，标题变化不影响它。
-- **没有 `session/title` 事件的会话如实留空**（标题只显示 `[谱系标识]`）—— **不回落项目名、不伪造名字**。
-- 解析器不可用时退回**原始 session id 占位**。
-- 侧栏会话行、运行中横幅、读档点视图的谱系标识**同源**：都取宿主下发的**同一份**映射（宿主 op `badgeMap`）。
-
-> **计划（未上线）**：agent 业务层规划（运行时守护、中断治理、生态开放接口）属**计划**，
-> 不是已上线能力。
-
----
 
 ## ⚙️ 设置 → 通用
 
@@ -303,63 +291,21 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 
 本节的目的：让你能分清 **宿主侧破坏性变更** 与 **插件侧缺陷**。提 issue 前请先看这节。
 
-### 本插件适配过的宿主侧破坏性变更 —— *不是本插件造成的*
+### 宿主侧变更须知
 
-1. **`@deepseek-ai/dsh-session` 移除了 `Session.events` 成员**（`0.1.5-rc.1`）。
-   官方支持的读口是 `snapshotEvents(fromSeq, toSeqExclusive)`（冻结、按 seq 索引）、
-   `eventAt(seq)`、`ownEvents()`、`isOwnSeq(seq)`。修复前，撤回与编辑点了没反应，并冒出
-   `TypeError: Cannot read properties of undefined (reading 'length')`。现在插件经
-   兼容访问器读日志（新 API 优先、旧数组回退），两代宿主都能跑。
-2. **`@deepseek-ai/dsh-session` 把 `decodeStorageRecord` 从公开导出面拿掉了**
-   （`0.1.5-rc.1`；函数仍在内部模块里，但不再从包根导出、exports map 子路径也不可达）。
-   本插件自己从未 import 它，但它的依赖 `dsh-log-contract` import 了。宿主不再导出该符号时，
-   加载器会以
-   `plugin tree failed to load … does not provide an export named 'decodeStorageRecord'`
-   中止，而且**整棵插件树一起失败——不只是本插件**，于是 App 起不来。
-   → **依赖说明：** 需要 `dsh-log-contract >= 0.3.12`。
-3. **一个客户端**服务**消失了：`conversationEvents`** —— 它原先由旧客户端运行时
-   `@deepseek-ai/dsh-client-runtime` 提供，而该运行时已被移除。插件的客户端半若仍在
-   `export const inject` 里声明它，就**永远不就绪**：fiber 停在 **pending**，宿主据此报
-   `renderer boot failed (plugins: …): The client Loader did not provide an error message.`
-   —— **一个字的错误信息都没有**，窗口起不来，唯一的进法是把插件禁用。现在该服务已从
-   `inject` 中删除，并改在 `apply` 里**防御性解析**（`uiConversation`，取不到则回退旧名）。
-   > 注意：在 `dsh.client.inject` 里声明一个**已不存在的包**，**不会**导致启动失败 ——
-   > 客户端加载器对认不出的条目是**静默跳过**的。真正致命的是插件等待的那个**服务名**。
-4. **客户端会话存储没有 `keys()`**（`ctx.sessions`）。用 `keys()` 枚举会话的插件会**静默地
-   看到 0 个会话**：不崩不报，只是安全告警永不触发。现在优先用官方 `list()`、回退 `keys()`；
-   刻意**不用**「猜服务字段」兜底 —— 猜出来的空集同样是静默失败。
+宿主升级偶尔会移除插件依赖的 API —— 这些是**宿主侧变化，不是插件缺陷**，一行一条：
 
-> 以上四条都是**宿主侧移除**，写在这里是有意的：如果你在**升级宿主之后**立刻遇到这些症状，
-> 第一个该问的是「这份插件构建是不是早于这次移除？」，而不是「插件改坏了什么？」。
+- 升级后开机循环/恢复界面 → 切到干净会话并重启 DSH（插件降级而非阻断）。
+- 版本/检查点面板为空 → `dsh plugin --profile <p> add dsh-retrace` 刷新 bundle。
+- 标题/重命名行为变化 → 自动标题路径由宿主守卫，手动重命名不受影响。
+- 依赖下限：`dsh-log-contract >= 0.3.18`。
 
-### 插件侧修复（0.4.26 – 0.4.28）
-
-- **插件数据家与会话基座合并为同一来源。** 此前插件用宿主的 home 解析器
-  （`$DSH_HOME` → `~/.dsh`）决定自己的数据目录，而它不认识 `$DSH_SESSION_BASES` 配置的额外基座。于是当 `$DSH_HOME`
-  未设时，**会话从一个基座读、快照与产物库写到另一个基座**。现在快照、版本库与
-  `verify-install` 都跟随**活动会话基座**；`$DSH_HOME` 已设时行为不变。
-- **不再有任何用户可见文案写死 `~/.dsh`**（设置页原先提示快照存于 `~/.dsh`）。
-- **编辑/撤回入口从不出现。** 客户端半区从 `snapshot.chat.nodes` 读聊天节点，而本宿主没有
-  这条路径 —— 节点在 `useChat` 的 `snapshot.nodes` 里。所有消息级组件渲染时抛错、被错误
-  边界吞掉，于是按钮消失，而不读节点的设置项显示正常。
-- **读档点视图里的「跳转」点了毫无反应。** 它经 `store.getSnapshot()?.chat?.nodes` 解析锚点，
-  而该路径在此恒为 `undefined`。现在改为用视图注入的 `useChat` 快照解析，并用官方
-  `store.loadThrough(seq)` 分页；跳不过去时给出**可诊断理由**（renderer 警告 + 宿主日志行），
-  不再静默失败。
-- **设谱系标识会冲掉用户标题。** 谱系标识入标题现在**只走服务端** `setBadgeTitle`（从会话日志读当前
-  标题）。手动重命名不受影响。
-- **宿主侧操作失败重新有日志**（code + message + stack）。此前只把 message 回传界面、不写日志，
-  这类问题因此很难从外部诊断。
-- **读档点视图现在会自我解释。** 此前只有标题加一排动作，**没有任何一句话说明「读档点」是什么**，
-  行内还直接显示裸节点类型。现在有常显的概念解释句、类型图例，以及每行恒有的白话「为什么」行。
-- **客户端隐藏判定不再逐行重扫。** `useSeqHidden` 此前每行都重扫节点表
-  （实测 2000 行/20 marker **346ms**、3000/30 **1568ms**）。现在复用同一份 per-snapshot
-  隐藏计划：分别是 **8.3ms** 与 **18.3ms**，且行为判定与旧谓词逐字等价。
+历史细节与原始报错见 [CHANGELOG.md](./CHANGELOG.md)；兼容矩阵见 [docs/COMPAT.md](./docs/COMPAT.md)。
 
 ### 升级
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.131
+dsh plugin --profile desktop add dsh-retrace@0.4.135
 # 然后重启 DSH —— 插件不会热重载
 ```
 
@@ -379,7 +325,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.131
 
 ### 版本固定建议
 
-请固定到确切版本（`dsh-retrace@0.4.131`），并让 `dsh-log-contract` 解析到 `>=0.3.12`。
+请固定到确切版本（`dsh-retrace@0.4.135`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
 **不要在跨宿主升级时依赖 `^0.4` 这种范围**：这里的兼容性由**宿主的面**决定，光看 semver 不够。
 
 ---
@@ -400,6 +346,8 @@ dsh plugin --profile desktop add dsh-retrace@0.4.131
 ---
 
 ## 🗺️ 路线图
+
+> 详细下一步与方向：[docs/PLAN.md](./docs/PLAN.md) ｜ 能力路线：[docs/ROADMAP.md](./docs/ROADMAP.md)
 
 **当前已具备（0.4.x）：**
 
@@ -452,7 +400,7 @@ npm pack --dry-run    # 校验发布文件清单
 > 发布版共用同一份 client 源码，仅通过 `__setMessageEditorWire` 切换传输层
 > （`host.call` vs HTTP 路由）。
 
-欢迎提交 PR 与 issue —— `CONTRIBUTING.md` 筹备中；问题追踪入口见本包
+欢迎提交 PR 与 issue —— 问题追踪入口见本包
 `repository`/`bugs` 元数据里的链接。
 
 ---
@@ -517,15 +465,19 @@ retrace lineage <session>                      # 会话 parent 链谱系
 `parentSession` 接续链遍历（只读、带环保护），与 CLI `retrace lineage` 同一语义 ——
 任何客户端都能查到「这个会话是从哪个会话接着干/分叉出来的」，也是分叉拓扑的元数据源。
 
-## 兼容性与运行契约（Compatibility & runtime contract）
+### 兼容性与运行契约（Compatibility & runtime contract）
 
 | 项 | 声明 |
 |---|---|
 | **Node.js** | `>=20.0.0`（见 `package.json#engines`） |
-| **DSH** | `>=0.1.5 <0.2.0`（见 `package.json#dsh.compatibility`；桌面与 Web 两种模式均支持） |
+| **DSH** | `>=0.1.5 <0.3.0`（见 `package.json#dsh.compatibility`；桌面与 Web 两种模式均支持） |
+| **运行所需文件** | 运行时所需文件**全部随仓库提交**并在 `package.json#files` 声明（`lib/**`、`cordis.patch.yml`、README 等） |
+| **单文件体积** | 每个分发文件 **< 256 KiB**（最大约 249 KB） |
 | **构建产物** | 运行所需构建产物**随包提交**（`lib/client.bundle.js`、`lib/dynamic-client.js`、`lib/dynamic-host.js`）；仓库内可复现：`pnpm i && pnpm build`（生成器 `scripts/generate-dynamic.mjs`、`scripts/build-client.mjs`） |
 | **运行时依赖** | `dsh-log-contract`（日志契约校验）、`zod`（参数校验）；**不联网、不下载额外代码** |
 | **宿主依赖（peer）** | `@deepseek-ai/cordis` 与若干 `@deepseek-ai/dsh-*` 客户端包（由 DSH 提供，不由本插件分发） |
 | **权限 / 外部服务** | 只读写本机会话数据目录与会话日志；**不访问外部服务、不上报数据**；不改动 DSH 安装目录之外的系统路径 |
 | **失败边界** | 所有写入（撤回/编辑/恢复/回档）均在**目标文件之外先备份**、写后做帧级校验与折叠重放；失败即中止并保留原文件；不可判定时按"拒绝 + 可操作提示"处理，不静默降级 |
 | **可回退** | 每个操作都有可逆路径；本地管理脚本可一键回退到上一快照 |
+
+- 稳定标识由会话 id 确定性导出（无随机后缀）；对同一会话重复读取得到同一个标识。

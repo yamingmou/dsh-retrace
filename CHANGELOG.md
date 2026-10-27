@@ -6,6 +6,12 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.135] — 2026-10-27
+
+- Sidebar identity: one lineage badge per conversation (stable id key); titles keep the plain name.
+- New sessions: lineage ids auto-assigned on creation (atomic table write, idempotent, fail-soft; `DSH_RETRACE_AUTO_CODE=0` disables).
+- Release plumbing: published-tag surface check; drift checks warn daily / fail on release; known-baseline test failures whitelisted with an expiry.
+
 ## [0.4.133] — 2026-10-15 · 支持 DSH 0.2.x（issue #2）
 
 - 六个 `@deepseek-ai/dsh-*` peer：`^0.1.7-rc.2` → **`>=0.1.7-rc.2 <0.3.0`**；`dsh.compatibility.dsh` → `>=0.1.5 <0.3.0`
