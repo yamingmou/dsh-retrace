@@ -1,19 +1,12 @@
 {
   "name": "dsh-retrace",
   "description": "Retrace · 回溯 — Recall, edit-and-resend, regenerate, and conversation/artifact versioning (timeline, rollback, fork graph) for DeepSeek Harness — Web and Desktop",
-  "version": "0.4.134",
+  "version": "0.4.135",
   "packageManager": "pnpm@11.7.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
-  "scripts": {
-    "build": "node scripts/generate-dynamic.mjs && node scripts/build-client.mjs",
-    "check": "node scripts/check-syntax.mjs && node scripts/check-dynamic.mjs && node scripts/check-host-contract.mjs",
-    "test": "vitest run",
-    "prepublishOnly": "node scripts/check-pkg-meta.mjs && pnpm check && pnpm build && pnpm test",
-    "check:history": "node scripts/check-history-public.mjs --repo . --range origin/main..HEAD",
-    "check:history:self": "node scripts/check-history-public.mjs --selfcheck"
-  },
+  "scripts": {},
   "exports": {
     ".": {
       "default": "./lib/index.js"
@@ -83,7 +76,7 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=0.1.7-rc.2 <0.3.0",
+    "@deepseek-ai/cordis": "^4.0.0",
     "@deepseek-ai/dsh-client-locale": ">=0.1.7-rc.2 <0.3.0",
     "@deepseek-ai/dsh-client-ui-conversation": ">=0.1.7-rc.2 <0.3.0",
     "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.2 <0.3.0",
