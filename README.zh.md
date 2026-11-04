@@ -30,7 +30,7 @@
 
 > 版本索引：[VERSIONS.md](./VERSIONS.md)
 
-> 0.4.135 发布前，安装/固定版本请用 `0.4.134`（当前 npm latest）。
+> 0.4.137 **尚未发布到 npm**——安装/固定版本请用当前 npm latest `0.4.135`（见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.137` 示例在该版本发布后适用。
 
 ## ⚡ 一分钟安装
 
@@ -135,7 +135,7 @@ dsh plugin --profile <name> add dsh-retrace
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.135"
+       "dsh-retrace": "^0.4.137"
      },
      "dsh": {
        "profile": {
@@ -305,12 +305,11 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 ### 升级
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.135
+dsh plugin --profile desktop add dsh-retrace@0.4.137
 # 然后重启 DSH —— 插件不会热重载
 ```
 
-**`0.4.27` 与 `0.4.31` 已撤回**（短暂发布后撤回、npm 上标记 deprecated）；它们的替代版本
-包含其全部修复。
+**`0.4.27` 与 `0.4.31` 在 npm 上标记为 deprecated**；它们的替代版本包含其全部修复。
 
 **不需要数据迁移。** 会话格式未变（v3），不改写任何会话，也不需要重建索引：升级、重启即可。
 若宿主仍提供旧成员，兼容访问器会让那些路径继续可用 —— 本构建不丢弃老宿主。
@@ -325,7 +324,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.135
 
 ### 版本固定建议
 
-请固定到确切版本（`dsh-retrace@0.4.135`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
+请固定到确切版本（`dsh-retrace@0.4.137`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
 **不要在跨宿主升级时依赖 `^0.4` 这种范围**：这里的兼容性由**宿主的面**决定，光看 semver 不够。
 
 ---

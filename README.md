@@ -35,7 +35,7 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 
 > Versions: [VERSIONS.md](./VERSIONS.md)
 
-> Until 0.4.135 is published, install/pin `0.4.134` (the current npm latest).
+> 0.4.137 is **not published to npm yet** — install/pin `0.4.135`, the current npm latest (see [VERSIONS.md](./VERSIONS.md)); the `dsh-retrace@0.4.137` examples below apply after that release.
 
 ## ⚡ One-minute install
 
@@ -151,7 +151,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.135"
+       "dsh-retrace": "^0.4.137"
      },
      "dsh": {
        "profile": {
@@ -351,12 +351,12 @@ Historical details and exact error strings live in [CHANGELOG.md](./CHANGELOG.md
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.135
+dsh plugin --profile desktop add dsh-retrace@0.4.137
 # then restart DSH — plugins are not hot-reloaded
 ```
 
-**`0.4.27` and `0.4.31` were withdrawn** (briefly published, then recalled and marked
-deprecated on npm). Their replacements carry every fix they had.
+**`0.4.27` and `0.4.31` are marked deprecated on npm.** Their replacements carry every
+fix they had.
 
 **No data migration is required.** The session format is unchanged (v3), no session is
 re-written, and nothing has to be re-indexed: upgrade, restart, and the symptoms above
@@ -375,7 +375,7 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.135`) and let `dsh-log-contract` resolve to
+Pin an exact plugin version (`dsh-retrace@0.4.137`) and let `dsh-log-contract` resolve to
 `>=0.3.18`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 

@@ -6,6 +6,18 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.137] — 2026-11-04
+
+- 用户消息操作区：改为文字按钮「重发 / 撤回」，并与官方 `[时间][复制]` 同一行右对齐（不再单独一排）
+- 撤回带图片的消息时，图片随消息一起隐藏（修复隐藏规则未覆盖官方节点键的问题）
+- 操作行在切换视图/恢复显示后重新对齐（不再回落到第二排），并补充键盘焦点样式
+
+## [0.4.136] — 2026-11-02
+
+- UI wording: the context/progress hint now describes the metric as context usage.
+- Docs: plan and roadmap documents published and cross-linked from both READMEs.
+- No behavior changes.
+
 ## [0.4.135] — 2026-10-27
 
 - Sidebar identity: one lineage badge per conversation (stable id key); titles keep the plain name.
