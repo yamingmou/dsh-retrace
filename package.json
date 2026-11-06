@@ -1,14 +1,14 @@
 {
   "name": "dsh-retrace",
   "description": "Retrace · 回溯 — Recall, edit-and-resend, regenerate, and conversation/artifact versioning (timeline, rollback, fork graph) for DeepSeek Harness — Web and Desktop",
-  "version": "0.4.139",
+  "version": "0.4.140",
   "packageManager": "pnpm@11.7.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "scripts": {
     "build": "node scripts/generate-dynamic.mjs && node scripts/build-client.mjs",
-    "check": "node scripts/check-syntax.mjs && node scripts/check-dynamic.mjs && node scripts/check-host-contract.mjs",
+    "check": "node scripts/check-syntax.mjs && node scripts/check-dynamic.mjs && node scripts/check-compat-matrix.mjs && node scripts/check-host-contract.mjs",
     "test": "vitest run",
     "prepublishOnly": "node scripts/check-pkg-meta.mjs && npm run build",
     "check:history": "node scripts/check-history-public.mjs --repo . --range origin/main..HEAD",
@@ -62,6 +62,26 @@
   ],
   "author": "OfferKuai <contact@offerkuai.com> (https://www.offerkuai.com)",
   "license": "MIT",
+  "dshDesktopPatch": {
+    "basedOn": {
+      "package": "dsh-retrace (upstream base)",
+      "version": "0.4.138"
+    },
+    "target": {
+      "package": "dsh-retrace",
+      "version": "0.4.140",
+      "host": ">=0.1.5 <0.3.0"
+    },
+    "changes": [
+      "http: require a loopback socket peer plus a same-origin Host/Origin gate; non-loopback peer, forged Host or bad Origin => 403 fail-closed",
+      "http: the prewrite guard is host-only (the client header can neither enable nor disable it)",
+      "http: the fold endpoint requires a raw safe-integer range (400 on invalid) and strips a caller-supplied span",
+      "client-config: retention bounds unified (5..500) between the store clamp and the number-input markup",
+      "client-config: multi-tab sync (read-merge before write, refresh after write, storage listener)",
+      "compat: the matrix gate covers non-@deepseek-ai/dsh* dependencies with explicit WARN/FAIL (no silent skip)"
+    ],
+    "notes": "Metadata only. Human-readable per-change notes and the fill-in template live in docs/PATCH-NOTES.md."
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

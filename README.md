@@ -35,7 +35,7 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 
 > Versions: [VERSIONS.md](./VERSIONS.md)
 
-> 0.4.138 is **not published to npm yet** — install/pin `0.4.135`, the current npm latest (see [VERSIONS.md](./VERSIONS.md)); the `dsh-retrace@0.4.139` examples below apply after that release.
+> 0.4.139 is the current release — install/pin `0.4.139` (the previous npm latest was `0.4.135`; see [VERSIONS.md](./VERSIONS.md)); the `dsh-retrace@0.4.139` examples below apply after that release.
 
 ## ⚡ One-minute install
 
