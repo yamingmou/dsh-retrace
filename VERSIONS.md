@@ -49,7 +49,7 @@ English: released versions (resolvable from npm) and unpublished entries.
 | 0.4.134 | 2026-10-20 10:42 | 已发布 | |
 | 0.4.135 | 2026-10-28 11:28 | 已发布 | |
 
-## 未发布 · Not published（10 行）
+## 未发布 · Not published（11 行）
 
 | 版本 | 日期 | 状态 | 说明 |
 |---|---|---|---|
@@ -63,3 +63,4 @@ English: released versions (resolvable from npm) and unpublished entries.
 | 0.4.130 | 2026-10-09 | 未发布 | |
 | 0.4.136 | 2026-11-02 | 未发布 | |
 | 0.4.137 | 2026-11-04 | 未发布 | — |
+| 0.4.138 | 2026-11-06 | 未发布 | — |

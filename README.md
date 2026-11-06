@@ -35,7 +35,7 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 
 > Versions: [VERSIONS.md](./VERSIONS.md)
 
-> 0.4.137 is **not published to npm yet** — install/pin `0.4.135`, the current npm latest (see [VERSIONS.md](./VERSIONS.md)); the `dsh-retrace@0.4.137` examples below apply after that release.
+> 0.4.138 is **not published to npm yet** — install/pin `0.4.135`, the current npm latest (see [VERSIONS.md](./VERSIONS.md)); the `dsh-retrace@0.4.138` examples below apply after that release.
 
 ## ⚡ One-minute install
 
@@ -151,7 +151,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.137"
+       "dsh-retrace": "^0.4.138"
      },
      "dsh": {
        "profile": {
@@ -351,7 +351,7 @@ Historical details and exact error strings live in [CHANGELOG.md](./CHANGELOG.md
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.137
+dsh plugin --profile desktop add dsh-retrace@0.4.138
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -375,7 +375,7 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.137`) and let `dsh-log-contract` resolve to
+Pin an exact plugin version (`dsh-retrace@0.4.138`) and let `dsh-log-contract` resolve to
 `>=0.3.18`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 
