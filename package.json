@@ -1,7 +1,7 @@
 {
   "name": "dsh-retrace",
   "description": "Retrace · 回溯 — Recall, edit-and-resend, regenerate, and conversation/artifact versioning (timeline, rollback, fork graph) for DeepSeek Harness — Web and Desktop",
-  "version": "0.4.141",
+  "version": "0.4.142",
   "packageManager": "pnpm@11.7.0",
   "type": "module",
   "main": "lib/index.js",
@@ -69,7 +69,7 @@
     },
     "target": {
       "package": "dsh-retrace",
-      "version": "0.4.141",
+      "version": "0.4.142",
       "host": ">=0.1.5 <0.3.0"
     },
     "changes": [

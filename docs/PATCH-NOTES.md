@@ -20,11 +20,11 @@ be the drift check instead of a manual review.
 
 ## basedOn
 - package: `dsh-retrace (upstream base)`
-- version: `0.4.140`
+- version: `0.4.138`
 
 ## target
 - package: `dsh-retrace`
-- version: `0.4.140`
+- version: `0.4.142`
 - host: `>=0.1.5 <0.3.0` (mirrors `dsh.compatibility.dsh`)
 
 ## changes
@@ -34,6 +34,8 @@ be the drift check instead of a manual review.
 - `client-config`: retention bounds unified to **5..500** (step 5) between the store clamp and the number-input markup.
 - `client-config`: multi-tab sync — read-merge before every write, refresh after the write, and a `storage` listener.
 - `compat`: the matrix gate now covers **non-`@deepseek-ai/dsh*`** dependencies with explicit WARN/FAIL (never a silent skip), and it runs inside `pnpm check`.
+- `client`: attachment ids are checked for resolvability against the draft registry before they reach the composer — an id the registry does not hold is never sent (visible notice + host log, text still restored).
+- `metrics`: four read-only cache metrics added — per-request tools sha16, cacheRead drop attribution by request reason (`initial`/`resume`/`change`/`series`), injected-block visible count (`turn=null` + AGENTS signature), and `cacheWriteTokens`; no dedupe/scrub/folding.
 
 ## notes
 - The changes above are compatible with the previous behaviour for every *legal* request; only boundary violations change (they become explicit 403/400 rather than being accepted).
