@@ -30,7 +30,7 @@
 
 > 版本索引：[VERSIONS.md](./VERSIONS.md)
 
-> **0.4.147 为当前版本**——安装/固定请用 `0.4.147`（**GitHub Release 已发，npm 待发**；npm 最新可安装版本仍为 `0.4.139`，见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.147` 示例适用于该版本。
+> **0.4.148 为当前版本**——安装/固定请用 `0.4.148`（**GitHub Release 已发，npm 待发**；npm 最新可安装版本仍为 `0.4.139`，见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.148` 示例适用于该版本。
 
 ## ⚡ 一分钟安装
 
@@ -137,7 +137,7 @@ dsh plugin --profile <name> add dsh-retrace
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.147"
+       "dsh-retrace": "^0.4.148"
      },
      "dsh": {
        "profile": {
@@ -307,7 +307,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 ### 升级
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.147
+dsh plugin --profile desktop add dsh-retrace@0.4.148
 # 然后重启 DSH —— 插件不会热重载
 ```
 
@@ -326,7 +326,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.147
 
 ### 版本固定建议
 
-请固定到确切版本（`dsh-retrace@0.4.147`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
+请固定到确切版本（`dsh-retrace@0.4.148`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
 **不要在跨宿主升级时依赖 `^0.4` 这种范围**：这里的兼容性由**宿主的面**决定，光看 semver 不够。
 
 ---
