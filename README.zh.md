@@ -30,7 +30,7 @@
 
 > 版本索引：[VERSIONS.md](./VERSIONS.md)
 
-> 0.4.141 **已发布到 npm**——安装/固定版本请用当前 npm latest `0.4.135`（见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.141` 示例在该版本发布后适用。
+> **0.4.147 为当前版本**——安装/固定请用 `0.4.147`（**GitHub Release 已发，npm 待发**；npm 最新可安装版本仍为 `0.4.139`，见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.147` 示例适用于该版本。
 
 ## ⚡ 一分钟安装
 
@@ -84,8 +84,10 @@ dsh plugin --profile desktop add dshmarket    # 只需一次
 
 | | 能力 | 说明 |
 |---|---|---|
-| 🕘 | **读档点** | 对话视图里的「读档点」Tab：每个改动（类型/时间/消息数/文件变更徽标），经 `session/projection` 推送帧实时更新（零轮询），大列表窗口化；嵌套历史按大纲逐层展开 |
-| ↩️ | **产物回退** | 仅对话 / 仅产物 / 两者，先干跑预览再执行；git 优先 + 内容寻址快照兜底；回退本身是新读档点（`restore`）。预览在会话运行中直接拒绝（不会出现「预览说可以、确认时才被拒」），预览/回档失败都会在界面上显示，不静默 |
+| 🕘 | **统一读档点列表** | 对话视图里的「读档点」Tab：**改动记录与操作前文件快照合并在一个列表**。每行显示轮次（日志里取得到才有）、类型、时间、消息数、文件变更徽标，以及新旧输入对照（默认折叠）；经 `session/projection` 推送帧实时更新（零轮询），大列表窗口化，嵌套历史按大纲逐层展开 |
+| ↩️ | **回档** | **三选一：仅对话 / 仅产物 / 两者**，先干跑预览。回档**始终可用**；该条没有文件前像时只能选「仅对话」（另两项置灰并给出原因）。**确认弹窗**列明轮次、移除消息数、文件动作与风险提示（建议先导出）。预览在会话运行中直接拒绝；预览/回档失败都会在界面上显示，不静默；回档本身是新读档点（`restore`） |
+| ⤓ | **导出另存为** | 把该条内容打成**只读** zip（`manifest.json` + 捕获的文件前像 + 原文），**只导出、不回档**。宿主提供前像存储时用真实前像，否则退化为仅 manifest 的归档并显式提示 |
+| 🎛 | **每行固定三个动作** | **回到会话 / 回档 / 导出另存为**，顺序固定；**旧宿主**会显式提示「请升级并重启」，而不是静默缺少功能 |
 | 🧬 | **谱系标识** | 新建会话自动分配稳定谱系标识；侧栏每个会话只显示一个标识（刷新不重复） |
 | 🧭 | **跳转对话** | 从读档点一键跳转到对应位置（自动翻页加载更早历史 + 锚点高亮）；该点超出自动加载预算时，给出可诊断原因，而不是点了没反应 |
 | 🧹 | **存储有界** | 快照只保留最近 N 个读档点（默认 50）；节流后台扫掠回收被截断的旧档 |
@@ -135,7 +137,7 @@ dsh plugin --profile <name> add dsh-retrace
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.141"
+       "dsh-retrace": "^0.4.147"
      },
      "dsh": {
        "profile": {
@@ -305,7 +307,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 ### 升级
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.141
+dsh plugin --profile desktop add dsh-retrace@0.4.147
 # 然后重启 DSH —— 插件不会热重载
 ```
 
@@ -324,7 +326,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.141
 
 ### 版本固定建议
 
-请固定到确切版本（`dsh-retrace@0.4.141`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
+请固定到确切版本（`dsh-retrace@0.4.147`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
 **不要在跨宿主升级时依赖 `^0.4` 这种范围**：这里的兼容性由**宿主的面**决定，光看 semver 不够。
 
 ---
@@ -339,6 +341,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.141
   （`target-shadowed`）；写入尚未 flush 的消息会如实报 `message-pending`（「消息生成中」），
   不再被误判成「已不在活跃对话」。
 - 重新生成只重发原提示的**文本**部分；携带图片的提示会退化为仅文本重发。
+- 文件**恢复**仅支持文本：非 UTF-8（二进制）文件会如实报 `binary-unsupported` 并跳过，不会写回工作区。**导出另存为**会把捕获到的前像字节（含非文本文件）打包带走，但只导出、不回档。
 - **真正恢复**会**原地**改写会话日志（中和两段标记，seq 编号不动）。会话是你当前正在查看的、
   正在运行的，或文件被其他进程持有时，它会拒绝执行；成功后需重开该会话（或刷新）才看到结果。
 
@@ -471,7 +474,6 @@ retrace lineage <session>                      # 会话 parent 链谱系
 | **Node.js** | `>=20.0.0`（见 `package.json#engines`） |
 | **DSH** | `>=0.1.5 <0.3.0`（见 `package.json#dsh.compatibility`；桌面与 Web 两种模式均支持） |
 | **运行所需文件** | 运行时所需文件**全部随仓库提交**并在 `package.json#files` 声明（`lib/**`、`cordis.patch.yml`、README 等） |
-| **单文件体积** | 每个分发文件 **< 256 KiB**（最大约 249 KB） |
 | **构建产物** | 运行所需构建产物**随包提交**（`lib/client.bundle.js`、`lib/dynamic-client.js`、`lib/dynamic-host.js`）；仓库内可复现：`pnpm i && pnpm build`（生成器 `scripts/generate-dynamic.mjs`、`scripts/build-client.mjs`） |
 | **运行时依赖** | `dsh-log-contract`（日志契约校验）、`zod`（参数校验）；**不联网、不下载额外代码** |
 | **宿主依赖（peer）** | `@deepseek-ai/cordis` 与若干 `@deepseek-ai/dsh-*` 客户端包（由 DSH 提供，不由本插件分发） |

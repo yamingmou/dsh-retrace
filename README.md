@@ -35,7 +35,7 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 
 > Versions: [VERSIONS.md](./VERSIONS.md)
 
-> 0.4.141 is the current release — install/pin `0.4.141` (the previous npm latest was `0.4.135`; see [VERSIONS.md](./VERSIONS.md)); the `dsh-retrace@0.4.141` examples below apply after that release.
+> **0.4.147 is the current release** — install/pin `0.4.147` (the **GitHub Release is out; the npm package is still pending** — the latest npm version is `0.4.139`; see [VERSIONS.md](./VERSIONS.md)). The `dsh-retrace@0.4.147` examples below apply to this release.
 
 ## ⚡ One-minute install
 
@@ -89,8 +89,10 @@ Full steps in [📦 Installation](#-installation).
 
 | | What | |
 |---|---|---|
-| 🕘 | **Checkpoints** | a **Checkpoints** tab in the conversation view: every change (type, time, message count, file-change badges), pushed live via `session/projection` (no polling), windowed for long histories; nested history is browsable outline-style |
-| ↩️ | **Artifact rollback** | **context-only / artifacts-only / both** with dry-run preview; git-first + content-addressed snapshot fallback; a rollback is itself a new checkpoint (`restore`). Preview refuses while the agent is running (so "preview says yes, confirm says no" cannot happen), and preview/rollback failures are shown in the UI instead of failing silently |
+| 🕘 | **Unified restore list** | one **Checkpoints** tab in the conversation view — **change records and pre-operation file snapshots in ONE list**. Each row shows the round (when the log has it), type, time, message count, file-change badges, and old-vs-new input (collapsed by default); pushed live via `session/projection` (no polling), windowed for long histories, nested history browsable outline-style |
+| ↩️ | **Rollback** | **three-way choice: context-only / artifacts-only / both**, with a dry-run preview. Rollback is **always available**; when an entry has no file preimage only context rollback is selectable (the other two are disabled with a reason). A **confirm dialog** lists the round, messages removed, file actions and a risk note (export first). Preview refuses while the agent is running; preview/rollback failures are shown instead of failing silently; a rollback is itself a new checkpoint (`restore`) |
+| ⤓ | **Export as…** | **read-only** zip of exactly that entry (`manifest.json` + the captured file preimages + the original text); it **never rolls anything back**. Uses the host preimage store when available, otherwise a manifest-only archive with a visible note |
+| 🎛 | **Three fixed actions per row** | **Jump to conversation / Rollback / Export as…**, always in that order; an **older host** shows an explicit "upgrade and restart" notice instead of silently missing features |
 | 🧬 | **Lineage identity** | every new session gets a stable lineage id automatically; the sidebar shows one badge per conversation (no duplicates on refresh) |
 | 🧭 | **Jump-to-conversation** | one click from a checkpoint to that point in the conversation (auto-loads history, anchor highlight); when the point is out of the auto-load budget the reason is reported instead of nothing happening |
 | 🧹 | **Bounded storage** | snapshots keep the most recent N checkpoints (default 50); throttled background sweep prunes truncated ones |
@@ -151,7 +153,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.141"
+       "dsh-retrace": "^0.4.147"
      },
      "dsh": {
        "profile": {
@@ -351,7 +353,7 @@ Historical details and exact error strings live in [CHANGELOG.md](./CHANGELOG.md
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.141
+dsh plugin --profile desktop add dsh-retrace@0.4.147
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -375,7 +377,7 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.141`) and let `dsh-log-contract` resolve to
+Pin an exact plugin version (`dsh-retrace@0.4.147`) and let `dsh-log-contract` resolve to
 `>=0.3.18`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 
@@ -389,7 +391,6 @@ the **host surface**, not by semver alone.
 | **DSH** | `>=0.1.5 <0.3.0` (see `package.json#dsh.compatibility`); desktop and web modes supported |
 | **Runtime files** | All files needed at runtime are **committed** in this repository and declared in `package.json#files` (`lib/**`, `cordis.patch.yml`, `README*.md`, `HUMANS.txt`, `LICENSE`) |
 | **Build output** | Build output is committed (`lib/client.bundle.js`, `lib/dynamic-client.js`, `lib/dynamic-host.js`) and reproducible in-repo: `pnpm i && pnpm build` (`scripts/generate-dynamic.mjs`, `scripts/build-client.mjs`) |
-| **Single-file size** | Every distributed file is **below 256 KiB** (largest ≈ 249 KB) |
 | **Runtime dependencies** | `dsh-log-contract` (log-contract validation), `zod` (argument validation). No post-install scripts, no network access, no additional code download |
 | **Peer dependencies** | `@deepseek-ai/cordis` and DSH client packages (provided by DSH itself, not bundled or redistributed here) |
 | **Permissions / external services** | Reads and writes only the local DSH session data directory and session logs. No external services, no telemetry, no data upload |
@@ -411,6 +412,10 @@ the **host surface**, not by semver alone.
   `message-pending` ("still being generated") rather than being misreported as gone.
 - Regenerate re-sends only the **text** of the original prompt; prompts that
   carried images fall back to the text-only content.
+- File **restore** is text-only: a non-UTF-8 (binary) file is reported as
+  `binary-unsupported` and skipped instead of being written back. **Export as…**
+  packages the captured preimage bytes (including non-text files) without restoring
+  anything.
 - True restore edits the session log **in place** (it neutralizes the two marker
   segments; sequence numbers stay as they are). It refuses to run while the session is
   the one you are viewing, while it is running, or while another process holds the file,
