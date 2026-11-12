@@ -35,7 +35,7 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 
 > Versions: [VERSIONS.md](./VERSIONS.md)
 
-> **0.4.148 is the current release** — install/pin `0.4.148` (the **GitHub Release is out; the npm package is still pending** — the latest npm version is `0.4.139`; see [VERSIONS.md](./VERSIONS.md)). The `dsh-retrace@0.4.148` examples below apply to this release.
+> **0.4.149 is the current release** — install/pin `0.4.149` (the **GitHub Release is out; the npm package is still pending** — the latest npm version is `0.4.139`; see [VERSIONS.md](./VERSIONS.md)). The `dsh-retrace@0.4.149` examples below apply to this release.
 
 ## ⚡ One-minute install
 
@@ -93,7 +93,7 @@ Full steps in [📦 Installation](#-installation).
 | ↩️ | **Rollback** | **three-way choice: context-only / artifacts-only / both**, with a dry-run preview. Rollback is **always available**; when an entry has no file preimage only context rollback is selectable (the other two are disabled with a reason). A **confirm dialog** lists the round, messages removed, file actions and a risk note (export first). Preview refuses while the agent is running; preview/rollback failures are shown instead of failing silently; a rollback is itself a new checkpoint (`restore`) |
 | ⤓ | **Export as…** | **read-only** zip of exactly that entry (`manifest.json` + the captured file preimages + the original text); it **never rolls anything back**. Uses the host preimage store when available, otherwise a manifest-only archive with a visible note |
 | 🎛 | **Three fixed actions per row** | **Jump to conversation / Rollback / Export as…**, always in that order; an **older host** shows an explicit "upgrade and restart" notice instead of silently missing features |
-| 🧬 | **Lineage identity** | every new session gets a stable lineage id automatically; the sidebar shows one badge per conversation (no duplicates on refresh) |
+| 🧬 | **External binding id (optional)** | a **read-only** per-session binding id for stable cross-view references; the plugin **does not generate identifiers, keeps no mapping table, and never renames or prefixes conversation titles** |
 | 🧭 | **Jump-to-conversation** | one click from a checkpoint to that point in the conversation (auto-loads history, anchor highlight); when the point is out of the auto-load budget the reason is reported instead of nothing happening |
 | 🧹 | **Bounded storage** | snapshots keep the most recent N checkpoints (default 50); throttled background sweep prunes truncated ones |
 
@@ -153,7 +153,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.148"
+       "dsh-retrace": "^0.4.149"
      },
      "dsh": {
        "profile": {
@@ -257,12 +257,12 @@ Before you exit or reload, know what is still running:
 > handler, or a pre-quit prompt hook). If the app cannot quit, turning off "Exit
 > confirmation (close guard)" recovers immediately (no restart).
 
-### Session badge & display name
+### External binding id (optional)
 
-- The sidebar shows **one badge per conversation**; the conversation title keeps the plain name. The stable identifier is **derived deterministically from the session id** (no random suffix).
-- **There is no setting for this yet.** Two runtime switches exist:
-  - `DSH_RETRACE_SHOW_CODES=0` — hide lineage codes (host-side, takes effect on restart);
-- Custom display names and a settings-page toggle are **planned** — see [docs/PLAN.md](./docs/PLAN.md) and [docs/ROADMAP.md](./docs/ROADMAP.md).
+- The plugin **does not generate or assign conversation identifiers**, keeps **no mapping table**, and **never renames or prefixes conversation titles**.
+- A **read-only** per-session binding id surface remains for integrations: host ops **`sessionBadge`** (one session) and **`badgeMap`** (all sessions). Reading it has no write path.
+- How such an id is produced or mapped is **maintained by the integrator** — the plugin does not document or ship a generation algorithm, table, or format.
+- Titles written by **earlier versions** that still carry a plugin prefix can be restored with the maintenance op **`restoreSessionTitles`** (rename only; conversation content is never touched).
 
 ## ⚙️ Settings → General
 
@@ -345,7 +345,7 @@ The host occasionally removes APIs this plugin relied on. These are **host-side 
 
 - Boot loop / recovery screen after a host upgrade → switch to a clean session and restart DSH; the plugin falls back to degraded mode instead of blocking.
 - Version/checkpoint panels empty after an upgrade → run `dsh plugin --profile <p> add dsh-retrace` to refresh the bundle.
-- Title/rename behaves differently → automatic title bootstrap is guarded by the host; manual rename keeps working.
+- Title/rename behaves differently → the plugin **does not touch conversation titles**; historical plugin prefixes can be cleaned with `restoreSessionTitles` (rename only).
 - Dependency floor: `dsh-log-contract >= 0.3.18`.
 
 Historical details and exact error strings live in [CHANGELOG.md](./CHANGELOG.md); compatibility matrix in [docs/COMPAT.md](./docs/COMPAT.md).
@@ -353,7 +353,7 @@ Historical details and exact error strings live in [CHANGELOG.md](./CHANGELOG.md
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.148
+dsh plugin --profile desktop add dsh-retrace@0.4.149
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -377,7 +377,7 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.148`) and let `dsh-log-contract` resolve to
+Pin an exact plugin version (`dsh-retrace@0.4.149`) and let `dsh-log-contract` resolve to
 `>=0.3.18`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 
@@ -440,8 +440,8 @@ the **host surface**, not by semver alone.
   (`fix --neutralize` / `--clip-crossstep`) for sessions that would fail `/compact`.
 - Read-only host surfaces for integration: `retrace/versions` and `retrace/forkmap`
   projections, `GET /api/plugins/retrace/{versions,forkmap,lineage,event,surface,doctor,snapshot}`,
-  `POST /api/plugins/retrace/{rollback/preview,rollback,git/init}`, plus the badge
-  ops (`sessionBadge` / `setBadgeTitle` / `initBadgeTitles` / `badgeMap`) and the
+  `POST /api/plugins/retrace/{rollback/preview,rollback,git/init}`, plus the
+  **read-only** session binding id ops (`sessionBadge` / `badgeMap`) and the
   `retrace` CLI (see below).
 
 **What's next** — see [docs/PLAN.md](./docs/PLAN.md) (next steps) and

@@ -30,7 +30,7 @@
 
 > 版本索引：[VERSIONS.md](./VERSIONS.md)
 
-> **0.4.148 为当前版本**——安装/固定请用 `0.4.148`（**GitHub Release 已发，npm 待发**；npm 最新可安装版本仍为 `0.4.139`，见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.148` 示例适用于该版本。
+> **0.4.149 为当前版本**——安装/固定请用 `0.4.149`（**GitHub Release 已发，npm 待发**；npm 最新可安装版本仍为 `0.4.139`，见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.149` 示例适用于该版本。
 
 ## ⚡ 一分钟安装
 
@@ -88,7 +88,7 @@ dsh plugin --profile desktop add dshmarket    # 只需一次
 | ↩️ | **回档** | **三选一：仅对话 / 仅产物 / 两者**，先干跑预览。回档**始终可用**；该条没有文件前像时只能选「仅对话」（另两项置灰并给出原因）。**确认弹窗**列明轮次、移除消息数、文件动作与风险提示（建议先导出）。预览在会话运行中直接拒绝；预览/回档失败都会在界面上显示，不静默；回档本身是新读档点（`restore`） |
 | ⤓ | **导出另存为** | 把该条内容打成**只读** zip（`manifest.json` + 捕获的文件前像 + 原文），**只导出、不回档**。宿主提供前像存储时用真实前像，否则退化为仅 manifest 的归档并显式提示 |
 | 🎛 | **每行固定三个动作** | **回到会话 / 回档 / 导出另存为**，顺序固定；**旧宿主**会显式提示「请升级并重启」，而不是静默缺少功能 |
-| 🧬 | **谱系标识** | 新建会话自动分配稳定谱系标识；侧栏每个会话只显示一个标识（刷新不重复） |
+| 🧬 | **外部绑定标识（可选）** | **只读**的每会话绑定标识，便于跨视图稳定引用；插件**不生成标识、不维护映射表、不重命名/不加标题前缀** |
 | 🧭 | **跳转对话** | 从读档点一键跳转到对应位置（自动翻页加载更早历史 + 锚点高亮）；该点超出自动加载预算时，给出可诊断原因，而不是点了没反应 |
 | 🧹 | **存储有界** | 快照只保留最近 N 个读档点（默认 50）；节流后台扫掠回收被截断的旧档 |
 
@@ -137,7 +137,7 @@ dsh plugin --profile <name> add dsh-retrace
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.148"
+       "dsh-retrace": "^0.4.149"
      },
      "dsh": {
        "profile": {
@@ -230,6 +230,13 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 > （`will-prevent-unload` 处理，或退出前的询问钩子）。**桌面端退不掉时**，把设置里的
 > 「退出确认（关闭守卫）」关掉即退回官方形态（**不用重启**）。
 
+## 🧬 外部绑定标识（可选）
+
+- 插件**不生成、不分配会话标识**，**不维护映射表**，也**不重命名会话标题、不给标题加前缀**。
+- 供集成使用的**只读**每会话绑定标识接口保留：宿主 op **`sessionBadge`**（单会话）与 **`badgeMap`**（全会话）。读取没有写入路径。
+- 这类标识如何生成、如何映射，由**使用方自行维护**——插件不提供、也不文档化任何生成算法、表或格式。
+- 历史版本写入过标题前缀的会话，可用维护 op **`restoreSessionTitles`** 恢复原标题（只重命名，不碰会话内容）。
+
 ## ⚙️ 设置 → 通用
 
 | 设置项 | 默认 | 说明 |
@@ -299,7 +306,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 
 - 升级后开机循环/恢复界面 → 切到干净会话并重启 DSH（插件降级而非阻断）。
 - 版本/检查点面板为空 → `dsh plugin --profile <p> add dsh-retrace` 刷新 bundle。
-- 标题/重命名行为变化 → 自动标题路径由宿主守卫，手动重命名不受影响。
+- 标题/重命名行为变化 → 插件**不改写会话标题**；历史版本留下的前缀可用 `restoreSessionTitles` 恢复原标题（只重命名、不碰会话内容）。
 - 依赖下限：`dsh-log-contract >= 0.3.18`。
 
 历史细节与原始报错见 [CHANGELOG.md](./CHANGELOG.md)；兼容矩阵见 [docs/COMPAT.md](./docs/COMPAT.md)。
@@ -307,7 +314,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 ### 升级
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.148
+dsh plugin --profile desktop add dsh-retrace@0.4.149
 # 然后重启 DSH —— 插件不会热重载
 ```
 
@@ -326,7 +333,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.148
 
 ### 版本固定建议
 
-请固定到确切版本（`dsh-retrace@0.4.148`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
+请固定到确切版本（`dsh-retrace@0.4.149`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
 **不要在跨宿主升级时依赖 `^0.4` 这种范围**：这里的兼容性由**宿主的面**决定，光看 semver 不够。
 
 ---
@@ -361,8 +368,8 @@ dsh plugin --profile desktop add dsh-retrace@0.4.148
 - 配套 **`dsh-log-contract`**：30+ 条离线契约规则 + 原地修复（`fix --neutralize` / `--clip-crossstep`），能处理会让 /compact 永久失败的会话。
 - 供集成使用的只读宿主面：`retrace/versions`、`retrace/forkmap` 投影，
   `GET /api/plugins/retrace/{versions,forkmap,lineage,event,surface,doctor,snapshot}`，
-  `POST /api/plugins/retrace/{rollback/preview,rollback,git/init}`，以及谱系标识操作
-  （`sessionBadge` / `setBadgeTitle` / `initBadgeTitles` / `badgeMap`）与 `retrace` CLI（见文末）。
+  `POST /api/plugins/retrace/{rollback/preview,rollback,git/init}`，以及**只读**的
+  会话绑定标识接口（`sessionBadge` / `badgeMap`）与 `retrace` CLI（见文末）。
 
 **未来计划**——agent 业务层规划（运行时守护、中断治理、生态开放接口）**尚未发布**，此节是**计划**而非已上线能力。本 README 描述的是**开发线（main）**，可能领先于 npm 上最新发布版。
 
@@ -481,4 +488,4 @@ retrace lineage <session>                      # 会话 parent 链谱系
 | **失败边界** | 所有写入（撤回/编辑/恢复/回档）均在**目标文件之外先备份**、写后做帧级校验与折叠重放；失败即中止并保留原文件；不可判定时按"拒绝 + 可操作提示"处理，不静默降级 |
 | **可回退** | 每个操作都有可逆路径；本地管理脚本可一键回退到上一快照 |
 
-- 稳定标识由会话 id 确定性导出（无随机后缀）；对同一会话重复读取得到同一个标识。
+- 只读**会话绑定标识**：对同一会话重复读取得到同一个标识；如何映射/生成由消费方自行决定（不属公开契约），插件不重命名会话标题。
