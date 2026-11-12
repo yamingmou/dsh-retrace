@@ -5,12 +5,13 @@
 English: released versions (resolvable from npm) and unpublished entries.
 
 > 日期来源：npm 发布时间（UTC+8）；未发布版本取 CHANGELOG 日期（缺失为 —）。状态：已发布 / 未发布。
-> 最新可安装版本以 `npm view dsh-retrace version` 为准（当前 npm latest=0.4.139，2026-11-06）；0.4.140–0.4.147 已发 GitHub Release，npm 未发布（0.4.147 待发）。
+> 最新可安装版本以 `npm view dsh-retrace version` 为准（当前 npm latest=0.4.148；0.4.150 为待发修复版）；0.4.140–0.4.147 已发 GitHub Release，npm 未发布（0.4.147 待发）。
 
 ## 已发布 · Released（46 行）
 
 | 版本 | 发布日期（UTC+8） | 状态 | 说明 |
 |---|---|---|---|
+| 0.4.150 | 2026-11-12 | 未发布 npm | 0.4.149 的等价修复版：标题自动清理 + 读档点修复 |
 | 0.4.149 | 2026-11-12 | 未发布 npm | 读档点列表/撤回文案/分页修复 |
 | 0.4.149 | 2026-11-11 | 未发布 npm | 不再自动改标题；只读绑定标识接口；公开面零私有机制 |
 | 0.4.148 | 2026-11-08 | 已发布 GitHub | 读档点总数/分组/起点修复与真 offset 分页 |
