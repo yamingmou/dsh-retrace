@@ -1,7 +1,7 @@
 # Compatibility notes
 
 > Consolidated host-compatibility notes. These describe **host-side changes**, not plugin defects.
-> Current contract: DSH `>=0.1.5 <0.3.0`, `dsh-log-contract ^0.3.18`（>=0.3.18 <0.4.0）, Node >= 20.
+> Current contract: DSH `>=0.1.7-rc.2 <0.3.0-0 || >=0.2.2-0 <0.3.0-0`（0.1.7-rc.2 generation through the 0.2.2 line）, `dsh-log-contract ^0.3.18`（>=0.3.18 <0.4.0）, Node >= 20.
 
 | Symptom | Cause (host-side) | What to do |
 |---|---|---|

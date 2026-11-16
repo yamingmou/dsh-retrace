@@ -24,8 +24,8 @@ be the drift check instead of a manual review.
 
 ## target
 - package: `dsh-retrace`
-- version: `0.4.150`
-- host: `>=0.1.5 <0.3.0` (mirrors `dsh.compatibility.dsh`)
+- version: `0.4.151`
+- host: `>=0.1.7-rc.2 <0.3.0-0 || >=0.2.2-0 <0.3.0-0` (mirrors `dsh.compatibility.dsh`)
 
 ## changes
 - `http`: require a loopback socket peer plus a same-origin Host/Origin gate; a non-loopback peer, a forged Host or a bad Origin is rejected with **403** (fail-closed).

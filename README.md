@@ -35,7 +35,7 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 
 > Versions: [VERSIONS.md](./VERSIONS.md)
 
-> **0.4.150 is the current release** — install/pin `0.4.150` (the **GitHub Release is out; the npm package is still pending** — the latest npm version is `0.4.139`; see [VERSIONS.md](./VERSIONS.md)). The `dsh-retrace@0.4.150` examples below apply to this release.
+> **0.4.151 is the current release** — install/pin `0.4.151` (the **GitHub Release is out; the npm package is still pending** — the latest npm version is `0.4.139`; see [VERSIONS.md](./VERSIONS.md)). The `dsh-retrace@0.4.151` examples below apply to this release.
 
 ## ⚡ One-minute install
 
@@ -153,7 +153,7 @@ The same result with plain file edits and `pnpm` — exactly the steps
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.150"
+       "dsh-retrace": "^0.4.151"
      },
      "dsh": {
        "profile": {
@@ -221,7 +221,8 @@ The dynamic host registers the same operations behind the package-private
 
 - DeepSeek Harness providing the peer packages listed in `package.json`
   (`@deepseek-ai/dsh-session`, `@deepseek-ai/dsh-client-*`, `cordis`, `react` — the
-  current build targets the `0.1.7-rc.2` generation).
+  build baseline is the `0.1.7-rc.2` generation; the declared range also accepts the
+  `0.2.x` line: `>=0.1.7-rc.2 <0.3.0-0 || >=0.2.2-0 <0.3.0-0`).
 - `dsh-log-contract >= 0.3.18` (installed automatically as a dependency).
 - The plugin declares the host capabilities it needs via `inject`
   (`sessions`, `agents`, `webServer`, `fs`, `subprocess`, `sandboxPolicy`, `jobs`).
@@ -257,7 +258,7 @@ Before you exit or reload, know what is still running:
 > handler, or a pre-quit prompt hook). If the app cannot quit, turning off "Exit
 > confirmation (close guard)" recovers immediately (no restart).
 
-### External binding id (optional)
+## 🧬 External binding id (optional)
 
 - The plugin **does not generate or assign conversation identifiers**, keeps **no mapping table**, and **never renames or prefixes conversation titles**.
 - A **read-only** per-session binding id surface remains for integrations: host ops **`sessionBadge`** (one session) and **`badgeMap`** (all sessions). Reading it has no write path.
@@ -353,7 +354,7 @@ Historical details and exact error strings live in [CHANGELOG.md](./CHANGELOG.md
 ### Upgrading
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.150
+dsh plugin --profile desktop add dsh-retrace@0.4.151
 # then restart DSH — plugins are not hot-reloaded
 ```
 
@@ -377,7 +378,7 @@ whole tree down, so recover first and diagnose second:
 
 ### Pinning
 
-Pin an exact plugin version (`dsh-retrace@0.4.150`) and let `dsh-log-contract` resolve to
+Pin an exact plugin version (`dsh-retrace@0.4.151`) and let `dsh-log-contract` resolve to
 `>=0.3.18`. Do not rely on `^0.4` across a host upgrade: compatibility here is decided by
 the **host surface**, not by semver alone.
 

@@ -30,7 +30,7 @@
 
 > 版本索引：[VERSIONS.md](./VERSIONS.md)
 
-> **0.4.150 为当前版本**——安装/固定请用 `0.4.150`（**GitHub Release 已发，npm 待发**；npm 最新可安装版本仍为 `0.4.139`，见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.150` 示例适用于该版本。
+> **0.4.151 为当前版本**——安装/固定请用 `0.4.151`（**GitHub Release 已发，npm 待发**；npm 最新可安装版本仍为 `0.4.139`，见 [VERSIONS.md](./VERSIONS.md)）；下文的 `dsh-retrace@0.4.151` 示例适用于该版本。
 
 ## ⚡ 一分钟安装
 
@@ -137,7 +137,7 @@ dsh plugin --profile <name> add dsh-retrace
    ```json
    {
      "dependencies": {
-       "dsh-retrace": "^0.4.150"
+       "dsh-retrace": "^0.4.151"
      },
      "dsh": {
        "profile": {
@@ -199,7 +199,8 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 
 - DeepSeek Harness 需提供 `package.json` 里声明的 peer 包
   （`@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-client-*`、`cordis`、`react` ——
-  当前构建面向 `0.1.7-rc.2` 这一代内核）。
+  构建基线是 `0.1.7-rc.2` 这一代内核，声明范围同时接受 `0.2.x` 线：
+  `>=0.1.7-rc.2 <0.3.0-0 || >=0.2.2-0 <0.3.0-0`）。
 - `dsh-log-contract >= 0.3.18`（作为依赖自动安装）。
 - 插件通过 `inject` 声明所需宿主能力
   （`sessions`、`agents`、`webServer`、`fs`、`subprocess`、`sandboxPolicy`、`jobs`）。
@@ -314,7 +315,7 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 ### 升级
 
 ```bash
-dsh plugin --profile desktop add dsh-retrace@0.4.150
+dsh plugin --profile desktop add dsh-retrace@0.4.151
 # 然后重启 DSH —— 插件不会热重载
 ```
 
@@ -333,7 +334,7 @@ dsh plugin --profile desktop add dsh-retrace@0.4.150
 
 ### 版本固定建议
 
-请固定到确切版本（`dsh-retrace@0.4.150`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
+请固定到确切版本（`dsh-retrace@0.4.151`），并让 `dsh-log-contract` 解析到 `>=0.3.18`。
 **不要在跨宿主升级时依赖 `^0.4` 这种范围**：这里的兼容性由**宿主的面**决定，光看 semver 不够。
 
 ---
