@@ -11,6 +11,7 @@ English: released versions (resolvable from npm) and unpublished entries.
 
 | 版本 | 发布日期（UTC+8） | 状态 | 说明 |
 |---|---|---|---|
+| 0.4.153 | 2026-11-20 | 未发布 npm | 读档点骨架/搜索/多选导出；restoreList ~39× 提速 |
 | 0.4.152 | 2026-11-16 | 未发布 npm | pending 剪枝接入；二进制恢复明确 unsupported+导出逃生口 |
 | 0.4.151 | 2026-11-13 | 未发布 npm | dsh peer 覆盖 0.2.x（含 npm clause）；双语/兼容矩阵修复 |
 | 0.4.150 | 2026-11-12 | 未发布 npm | 0.4.149 的等价修复版：标题自动清理 + 读档点修复 |
