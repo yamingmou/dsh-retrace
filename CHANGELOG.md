@@ -6,6 +6,12 @@ condensed to what a user of the plugin can observe.
 
 ---
 
+## [0.4.152] — 2026-11-16
+
+- 检查点/回退：后台每 6 小时剪枝过期 pending 记录（只删超龄，不动有效记录）
+- 检查点/回退：二进制文件恢复明确为**不支持**并给稳定错误码 `binary-unsupported`（宿主文件服务仅有文本写原语）；导出 ZIP 以 base64 保留原始字节作为逃生口
+- 文档：COMPAT 增补宿主能力矩阵（text-only primitives / 未来 `fs.writeBytes` 自动启用）
+
 ## [0.4.151] — 2026-11-13
 
 - 兼容：dsh peer 范围调整以覆盖官方 0.2.x（含预发布）并拒绝 0.3.0-0；新增可选 peer 声明确保 npm 安装可通过
