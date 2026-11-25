@@ -24,7 +24,7 @@ be the drift check instead of a manual review.
 
 ## target
 - package: `dsh-retrace`
-- version: `0.4.157`
+- version: `0.4.158`
 - host: `>=0.1.7-rc.2 <0.3.0-0 || >=0.2.2-0 <0.3.0-0` (mirrors `dsh.compatibility.dsh`)
 
 ## changes
